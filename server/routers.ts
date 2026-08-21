@@ -4,7 +4,7 @@ import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
-import { asService, asUser, assertHamaPoint, createOtpHash, decodeDataUrl, getAuthenticatedUser, getUserProfile } from "./jarbou3-supabase";
+import { asPublic, asService, asUser, assertHamaPoint, createOtpHash, decodeDataUrl, getAuthenticatedUser, getUserProfile } from "./jarbou3-supabase";
 
 const tokenInput = z.object({ accessToken: z.string().min(20) });
 const pointInput = z.object({ latitude: z.number(), longitude: z.number() });
@@ -35,7 +35,7 @@ export const appRouter = router({
     signUpCustomer: publicProcedure
       .input(z.object({ name: z.string().trim().min(2).max(100), phone: z.string().regex(/^\+?[0-9]{8,16}$/), password: z.string().min(8).max(72) }))
       .mutation(async ({ input }) => {
-        const { data, error } = await asService().auth.signUp({ phone: input.phone, password: input.password, options: { data: { name: input.name, phone: input.phone } } });
+        const { data, error } = await asPublic().auth.signUp({ phone: input.phone, password: input.password, options: { data: { name: input.name, phone: input.phone } } });
         if (error) throw new Error(error.message);
         return { userId: data.user?.id ?? null, requiresPhoneConfirmation: !data.session };
       }),
@@ -43,7 +43,7 @@ export const appRouter = router({
     signIn: publicProcedure
       .input(z.object({ phone: z.string().regex(/^\+?[0-9]{8,16}$/), password: z.string().min(8).max(72) }))
       .mutation(async ({ input }) => {
-        const { data, error } = await asService().auth.signInWithPassword({ phone: input.phone, password: input.password });
+        const { data, error } = await asPublic().auth.signInWithPassword({ phone: input.phone, password: input.password });
         if (error || !data.session) throw new Error(error?.message ?? "SIGN_IN_FAILED");
         const profile = await getUserProfile(data.user.id);
         return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: { id: data.user.id, name: profile.name, role: profile.role } };

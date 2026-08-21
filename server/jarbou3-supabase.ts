@@ -32,6 +32,10 @@ export function asService() {
   return createClient(projectUrl(), serviceKey(), { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
+export function asPublic() {
+  return createClient(projectUrl(), publicKey(), { auth: { autoRefreshToken: false, persistSession: false } });
+}
+
 export async function getAuthenticatedUser(accessToken: string) {
   const { data, error } = await asUser(accessToken).auth.getUser();
   if (error || !data.user) throw new Error("SUPABASE_UNAUTHORIZED");

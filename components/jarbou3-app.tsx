@@ -1,9 +1,11 @@
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
-import { useMemo, useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
+import { trpc } from "@/lib/trpc";
+import { jarbou3Session } from "@/lib/jarbou3-session";
 import { VALID_HAMA_STOPS, formatSyp } from "@/shared/jarbou3";
 import { HamaMap } from "@/components/hama-map";
 
@@ -97,10 +99,68 @@ function Admin() {
 function Metric({ value, label }: { value: string; label: string }) { return <View style={styles.metric}><Text style={styles.metricValue}>{value}</Text><Text style={styles.metricLabel}>{label}</Text></View>; }
 function Top({ title, back }: { title: string; back: () => void }) { return <View style={styles.top}><Pressable onPress={back} style={styles.back}><Text style={styles.backText}>‹</Text></Pressable><Text style={styles.topTitle}>{title}</Text><View style={styles.backBlank} /></View>; }
 
-export function Jarbou3App() { const [role, setRole] = useState<Role>("customer"); return <View style={styles.root}><RoleSwitch role={role} onSelect={setRole} />{role === "customer" ? <Customer /> : role === "driver" ? <Driver /> : <Admin />}</View>; }
+export function Jarbou3App() {
+  const [role, setRole] = useState<Role>("customer");
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [hasSession, setHasSession] = useState(false);
+
+  useEffect(() => { jarbou3Session.getAccessToken().then((token) => setHasSession(Boolean(token))); }, []);
+
+  const signIn = trpc.jarbou3.signIn.useMutation({
+    onSuccess: async (result) => {
+      await jarbou3Session.save(result.accessToken, result.refreshToken);
+      setHasSession(true);
+      setRole(result.user.role);
+      setAccessOpen(false);
+      setPassword("");
+      Alert.alert("تم تسجيل الدخول", `أهلاً ${result.user.name}`);
+    },
+    onError: (error) => Alert.alert("تعذر تسجيل الدخول", error.message),
+  });
+  const signUp = trpc.jarbou3.signUpCustomer.useMutation({
+    onSuccess: (result) => {
+      setMode("sign-in");
+      setPassword("");
+      Alert.alert("تم إنشاء الحساب", result.requiresPhoneConfirmation ? "تحقق من رسالة التأكيد على رقمك ثم سجّل الدخول." : "يمكنك تسجيل الدخول الآن.");
+    },
+    onError: (error) => Alert.alert("تعذر إنشاء الحساب", error.message),
+  });
+  const submitAccess = () => {
+    if (!/^\+?[0-9]{8,16}$/.test(phone) || password.length < 8 || (mode === "sign-up" && name.trim().length < 2)) {
+      Alert.alert("تحقق من البيانات", "أدخل اسماً من حرفين على الأقل ورقم هاتف صحيحاً وكلمة مرور من ٨ أحرف.");
+      return;
+    }
+    if (mode === "sign-in") signIn.mutate({ phone, password });
+    else signUp.mutate({ name: name.trim(), phone, password });
+  };
+  const busy = signIn.isPending || signUp.isPending;
+
+  return <View style={styles.root}>
+    <RoleSwitch role={role} onSelect={setRole} />
+    <View style={styles.accessBar}><Text style={styles.accessCopy}>{hasSession ? "جلسة محفوظة على هذا الجهاز" : "سجّل الدخول لربط طلباتك وبياناتك بأمان"}</Text><Pressable onPress={() => setAccessOpen(true)} style={styles.accessButton}><Text style={styles.accessButtonText}>{hasSession ? "الحساب" : "دخول آمن"}</Text></Pressable></View>
+    {role === "customer" ? <Customer /> : role === "driver" ? <Driver /> : <Admin />}
+    <Modal visible={accessOpen} transparent animationType="slide" onRequestClose={() => setAccessOpen(false)}>
+      <View style={styles.modalBackdrop}><View style={styles.authSheet}>
+        <View style={styles.handle} />
+        <Text style={styles.authTitle}>{mode === "sign-in" ? "دخول آمن" : "إنشاء حساب عميل"}</Text>
+        <Text style={styles.authCopy}>{mode === "sign-in" ? "استخدم رقم هاتفك وكلمة المرور للوصول إلى طلباتك." : "سيُحفظ رقمك ضمن مصادقة جربوع ولن يظهر للسائقين."}</Text>
+        {mode === "sign-up" ? <TextInput value={name} onChangeText={setName} placeholder="الاسم" placeholderTextColor="#999" style={styles.authInput} textAlign="right" /> : null}
+        <TextInput value={phone} onChangeText={setPhone} placeholder="رقم الهاتف، مثال +963..." placeholderTextColor="#999" keyboardType="phone-pad" style={styles.authInput} textAlign="right" />
+        <TextInput value={password} onChangeText={setPassword} placeholder="كلمة المرور" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" />
+        <Pressable onPress={submitAccess} disabled={busy} style={[styles.authAction, busy && styles.authActionDisabled]}>{busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>{mode === "sign-in" ? "تسجيل الدخول" : "إنشاء الحساب"}</Text>}</Pressable>
+        <Pressable onPress={() => setMode(mode === "sign-in" ? "sign-up" : "sign-in")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>{mode === "sign-in" ? "ليس لديك حساب؟ أنشئ حساب عميل" : "لديك حساب بالفعل؟ سجّل الدخول"}</Text></Pressable>
+      </View></View>
+    </Modal>
+  </View>;
+}
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#F5F5F5" }, scroll: { paddingBottom: 30 }, fill: { flex: 1 }, flex: { flex: 1 }, pressed: { opacity: 0.78, transform: [{ scale: 0.986 }] }, space: { paddingHorizontal: 16, paddingTop: 16, gap: 14 }, roleSwitch: { flexDirection: "row-reverse", gap: 4, marginHorizontal: 16, marginTop: 8, marginBottom: 8, backgroundColor: "#E4E4E4", padding: 4, borderRadius: 14 }, role: { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: "center" }, roleSelected: { backgroundColor: "#FFF" }, roleText: { color: "#747474", fontSize: 13, fontWeight: "800" }, roleTextSelected: { color: dark },
+  accessBar: { marginHorizontal: 16, marginBottom: 2, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", gap: 10 }, accessCopy: { color: "#737373", fontSize: 10, fontWeight: "700", textAlign: "right", flex: 1 }, accessButton: { backgroundColor: "#FFFFFF", borderColor: "#D7D7D7", borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 }, accessButtonText: { color: "#4A4A4A", fontSize: 10, fontWeight: "900" }, modalBackdrop: { flex: 1, backgroundColor: "#00000066", justifyContent: "flex-end" }, authSheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, gap: 12 }, authTitle: { color: dark, fontSize: 22, fontWeight: "900", textAlign: "right" }, authCopy: { color: "#737373", fontSize: 12, lineHeight: 19, textAlign: "right", marginBottom: 4 }, authInput: { minHeight: 52, borderRadius: 15, backgroundColor: "#F5F5F5", borderColor: "#DDDDDD", borderWidth: 1, paddingHorizontal: 14, color: dark, fontSize: 14, fontWeight: "700" }, authAction: { minHeight: 53, borderRadius: 16, backgroundColor: gray, alignItems: "center", justifyContent: "center" }, authActionDisabled: { opacity: 0.65 }, modeSwitch: { paddingVertical: 8, alignItems: "center" }, modeSwitchText: { color: gray, fontSize: 12, fontWeight: "900" },
   action: { minHeight: 53, borderRadius: 16, backgroundColor: gray, justifyContent: "center", alignItems: "center", paddingHorizontal: 14 }, actionDark: { backgroundColor: "#FFF" }, actionOutline: { backgroundColor: "transparent", borderWidth: 1, borderColor: "#C9C9C9" }, actionText: { color: "#FFF", fontSize: 14, fontWeight: "900", textAlign: "center" }, actionOutlineText: { color: gray }, tag: { backgroundColor: "#E9E9E9", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 99, alignSelf: "flex-start" }, tagStatus: { backgroundColor: "#DDF2E9" }, tagText: { color: "#555", fontSize: 10, fontWeight: "900" }, tagStatusText: { color: "#276149" },
   mark: { width: 56, height: 56, borderRadius: 18, overflow: "hidden", backgroundColor: "#FFF" }, markSmall: { width: 34, height: 34, borderRadius: 11 }, markImage: { width: "100%", height: "100%" }, hero: { marginHorizontal: 16, padding: 19, borderRadius: 24, backgroundColor: "#FFF", flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, heroTitle: { color: dark, fontSize: 24, fontWeight: "900", textAlign: "right" }, eyebrow: { color: "#747474", fontSize: 11, fontWeight: "900", textAlign: "right", marginBottom: 4 }, copy: { color: "#737373", textAlign: "right", fontSize: 12, lineHeight: 19, marginTop: 4 }, copyRight: { color: "#737373", textAlign: "right", fontSize: 12, lineHeight: 19 },
   map: { height: 220, borderRadius: 23, overflow: "hidden", backgroundColor: "#D6D8D3", marginHorizontal: 16, marginTop: 16, position: "relative" }, mapCompact: { height: 188 }, nativeMap: { flex: 1 }, mapRoad: { position: "absolute", height: 4, left: -30, right: -30, backgroundColor: "#FFF", opacity: 0.75 }, mapName: { position: "absolute", top: 18, left: 20, color: "#747474", fontSize: 18, fontWeight: "900" }, dot: { position: "absolute", width: 12, height: 12, borderRadius: 8, borderWidth: 2, borderColor: "#FFF", backgroundColor: "#888" }, dotTarget: { width: 20, height: 20, borderRadius: 10, right: "12%", top: "20%", backgroundColor: "#2F7A62" }, mapDriver: { position: "absolute", top: "37%", left: "54%", borderWidth: 3, borderColor: "#FFF", borderRadius: 14 }, mapBadge: { position: "absolute", bottom: 11, right: 11, backgroundColor: "#FFFFFFE8", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 }, mapBadgeText: { color: gray, fontSize: 11, fontWeight: "900" },
