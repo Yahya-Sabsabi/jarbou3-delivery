@@ -32,7 +32,7 @@ const env = {
   appSlug: "jarbou3-delivery",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "",
+  logoUrl: "/manus-storage/jarbou3-icon_97b4e5ac.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
@@ -56,7 +56,7 @@ const config: ExpoConfig = {
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: "#E6F4FE",
+      backgroundColor: "#F5F5F5",
       foregroundImage: "./assets/images/android-icon-foreground.png",
       backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/android-icon-monochrome.png",
@@ -90,6 +90,13 @@ const config: ExpoConfig = {
       "expo-audio",
       {
         microphonePermission: "Allow $(PRODUCT_NAME) to access your microphone.",
+      },
+    ],
+    [
+      "expo-image-picker",
+      {
+        photosPermission: "اسمح لتطبيق جربوع بالوصول إلى الصور لإرفاق وثائق السائق وإثبات التسليم.",
+        cameraPermission: "اسمح لتطبيق جربوع باستخدام الكاميرا لالتقاط وثائق السائق وإثبات التسليم.",
       },
     ],
     [
