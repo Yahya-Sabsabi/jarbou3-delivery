@@ -32,7 +32,7 @@ const env = {
   appSlug: "jarbou3-delivery",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "/manus-storage/jarbou3-icon_97b4e5ac.png",
+  logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663276229936/gpWrnZzHAOqIPcdt.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
