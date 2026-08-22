@@ -38,7 +38,7 @@ document.querySelector("#login-form").addEventListener("submit", async (event) =
     state.user = result.user;
     await openAdmin();
   } catch (error) {
-    errorBox.textContent = error.status === 429 ? "تم إيقاف المحاولة مؤقتاً للحماية. حاول لاحقاً." : "كلمة المرور غير صحيحة. تحقق منها ثم أعد المحاولة.";
+    errorBox.textContent = error.status === 503 ? "إعداد كلمة مرور الموقع غير مكتمل. أعد المحاولة بعد التحديث." : error.status === 429 ? "تم إيقاف المحاولة مؤقتاً للحماية. حاول لاحقاً." : "كلمة المرور غير صحيحة. تحقق منها ثم أعد المحاولة.";
     errorBox.hidden = false;
   } finally {
     button.disabled = false;

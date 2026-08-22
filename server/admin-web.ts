@@ -172,9 +172,14 @@ export function registerAdminWebRoutes(app: Express) {
       return;
     }
     const parsed = loginSchema.safeParse(req.body);
-    if (!parsed.success || !passwordMatches(parsed.data.password)) {
-      attempt.count += 1;
-      res.status(401).json({ error: "INVALID_SITE_PASSWORD" });
+    try {
+      if (!parsed.success || !passwordMatches(parsed.data.password)) {
+        attempt.count += 1;
+        res.status(401).json({ error: "INVALID_SITE_PASSWORD" });
+        return;
+      }
+    } catch (error) {
+      res.status(error instanceof Error && error.message === "ADMIN_SITE_PASSWORD_NOT_CONFIGURED" ? 503 : 500).json({ error: "SITE_PASSWORD_CONFIGURATION_ERROR" });
       return;
     }
     loginAttempts.delete(key);
