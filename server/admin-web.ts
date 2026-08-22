@@ -2,22 +2,19 @@ import type { Express, Request, Response } from "express";
 import { parse as parseCookie } from "cookie";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { randomInt } from "node:crypto";
+import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 
-import { asPublic, asService, asUser, getAuthenticatedUser, getUserProfile } from "./jarbou3-supabase";
+import { asService } from "./jarbou3-supabase";
 import { buildAdminNotifications, isSameOriginRequest, normalizeReportMonth, type AdminNotification } from "./admin-web-utils";
 
-const ADMIN_COOKIE = "jarbou3_admin_session";
-const ADMIN_SESSION_MS = 60 * 60 * 1000;
+const SITE_COOKIE = "jarbou3_admin_access";
+const SITE_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
 const loginAttempts = new Map<string, { count: number; startedAt: number }>();
 const VERIFICATION_CODE_MS = 10 * 60 * 1000;
 
-type AdminSession = {
-  token: string;
-  user: { id: string; name: string; phone: string | null; role: "admin" };
-};
+type SiteSession = { issuedAt: number; expiresAt: number };
 
 function getProtocol(req: Request) {
   const forwarded = req.headers["x-forwarded-proto"];
@@ -30,13 +27,13 @@ function cookieOptions(req: Request) {
     httpOnly: true,
     sameSite: "lax" as const,
     secure: getProtocol(req) === "https",
-    maxAge: ADMIN_SESSION_MS,
+    maxAge: SITE_SESSION_MS,
     path: "/admin",
   };
 }
 
 function requestToken(req: Request) {
-  return parseCookie(req.headers.cookie ?? "")[ADMIN_COOKIE] ?? null;
+  return parseCookie(req.headers.cookie ?? "")[SITE_COOKIE] ?? null;
 }
 
 function requestKey(req: Request) {
@@ -53,24 +50,54 @@ function currentAttempt(key: string) {
   return current;
 }
 
+function adminPassword() {
+  const password = process.env.ADMIN_SITE_PASSWORD;
+  if (!password || password.length < 16) throw new Error("ADMIN_SITE_PASSWORD_NOT_CONFIGURED");
+  return password;
+}
+
+function sign(value: string) {
+  return createHmac("sha256", adminPassword()).update(value).digest("base64url");
+}
+
+function createSiteSession() {
+  const now = Date.now();
+  const payload: SiteSession = { issuedAt: now, expiresAt: now + SITE_SESSION_MS };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${encoded}.${sign(encoded)}`;
+}
+
+function requireSiteSession(req: Request): SiteSession {
+  const token = requestToken(req);
+  if (!token) throw new Error("SITE_SESSION_REQUIRED");
+  const [encoded, receivedSignature, ...rest] = token.split(".");
+  if (!encoded || !receivedSignature || rest.length) throw new Error("SITE_SESSION_REQUIRED");
+  const expectedBuffer = Buffer.from(sign(encoded));
+  const receivedBuffer = Buffer.from(receivedSignature);
+  if (expectedBuffer.length !== receivedBuffer.length || !timingSafeEqual(expectedBuffer, receivedBuffer)) throw new Error("SITE_SESSION_REQUIRED");
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as SiteSession;
+    if (!Number.isFinite(payload.issuedAt) || !Number.isFinite(payload.expiresAt) || payload.expiresAt <= Date.now()) throw new Error("SITE_SESSION_REQUIRED");
+    return payload;
+  } catch {
+    throw new Error("SITE_SESSION_REQUIRED");
+  }
+}
+
+function passwordMatches(value: string) {
+  const expected = Buffer.from(adminPassword());
+  const received = Buffer.from(value);
+  return expected.length === received.length && timingSafeEqual(expected, received);
+}
+
 function rejectForeignOrigin(req: Request, res: Response) {
   if (isSameOriginRequest(req.headers.origin, req.headers.host, getProtocol(req))) return false;
   res.status(403).json({ error: "REQUEST_ORIGIN_REJECTED" });
   return true;
 }
 
-async function requireAdminSession(req: Request): Promise<AdminSession> {
-  const token = requestToken(req);
-  if (!token) throw new Error("ADMIN_SESSION_REQUIRED");
-  const authUser = await getAuthenticatedUser(token);
-  const profile = await getUserProfile(authUser.id);
-  if (!profile.is_active || profile.role !== "admin") throw new Error("ADMIN_ACCESS_DENIED");
-  return { token, user: { id: profile.id, name: profile.name, phone: profile.phone ?? null, role: "admin" } };
-}
-
-function authErrorStatus(error: unknown) {
-  const message = error instanceof Error ? error.message : "";
-  return message === "ADMIN_ACCESS_DENIED" ? 403 : 401;
+function siteErrorStatus(error: unknown) {
+  return error instanceof Error && error.message === "SITE_SESSION_REQUIRED" ? 401 : 503;
 }
 
 async function readNotifications(): Promise<AdminNotification[]> {
@@ -128,10 +155,14 @@ async function listAccountVerifications() {
   return data ?? [];
 }
 
-const loginSchema = z.object({ phone: z.string().regex(/^\+?[0-9]{8,16}$/), password: z.string().min(8).max(72) });
+const loginSchema = z.object({ password: z.string().min(16).max(512) });
 const generateReportSchema = z.object({ reportMonth: z.string() });
 
 export function registerAdminWebRoutes(app: Express) {
+  app.use("/admin/api", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+  });
   app.post("/admin/api/login", async (req, res) => {
     if (rejectForeignOrigin(req, res)) return;
     const key = requestKey(req);
@@ -141,65 +172,63 @@ export function registerAdminWebRoutes(app: Express) {
       return;
     }
     const parsed = loginSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "INVALID_LOGIN_INPUT" });
-      return;
-    }
-    const { data, error } = await asPublic().auth.signInWithPassword(parsed.data);
-    if (error || !data.user || !data.session) {
+    if (!parsed.success || !passwordMatches(parsed.data.password)) {
       attempt.count += 1;
-      res.status(401).json({ error: "INVALID_CREDENTIALS" });
-      return;
-    }
-    const profile = await getUserProfile(data.user.id).catch(() => null);
-    if (!profile || !profile.is_active || profile.role !== "admin") {
-      attempt.count += 1;
-      res.status(403).json({ error: "ADMIN_ACCESS_DENIED" });
+      res.status(401).json({ error: "INVALID_SITE_PASSWORD" });
       return;
     }
     loginAttempts.delete(key);
-    res.cookie(ADMIN_COOKIE, data.session.access_token, cookieOptions(req));
-    res.json({ user: { id: profile.id, name: profile.name, role: "admin" } });
+    res.cookie(SITE_COOKIE, createSiteSession(), cookieOptions(req));
+    res.json({ user: { name: "مالك الموقع", role: "owner" } });
   });
 
   app.post("/admin/api/logout", async (req, res) => {
     if (rejectForeignOrigin(req, res)) return;
-    res.clearCookie(ADMIN_COOKIE, { ...cookieOptions(req), maxAge: -1 });
+    res.clearCookie(SITE_COOKIE, { ...cookieOptions(req), maxAge: -1 });
     res.json({ success: true });
   });
 
   app.get("/admin/api/session", async (req, res) => {
     try {
-      const session = await requireAdminSession(req);
-      res.json({ user: session.user });
-    } catch (error) {
-      res.status(authErrorStatus(error)).json({ error: "ADMIN_SESSION_REQUIRED" });
+      requireSiteSession(req);
+      res.json({ user: { name: "مالك الموقع", role: "owner" } });
+    } catch {
+      res.status(401).json({ error: "SITE_SESSION_REQUIRED" });
+    }
+  });
+
+  app.get("/admin/api/access-check", (req, res) => {
+    try {
+      requireSiteSession(req);
+      res.status(204).end();
+    } catch {
+      res.status(401).end();
     }
   });
 
   app.get("/admin/api/dashboard", async (req, res) => {
     try {
-      await requireAdminSession(req);
+      requireSiteSession(req);
       res.json(await readDashboard());
     } catch (error) {
-      res.status(authErrorStatus(error)).json({ error: "ADMIN_DASHBOARD_DENIED" });
+      res.status(siteErrorStatus(error)).json({ error: "SITE_DASHBOARD_UNAVAILABLE" });
     }
   });
 
   app.get("/admin/api/notifications", async (req, res) => {
     try {
-      await requireAdminSession(req);
+      requireSiteSession(req);
       res.json({ notifications: await readNotifications() });
     } catch (error) {
-      res.status(authErrorStatus(error)).json({ error: "ADMIN_NOTIFICATIONS_DENIED" });
+      res.status(siteErrorStatus(error)).json({ error: "SITE_NOTIFICATIONS_UNAVAILABLE" });
     }
   });
 
   app.get("/admin/api/notifications/stream", async (req, res) => {
     try {
-      await requireAdminSession(req);
-    } catch (error) {
-      res.status(authErrorStatus(error)).end();
+      requireSiteSession(req);
+    } catch {
+      res.status(401).end();
       return;
     }
     res.status(200);
@@ -237,17 +266,17 @@ export function registerAdminWebRoutes(app: Express) {
 
   app.get("/admin/api/verifications", async (req, res) => {
     try {
-      await requireAdminSession(req);
+      requireSiteSession(req);
       res.json({ requests: await listAccountVerifications() });
     } catch (error) {
-      res.status(authErrorStatus(error)).json({ error: "ADMIN_VERIFICATIONS_DENIED" });
+      res.status(siteErrorStatus(error)).json({ error: "SITE_VERIFICATIONS_UNAVAILABLE" });
     }
   });
 
   app.post("/admin/api/verifications/:requestId/send-code", async (req, res) => {
     if (rejectForeignOrigin(req, res)) return;
     try {
-      const session = await requireAdminSession(req);
+      requireSiteSession(req);
       const requestId = z.string().uuid().safeParse(req.params.requestId);
       if (!requestId.success) {
         res.status(400).json({ error: "INVALID_VERIFICATION_REQUEST" });
@@ -262,30 +291,30 @@ export function registerAdminWebRoutes(app: Express) {
       const code = String(randomInt(100000, 1000000));
       const now = new Date();
       const expiresAt = new Date(now.getTime() + VERIFICATION_CODE_MS);
-      const { error: updateError } = await service.from("account_verification_requests").update({ status: "code_sent", verification_code_hash: await bcrypt.hash(code, 12), code_expires_at: expiresAt.toISOString(), code_attempts: 0, code_sent_at: now.toISOString(), reviewed_by: session.user.id, reviewed_at: now.toISOString() }).eq("id", request.id);
+      const { error: updateError } = await service.from("account_verification_requests").update({ status: "code_sent", verification_code_hash: await bcrypt.hash(code, 12), code_expires_at: expiresAt.toISOString(), code_attempts: 0, code_sent_at: now.toISOString(), reviewed_at: now.toISOString() }).eq("id", request.id);
       if (updateError) throw new Error(updateError.message);
       const phone = request.phone.replace(/[^0-9]/g, "");
       const roleLabel = request.requested_role === "driver" ? "سفير" : "عميل";
       const text = `مرحباً ${request.full_name}، رمز تحقق جربوع لحساب ${roleLabel}: ${code}. الرمز صالح لمدة 10 دقائق. لا تشاركه مع أي شخص.`;
       res.json({ requestId: request.id, whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(text)}`, expiresAt: expiresAt.toISOString() });
     } catch (error) {
-      res.status(authErrorStatus(error)).json({ error: error instanceof Error ? error.message : "VERIFICATION_CODE_SEND_FAILED" });
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "VERIFICATION_CODE_SEND_FAILED" });
     }
   });
 
   app.get("/admin/api/reports", async (req, res) => {
     try {
-      await requireAdminSession(req);
+      requireSiteSession(req);
       res.json({ reports: await listReports() });
     } catch (error) {
-      res.status(authErrorStatus(error)).json({ error: "ADMIN_REPORTS_DENIED" });
+      res.status(siteErrorStatus(error)).json({ error: "SITE_REPORTS_UNAVAILABLE" });
     }
   });
 
   app.post("/admin/api/reports/generate", async (req, res) => {
     if (rejectForeignOrigin(req, res)) return;
     try {
-      await requireAdminSession(req);
+      requireSiteSession(req);
       const parsed = generateReportSchema.safeParse(req.body);
       const reportMonth = parsed.success ? normalizeReportMonth(parsed.data.reportMonth) : null;
       if (!reportMonth) {
@@ -296,14 +325,14 @@ export function registerAdminWebRoutes(app: Express) {
       if (error) throw new Error(error.message);
       res.json({ result: data ?? null, reports: await listReports() });
     } catch (error) {
-      res.status(authErrorStatus(error)).json({ error: error instanceof Error ? error.message : "REPORT_GENERATION_FAILED" });
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "REPORT_GENERATION_FAILED" });
     }
   });
 
   app.post("/admin/api/reports/:reportId/download", async (req, res) => {
     if (rejectForeignOrigin(req, res)) return;
     try {
-      const session = await requireAdminSession(req);
+      requireSiteSession(req);
       const reportId = z.string().uuid().safeParse(req.params.reportId);
       if (!reportId.success) {
         res.status(400).json({ error: "INVALID_REPORT_ID" });
@@ -316,14 +345,14 @@ export function registerAdminWebRoutes(app: Express) {
         return;
       }
       if (report.status === "ready") {
-        const { error: confirmError } = await asUser(session.token).rpc("confirm_monthly_report_download", { p_report_id: report.id });
+        const { error: confirmError } = await service.from("monthly_reports").update({ status: "download_confirmed", downloaded_at: new Date().toISOString() }).eq("id", report.id).eq("status", "ready");
         if (confirmError) throw new Error(confirmError.message);
       }
       const { data: signed, error: signedError } = await service.storage.from("jarbou3-private").createSignedUrl(report.storage_path, 90);
       if (signedError || !signed?.signedUrl) throw new Error(signedError?.message ?? "REPORT_URL_UNAVAILABLE");
       res.json({ url: signed.signedUrl });
     } catch (error) {
-      res.status(authErrorStatus(error)).json({ error: error instanceof Error ? error.message : "REPORT_DOWNLOAD_FAILED" });
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "REPORT_DOWNLOAD_FAILED" });
     }
   });
 }

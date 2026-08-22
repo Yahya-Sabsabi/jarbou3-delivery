@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="بوابة الإدارة المستقلة لجربوع للتوصيل" />
     <title>جربوع | بوابة الإدارة</title>
+    <link rel="stylesheet" href="/admin/vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="/admin/styles.css" />
   </head>
   <body>
@@ -17,18 +18,16 @@
       <section class="login-panel">
         <div class="login-card">
           <div class="mobile-brand"><span class="brand-mark small">ج</span><span>جربوع</span></div>
-          <p class="eyebrow">وصول محمي</p>
-          <h2>تسجيل دخول المدير</h2>
-          <p class="muted">استخدم بيانات حساب المدير المعتمد. لا يمنح الدخول العادي صلاحية الوصول إلى هذه البوابة.</p>
+          <p class="eyebrow">وصول خاص</p>
+          <h2>دخول الموقع</h2>
+          <p class="muted">هذه البوابة مخصصة لك فقط. أدخل كلمة المرور للوصول إلى بيانات التشغيل.</p>
           <form id="login-form" novalidate>
-            <label for="phone">رقم الهاتف</label>
-            <input id="phone" name="phone" autocomplete="username" inputmode="tel" placeholder="مثال: +9639…" required />
             <label for="password">كلمة المرور</label>
-            <input id="password" name="password" autocomplete="current-password" type="password" placeholder="أدخل كلمة المرور" minlength="8" required />
+            <input id="password" name="password" autocomplete="current-password" type="password" placeholder="أدخل كلمة مرور الموقع" minlength="16" required />
             <p id="login-error" class="form-error" role="alert" hidden></p>
-            <button id="login-button" class="primary-button" type="submit">دخول آمن إلى البوابة</button>
+            <button id="login-button" class="primary-button" type="submit">فتح الموقع</button>
           </form>
-          <p class="security-note">تتحقق البوابة من الجلسة ومن دور المدير وحالة الحساب على الخادم قبل عرض أي بيانات تشغيلية.</p>
+          <p class="security-note">عند النجاح، تحفظ البوابة جلسة آمنة وطويلة الأمد على هذا المتصفح. لا تُخزّن كلمة المرور في المتصفح أو في الكود.</p>
         </div>
       </section>
     </main>
@@ -54,6 +53,8 @@
     </div>
 
     <template id="loading-template"><div class="loading-card"><span class="loading-ring"></span><p>جارٍ تحميل بيانات الإدارة…</p></div></template>
+    <script src="/admin/vendor/leaflet/leaflet.js" defer></script>
     <script src="/admin/app.js" defer></script>
+    <script src="/admin/live-map.js" defer></script>
   </body>
 </html>

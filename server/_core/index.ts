@@ -100,6 +100,7 @@ async function startServer() {
     next();
   });
   registerAdminWebRoutes(app);
+  app.use("/admin/vendor/leaflet", express.static(path.resolve(process.cwd(), "node_modules/leaflet/dist")));
   app.use("/admin", express.static(path.resolve(process.cwd(), "admin-site"), { index: "index.html" }));
 
   app.get("/api/health", (_req, res) => {
