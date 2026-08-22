@@ -9,6 +9,31 @@ import { asPublic, asService, asUser, assertHamaPoint, createOtpHash, decodeData
 const tokenInput = z.object({ accessToken: z.string().min(20) });
 const pointInput = z.object({ latitude: z.number(), longitude: z.number() });
 const imageInput = z.string().min(50).max(7_000_000);
+type HamaSearchResult = { label: string; latitude: number; longitude: number };
+const hamaSearchCache = new Map<string, HamaSearchResult[]>();
+let lastHamaSearchAt = 0;
+
+async function searchHamaAddresses(query: string): Promise<HamaSearchResult[]> {
+  const normalized = query.trim().toLowerCase();
+  const cached = hamaSearchCache.get(normalized);
+  if (cached) return cached;
+  const delay = Math.max(0, 1_050 - (Date.now() - lastHamaSearchAt));
+  if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+  lastHamaSearchAt = Date.now();
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.search = new URLSearchParams({
+    q: `${query}, حماة، سوريا`, format: "jsonv2", limit: "5", countrycodes: "sy", accept_language: "ar",
+    viewbox: `${HAMA_BOUNDS.minLongitude},${HAMA_BOUNDS.maxLatitude},${HAMA_BOUNDS.maxLongitude},${HAMA_BOUNDS.minLatitude}`, bounded: "1",
+  }).toString();
+  const response = await fetch(url, { headers: { "User-Agent": "Jarbou3Delivery/1.0 (Hama address search; support@jarbou3.local)", "Accept-Language": "ar" } });
+  if (!response.ok) throw new Error("HAMA_SEARCH_UNAVAILABLE");
+  const rows = await response.json() as Array<{ display_name: string; lat: string; lon: string }>;
+  const results = rows.map((row) => ({ label: row.display_name, latitude: Number(row.lat), longitude: Number(row.lon) }))
+    .filter((row) => Number.isFinite(row.latitude) && Number.isFinite(row.longitude) && isInsideHama(row.latitude, row.longitude));
+  if (hamaSearchCache.size > 100) hamaSearchCache.clear();
+  hamaSearchCache.set(normalized, results);
+  return results;
+}
 
 async function requireRole(accessToken: string, allowedRoles: Array<"customer" | "driver" | "admin">) {
   const authUser = await getAuthenticatedUser(accessToken);
@@ -32,6 +57,10 @@ export const appRouter = router({
   }),
 
   jarbou3: router({
+    searchHamaAddresses: publicProcedure
+      .input(z.object({ query: z.string().trim().min(2).max(80) }))
+      .query(async ({ input }) => searchHamaAddresses(input.query)),
+
     signUpCustomer: publicProcedure
       .input(z.object({ name: z.string().trim().min(2).max(100), phone: z.string().regex(/^\+?[0-9]{8,16}$/), password: z.string().min(8).max(72) }))
       .mutation(async ({ input }) => {
