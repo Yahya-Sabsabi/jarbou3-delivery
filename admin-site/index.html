@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="بوابة الإدارة المستقلة لجربوع للتوصيل" />
+    <title>جربوع | بوابة الإدارة</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <main id="login-view" class="login-layout">
+      <section class="login-aside" aria-hidden="true">
+        <div class="brand-lockup"><span class="brand-mark">ج</span><span>جربوع</span></div>
+        <div class="aside-copy"><p class="eyebrow">بوابة إدارية مستقلة</p><h1>إدارة تشغيل التوصيل بثقة ووضوح.</h1><p>منصة ويب مخصّصة للمديرين فقط، ترتبط بعمليات «جربوع» من دون أن تكون جزءاً من واجهة تطبيق الهاتف.</p></div>
+        <div class="aside-metrics"><div><strong>طلبات</strong><span>متابعة مباشرة</span></div><div><strong>سائقون</strong><span>تحقق وصلاحيات</span></div><div><strong>تقارير</strong><span>PDF وأرشفة</span></div></div>
+      </section>
+      <section class="login-panel">
+        <div class="login-card">
+          <div class="mobile-brand"><span class="brand-mark small">ج</span><span>جربوع</span></div>
+          <p class="eyebrow">وصول محمي</p>
+          <h2>تسجيل دخول المدير</h2>
+          <p class="muted">استخدم بيانات حساب المدير المعتمد. لا يمنح الدخول العادي صلاحية الوصول إلى هذه البوابة.</p>
+          <form id="login-form" novalidate>
+            <label for="phone">رقم الهاتف</label>
+            <input id="phone" name="phone" autocomplete="username" inputmode="tel" placeholder="مثال: +9639…" required />
+            <label for="password">كلمة المرور</label>
+            <input id="password" name="password" autocomplete="current-password" type="password" placeholder="أدخل كلمة المرور" minlength="8" required />
+            <p id="login-error" class="form-error" role="alert" hidden></p>
+            <button id="login-button" class="primary-button" type="submit">دخول آمن إلى البوابة</button>
+          </form>
+          <p class="security-note">تتحقق البوابة من الجلسة ومن دور المدير وحالة الحساب على الخادم قبل عرض أي بيانات تشغيلية.</p>
+        </div>
+      </section>
+    </main>
+
+    <div id="admin-view" class="admin-shell" hidden>
+      <aside class="sidebar">
+        <div class="brand-lockup"><span class="brand-mark">ج</span><span>جربوع</span></div>
+        <p class="sidebar-caption">بوابة الإدارة</p>
+        <nav id="sidebar-nav" aria-label="تنقل الإدارة">
+          <button class="nav-link active" data-view="overview"><span>▦</span>نظرة عامة</button>
+          <button class="nav-link" data-view="operations"><span>□</span>الطلبات والسائقون</button>
+          <button class="nav-link" data-view="reports"><span>▤</span>التقارير المالية</button>
+        </nav>
+        <div class="sidebar-footer"><div class="manager-chip"><span id="manager-initial" class="manager-avatar">م</span><div><strong id="manager-name">مدير جربوع</strong><small>مدير معتمد</small></div></div><button id="logout-button" class="logout-button">تسجيل الخروج</button></div>
+      </aside>
+      <section class="workspace">
+        <header class="topbar"><div><span class="eyebrow">مركز العمليات</span><h1 id="page-title">نظرة عامة</h1></div><div class="topbar-tools"><span class="live-status"><i></i>تنبيهات حية</span><button id="notification-button" class="notification-button" aria-label="عرض التنبيهات">◌<b id="notification-count">0</b></button></div></header>
+        <div id="notification-drawer" class="notification-drawer" hidden><div class="drawer-head"><strong>تنبيهات التشغيل</strong><button id="close-notifications" aria-label="إغلاق">×</button></div><div id="notification-list"></div></div>
+        <div id="site-message" class="site-message" hidden></div>
+        <main id="workspace-content" class="workspace-content" aria-live="polite"></main>
+      </section>
+    </div>
+
+    <template id="loading-template"><div class="loading-card"><span class="loading-ring"></span><p>جارٍ تحميل بيانات الإدارة…</p></div></template>
+    <script src="/admin/app.js" defer></script>
+  </body>
+</html>

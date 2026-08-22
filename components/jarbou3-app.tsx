@@ -8,12 +8,11 @@ import { trpc } from "@/lib/trpc";
 import { jarbou3Session } from "@/lib/jarbou3-session";
 import { HAMA_CENTER, formatSyp, type MapPoint } from "@/shared/jarbou3";
 import { HamaMap } from "@/components/hama-map";
-import { AdminDashboard } from "@/components/admin-dashboard";
 import { getCurrentHamaLocation, watchHamaLocation } from "@/lib/jarbou3-location";
 import { getOsrmRoute, type RouteEstimate } from "@/lib/osrm";
 import { subscribeToDriverLocation, unsubscribeFromDriverLocation } from "@/lib/jarbou3-realtime";
 
-type Role = "customer" | "driver" | "admin";
+type Role = "customer" | "driver";
 type CustomerPage = "home" | "order" | "track" | "otp";
 type DriverPage = "home" | "verify" | "drive" | "deliver";
 type DriverOrderPreview = { id: string; source_address: string; source_lat: number | string; source_lng: number | string; destination_address: string; destination_lat: number | string; destination_lng: number | string; estimated_price: number; payment_method: "cash" | "sham_cash"; distance_m: number };
@@ -52,7 +51,7 @@ function Heading({ eyebrow, title, aside }: { eyebrow?: string; title: string; a
 }
 
 function RoleSwitch({ role, onSelect }: { role: Role; onSelect: (role: Role) => void }) {
-  return <View style={styles.roleSwitch}>{(["customer", "driver", "admin"] as Role[]).map((option) => <Pressable key={option} onPress={() => onSelect(option)} style={[styles.role, role === option && styles.roleSelected]}><Text style={[styles.roleText, role === option && styles.roleTextSelected]}>{option === "customer" ? "عميل" : option === "driver" ? "سائق" : "إدارة"}</Text></Pressable>)}</View>;
+  return <View style={styles.roleSwitch}>{(["customer", "driver"] as Role[]).map((option) => <Pressable key={option} onPress={() => onSelect(option)} style={[styles.role, role === option && styles.roleSelected]}><Text style={[styles.roleText, role === option && styles.roleTextSelected]}>{option === "customer" ? "عميل" : "سائق"}</Text></Pressable>)}</View>;
 }
 
 function Customer() {
@@ -190,7 +189,6 @@ function Driver() {
 function Upload({ title, detail, uri, onPress }: { title: string; detail: string; uri: string | null; onPress: () => void }) { return <Pressable onPress={onPress} style={styles.upload}>{uri ? <Image source={{ uri }} style={styles.uploadPhoto} contentFit="cover" /> : <View style={styles.uploadPlaceholder}><Text style={styles.uploadSymbol}>＋</Text></View>}<View style={styles.flex}><Text style={styles.uploadTitle}>{title}</Text><Text style={styles.uploadDetail}>{detail}</Text></View></Pressable>; }
 function DeliveryStep({ number, title, detail }: { number: string; title: string; detail: string }) { return <View style={styles.deliveryStep}><Text style={styles.stepNumber}>{number}</Text><View><Text style={styles.stepTitle}>{title}</Text><Text style={styles.stepDetail}>{detail}</Text></View></View>; }
 
-function Admin() { return <AdminDashboard />; }
 function Top({ title, back }: { title: string; back: () => void }) { return <View style={styles.top}><Pressable onPress={back} style={styles.back}><Text style={styles.backText}>‹</Text></Pressable><Text style={styles.topTitle}>{title}</Text><View style={styles.backBlank} /></View>; }
 
 export function Jarbou3App() {
@@ -236,7 +234,7 @@ export function Jarbou3App() {
   return <View style={styles.root}>
     <RoleSwitch role={role} onSelect={setRole} />
     <View style={styles.accessBar}><Text style={styles.accessCopy}>{hasSession ? "جلسة محفوظة على هذا الجهاز" : "سجّل الدخول لربط طلباتك وبياناتك بأمان"}</Text><Pressable onPress={() => setAccessOpen(true)} style={styles.accessButton}><Text style={styles.accessButtonText}>{hasSession ? "الحساب" : "دخول آمن"}</Text></Pressable></View>
-    {role === "customer" ? <Customer /> : role === "driver" ? <Driver /> : <Admin />}
+    {role === "customer" ? <Customer /> : <Driver />}
     <Modal visible={accessOpen} transparent animationType="slide" onRequestClose={() => setAccessOpen(false)}>
       <View style={styles.modalBackdrop}><View style={styles.authSheet}>
         <View style={styles.handle} />

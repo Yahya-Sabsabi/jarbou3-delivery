@@ -43,7 +43,7 @@ export async function getAuthenticatedUser(accessToken: string) {
 }
 
 export async function getUserProfile(userId: string) {
-  const { data, error } = await asService().from("users").select("id,name,role,is_active").eq("id", userId).single();
+  const { data, error } = await asService().from("users").select("id,name,phone,role,is_active").eq("id", userId).single();
   if (error || !data) throw new Error("PROFILE_NOT_FOUND");
   return data;
 }
