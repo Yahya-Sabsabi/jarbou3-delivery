@@ -1,5 +1,5 @@
 import { COOKIE_NAME } from "../shared/const.js";
-import { HAMA_BOUNDS, isInsideHama } from "../shared/jarbou3";
+import { HAMA_BOUNDS, distanceMeters, isInsideHama } from "../shared/jarbou3";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -9,30 +9,52 @@ import { asPublic, asService, asUser, assertHamaPoint, createOtpHash, decodeData
 const tokenInput = z.object({ accessToken: z.string().min(20) });
 const pointInput = z.object({ latitude: z.number(), longitude: z.number() });
 const imageInput = z.string().min(50).max(7_000_000);
-type HamaSearchResult = { label: string; latitude: number; longitude: number };
+type HamaSearchFilter = "all" | "shops" | "streets";
+type HamaSearchResult = { label: string; latitude: number; longitude: number; kind: "shop" | "street" | "place" };
 const hamaSearchCache = new Map<string, HamaSearchResult[]>();
 let lastHamaSearchAt = 0;
 
-async function searchHamaAddresses(query: string): Promise<HamaSearchResult[]> {
-  const normalized = query.trim().toLowerCase();
+async function searchHamaAddresses(query: string, filter: HamaSearchFilter): Promise<HamaSearchResult[]> {
+  const normalized = `${filter}:${query.trim().toLowerCase()}`;
   const cached = hamaSearchCache.get(normalized);
   if (cached) return cached;
   const delay = Math.max(0, 1_050 - (Date.now() - lastHamaSearchAt));
   if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
   lastHamaSearchAt = Date.now();
   const url = new URL("https://nominatim.openstreetmap.org/search");
-  url.search = new URLSearchParams({
+  const params = new URLSearchParams({
     q: `${query}, حماة، سوريا`, format: "jsonv2", limit: "5", countrycodes: "sy", accept_language: "ar",
     viewbox: `${HAMA_BOUNDS.minLongitude},${HAMA_BOUNDS.maxLatitude},${HAMA_BOUNDS.maxLongitude},${HAMA_BOUNDS.minLatitude}`, bounded: "1",
-  }).toString();
+  });
+  if (filter === "shops") params.set("layer", "poi");
+  if (filter === "streets") params.set("layer", "address");
+  url.search = params.toString();
   const response = await fetch(url, { headers: { "User-Agent": "Jarbou3Delivery/1.0 (Hama address search; support@jarbou3.local)", "Accept-Language": "ar" } });
   if (!response.ok) throw new Error("HAMA_SEARCH_UNAVAILABLE");
-  const rows = await response.json() as Array<{ display_name: string; lat: string; lon: string }>;
-  const results = rows.map((row) => ({ label: row.display_name, latitude: Number(row.lat), longitude: Number(row.lon) }))
+  const rows = await response.json() as Array<{ display_name: string; lat: string; lon: string; category?: string; type?: string }>;
+  const results = rows.map((row) => {
+    const kind: HamaSearchResult["kind"] = row.category === "shop" || row.category === "amenity" ? "shop" : row.category === "highway" || row.type === "road" ? "street" : "place";
+    return { label: row.display_name, latitude: Number(row.lat), longitude: Number(row.lon), kind };
+  })
+    .filter((row) => filter === "all" || row.kind === (filter === "shops" ? "shop" : "street"))
     .filter((row) => Number.isFinite(row.latitude) && Number.isFinite(row.longitude) && isInsideHama(row.latitude, row.longitude));
   if (hamaSearchCache.size > 100) hamaSearchCache.clear();
   hamaSearchCache.set(normalized, results);
   return results;
+}
+
+async function notifyCustomer(userId: string, title: string, body: string, data: Record<string, string>) {
+  try {
+    const { data: tokens, error } = await asService().from("push_tokens").select("expo_push_token").eq("user_id", userId).limit(10);
+    if (error || !tokens?.length) return;
+    await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(tokens.map((token) => ({ to: token.expo_push_token, sound: "default", title, body, data, channelId: "jarbou3-orders" }))),
+    });
+  } catch (error) {
+    console.warn("[Jarbou3] Push notification skipped", error);
+  }
 }
 
 async function requireRole(accessToken: string, allowedRoles: Array<"customer" | "driver" | "admin">) {
@@ -58,8 +80,45 @@ export const appRouter = router({
 
   jarbou3: router({
     searchHamaAddresses: publicProcedure
-      .input(z.object({ query: z.string().trim().min(2).max(80) }))
-      .query(async ({ input }) => searchHamaAddresses(input.query)),
+      .input(z.object({ query: z.string().trim().min(2).max(80), filter: z.enum(["all", "shops", "streets"]).default("all") }))
+      .query(async ({ input }) => searchHamaAddresses(input.query, input.filter)),
+
+    listFavoriteAddresses: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["customer"]);
+        const { data, error } = await asUser(input.accessToken).from("favorite_addresses").select("id,label,address,latitude,longitude,created_at").eq("customer_id", authUser.id).order("created_at", { ascending: false }).limit(12);
+        if (error) throw new Error(error.message);
+        return data;
+      }),
+
+    saveFavoriteAddress: publicProcedure
+      .input(tokenInput.extend({ label: z.string().trim().min(2).max(80), address: z.string().trim().min(3).max(300), point: pointInput }))
+      .mutation(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["customer"]);
+        assertHamaPoint(input.point.latitude, input.point.longitude);
+        const { data, error } = await asUser(input.accessToken).from("favorite_addresses").insert({ customer_id: authUser.id, label: input.label, address: input.address, latitude: input.point.latitude, longitude: input.point.longitude }).select("id,label,address,latitude,longitude").single();
+        if (error) throw new Error(error.message);
+        return data;
+      }),
+
+    deleteFavoriteAddress: publicProcedure
+      .input(tokenInput.extend({ favoriteId: z.string().uuid() }))
+      .mutation(async ({ input }) => {
+        await requireRole(input.accessToken, ["customer"]);
+        const { error } = await asUser(input.accessToken).from("favorite_addresses").delete().eq("id", input.favoriteId);
+        if (error) throw new Error(error.message);
+        return { deleted: true };
+      }),
+
+    registerPushToken: publicProcedure
+      .input(tokenInput.extend({ expoPushToken: z.string().min(20).max(255), platform: z.enum(["ios", "android"]) }))
+      .mutation(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["customer", "driver", "admin"]);
+        const { error } = await asUser(input.accessToken).from("push_tokens").upsert({ user_id: authUser.id, expo_push_token: input.expoPushToken, platform: input.platform, last_seen_at: new Date().toISOString() }, { onConflict: "expo_push_token" });
+        if (error) throw new Error(error.message);
+        return { registered: true };
+      }),
 
     signUpCustomer: publicProcedure
       .input(z.object({ name: z.string().trim().min(2).max(100), phone: z.string().regex(/^\+?[0-9]{8,16}$/), password: z.string().min(8).max(72) }))
@@ -119,6 +178,7 @@ export const appRouter = router({
         await requireRole(input.accessToken, ["driver"]);
         const { data, error } = await asUser(input.accessToken).rpc("accept_order", { p_order_id: input.orderId });
         if (error) throw new Error(error.message);
+        if (data?.customer_id) await notifyCustomer(data.customer_id, "تم قبول طلبك", "تم تعيين سائق جربوع لطلبك وهو في طريقه إلى نقطة الاستلام.", { orderId: data.id, status: "accepted" });
         return data;
       }),
 
@@ -147,6 +207,13 @@ export const appRouter = router({
           p_lng: input.location.longitude,
         });
         if (error) throw new Error(error.message);
+        const { authUser } = await requireRole(input.accessToken, ["driver"]);
+        const service = asService();
+        const { data: activeOrder } = await service.from("orders").select("id,customer_id,source_lat,source_lng,driver_near_notified_at").eq("driver_id", authUser.id).in("status", ["accepted", "arriving"]).is("driver_near_notified_at", null).order("accepted_at", { ascending: true }).limit(1).maybeSingle();
+        if (activeOrder && distanceMeters(input.location, { latitude: Number(activeOrder.source_lat), longitude: Number(activeOrder.source_lng) }) <= 500) {
+          const { data: marked } = await service.from("orders").update({ driver_near_notified_at: new Date().toISOString(), status: "arriving" }).eq("id", activeOrder.id).is("driver_near_notified_at", null).select("id").maybeSingle();
+          if (marked) await notifyCustomer(activeOrder.customer_id, "السائق قريب منك", "سائق جربوع أصبح قريباً من نقطة الاستلام.", { orderId: activeOrder.id, status: "arriving" });
+        }
         return data;
       }),
 
@@ -197,6 +264,10 @@ export const appRouter = router({
         await requireRole(input.accessToken, ["driver"]);
         const { data, error } = await asUser(input.accessToken).rpc("verify_delivery_otp", { p_order_id: input.orderId, p_otp: input.otp });
         if (error) throw new Error(error.message);
+        if (data) {
+          const { data: order } = await asService().from("orders").select("id,customer_id").eq("id", input.orderId).maybeSingle();
+          if (order) await notifyCustomer(order.customer_id, "تم تسليم الطلب", "أُكد تسليم طلبك بنجاح. شكراً لاستخدام جربوع.", { orderId: order.id, status: "delivered" });
+        }
         return { verified: Boolean(data) };
       }),
 

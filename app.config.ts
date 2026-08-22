@@ -106,6 +106,13 @@ const config: ExpoConfig = {
       },
     ],
     [
+      "expo-notifications",
+      {
+        color: "#4A4A4A",
+        defaultChannel: "jarbou3-orders",
+      },
+    ],
+    [
       "expo-video",
       {
         supportsBackgroundPlayback: true,
