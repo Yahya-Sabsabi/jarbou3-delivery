@@ -262,18 +262,31 @@ function Top({ title, back }: { title: string; back: () => void }) { return <Vie
 
 export function Jarbou3App() {
   const [role, setRole] = useState<Role>("customer");
-  const [stage, setStage] = useState<"loading" | "choose" | "form" | "waiting" | "code" | "workspace">("loading");
+  const [stage, setStage] = useState<"loading" | "choose" | "form" | "waiting" | "code" | "signin" | "workspace">("loading");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [vehicleType, setVehicleType] = useState<"motorcycle" | "electric_scooter">("motorcycle");
   const [requestId, setRequestId] = useState<string | null>(null);
   const [verificationCode, setVerificationCode] = useState("");
+  const [accountPassword, setAccountPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [codeExpiresAt, setCodeExpiresAt] = useState<string | null>(null);
   const [codeClock, setCodeClock] = useState(Date.now());
   const [savedToken, setSavedToken] = useState<string | null | undefined>(undefined);
   const [workspaceName, setWorkspaceName] = useState("");
 
-  useEffect(() => { jarbou3Session.getAccessToken().then(setSavedToken); }, []);
+  useEffect(() => {
+    jarbou3Session.getAccessToken().then(setSavedToken);
+    jarbou3Session.getOnboarding().then((saved) => {
+      if (!saved) return;
+      setRole(saved.role);
+      setName(saved.name);
+      setPhone(saved.phone);
+      setRequestId(saved.requestId);
+      setCodeExpiresAt(saved.codeExpiresAt);
+      setStage(saved.stage);
+    });
+  }, []);
   const savedSession = trpc.jarbou3.sessionProfile.useQuery({ accessToken: savedToken ?? "pending-session-token-000" }, { enabled: Boolean(savedToken), retry: false });
   const onboardingStatus = trpc.jarbou3.onboardingStatus.useQuery({ requestId: requestId ?? "00000000-0000-0000-0000-000000000000", phone }, { enabled: Boolean(requestId) && Boolean(phone) && (stage === "waiting" || stage === "code"), refetchInterval: stage === "waiting" ? 4_000 : false, retry: false });
   useEffect(() => {
@@ -300,6 +313,12 @@ export function Jarbou3App() {
     return () => clearInterval(interval);
   }, [stage, codeExpiresAt]);
 
+  useEffect(() => {
+    if (stage === "form" || stage === "waiting" || stage === "code") {
+      jarbou3Session.saveOnboarding({ role, stage, name, phone, requestId, codeExpiresAt }).catch(() => undefined);
+    }
+  }, [role, stage, name, phone, requestId, codeExpiresAt]);
+
   const remainingSeconds = codeExpiresAt ? Math.max(0, Math.ceil((new Date(codeExpiresAt).getTime() - codeClock) / 1_000)) : null;
   const codeExpired = remainingSeconds === 0;
   const codeTimerLabel = remainingSeconds == null ? "بانتظار إرسال الرمز" : codeExpired ? "انتهت صلاحية الرمز" : `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")} متبقية`;
@@ -320,10 +339,21 @@ export function Jarbou3App() {
       setRole(result.user.role);
       setWorkspaceName(result.user.name);
       setVerificationCode("");
+      await jarbou3Session.clearOnboarding();
       setStage("workspace");
       Alert.alert("تم التحقق", `أهلاً ${result.user.name}`);
     },
     onError: (error) => Alert.alert("تعذر التحقق", error.message === "INVALID_OR_EXPIRED_CODE" ? "الرمز غير صحيح أو انتهت صلاحيته. راجع المدير لطلب رمز جديد." : "تعذر التحقق الآن. حاول لاحقاً."),
+  });
+  const signIn = trpc.jarbou3.signIn.useMutation({
+    onSuccess: async (result) => {
+      await jarbou3Session.save(result.accessToken, result.refreshToken);
+      setSavedToken(result.accessToken);
+      setRole(result.user.role);
+      setWorkspaceName(result.user.name);
+      setStage("workspace");
+    },
+    onError: () => Alert.alert("تعذر الدخول", "تحقق من الرقم وكلمة المرور ثم أعد المحاولة."),
   });
   const submitForm = () => {
     if (!/^\+?[0-9]{8,16}$/.test(phone) || name.trim().length < 2) {
@@ -335,16 +365,22 @@ export function Jarbou3App() {
   const verifyCode = () => {
     if (codeExpired) return Alert.alert("انتهت صلاحية الرمز", "اطلب من المدير إنشاء رمز WhatsApp جديد ثم تحقق منه." );
     if (!requestId || verificationCode.replace(/\D/g, "").length !== 6) return Alert.alert("الرمز غير مكتمل", "أدخل رمز التحقق المكوّن من ستة أرقام.");
-    verifyOnboarding.mutate({ requestId, phone, code: verificationCode.replace(/\D/g, "") });
+    if (accountPassword.length < 8 || accountPassword !== passwordConfirm) return Alert.alert("تحقق من كلمة المرور", "اكتب كلمة مرور من ثمانية أحرف على الأقل وأعد كتابتها مطابقة.");
+    verifyOnboarding.mutate({ requestId, phone, code: verificationCode.replace(/\D/g, ""), password: accountPassword });
   };
-  const logout = async () => { await jarbou3Session.clear(); setSavedToken(null); setRequestId(null); setVerificationCode(""); setCodeExpiresAt(null); setName(""); setPhone(""); setStage("choose"); };
+  const submitSignIn = () => {
+    if (!/^\+?[0-9]{8,16}$/.test(phone) || accountPassword.length < 8) return Alert.alert("تحقق من البيانات", "أدخل رقم WhatsApp وكلمة المرور.");
+    signIn.mutate({ phone, password: accountPassword });
+  };
+  const logout = async () => { await Promise.all([jarbou3Session.clear(), jarbou3Session.clearOnboarding()]); setSavedToken(null); setRequestId(null); setVerificationCode(""); setCodeExpiresAt(null); setName(""); setPhone(""); setStage("choose"); };
 
   if (stage === "loading") return <View style={styles.onboardingRoot}><ActivityIndicator color={gray} size="large" /></View>;
   if (stage === "workspace") return <View style={styles.root}><View style={styles.accessBar}><Text style={styles.accessCopy}>{role === "driver" ? "مساحة السفير" : "مساحة العميل"} · جلسة محمية على هذا الجهاز</Text><Pressable onPress={logout} style={styles.accessButton}><Text style={styles.accessButtonText}>تسجيل الخروج</Text></Pressable></View>{role === "customer" ? <Customer name={workspaceName} /> : <Driver name={workspaceName} />}</View>;
-  if (stage === "choose") return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>مرحباً بك في جربوع</Text><Text style={styles.onboardingCopy}>اختر نوع الحساب لبدء تسجيل واحد برقم WhatsApp. تُراجع الإدارة طلبك قبل إرسال رمز الدخول.</Text><Pressable onPress={() => { setRole("customer"); setStage("form"); }} style={styles.roleChoice}><Text style={styles.roleChoiceTitle}>أنا عميل</Text><Text style={styles.roleChoiceCopy}>أطلب التوصيل وأتابع السفير على الخريطة.</Text></Pressable><Pressable onPress={() => { setRole("driver"); setStage("form"); }} style={[styles.roleChoice, styles.roleChoiceDark]}><Text style={styles.roleChoiceTitleDark}>أنا سفير</Text><Text style={styles.roleChoiceCopyDark}>أستقبل الطلبات وأشارك موقعي أثناء الرحلة.</Text></Pressable><Text style={styles.onboardingNote}>لوحة الإدارة منفصلة ومحميّة وليست خياراً في تطبيق الهاتف.</Text></View></ScrollView>;
+  if (stage === "choose") return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>اختر نوع الحساب</Text><Pressable onPress={() => { setRole("customer"); setStage("form"); }} style={styles.roleChoice}><Text style={styles.roleChoiceTitle}>أنا عميل</Text></Pressable><Pressable onPress={() => { setRole("driver"); setStage("form"); }} style={[styles.roleChoice, styles.roleChoiceDark]}><Text style={styles.roleChoiceTitleDark}>أنا سفير</Text></Pressable></View></ScrollView>;
   if (stage === "waiting") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>تم إرسال طلبك</Text><Text style={styles.onboardingCopy}>يراجع المدير بياناتك ثم يرسل رمزاً من ستة أرقام إلى WhatsApp على الرقم المسجّل.</Text><Tag status>بانتظار مراجعة الإدارة</Tag><View style={styles.verificationGuide}><Text style={styles.verificationGuideTitle}>ماذا سيحدث الآن؟</Text><Text style={styles.verificationGuideText}>١. أبقِ رقم WhatsApp متاحاً.</Text><Text style={styles.verificationGuideText}>٢. ستنتقل تلقائياً إلى إدخال الرمز عند إرساله من الإدارة.</Text><Text style={styles.verificationGuideText}>٣. لا تشارك الرمز مع أي شخص؛ يستخدم للدخول إلى حسابك فقط.</Text></View><Action title={onboardingStatus.isFetching ? "جارٍ التحقق…" : "تحقق من وصول الرمز"} onPress={() => onboardingStatus.refetch()} /><Pressable onPress={() => setStage("form")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>تعديل البيانات</Text></Pressable></View></View>;
-  if (stage === "code") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>أدخل رمز التحقق</Text><Text style={styles.onboardingCopy}>انسخ رمز WhatsApp المكوّن من ستة أرقام والصقه هنا. يرسل المدير رمزاً مؤقتاً لكل طلب.</Text><View style={[styles.verificationTimer, codeExpired && styles.verificationTimerExpired]}><Text style={styles.verificationTimerLabel}>{codeExpired ? "الرمز غير صالح الآن" : "صلاحية الرمز"}</Text><Text style={[styles.verificationTimerValue, codeExpired && styles.verificationTimerValueExpired]}>{codeTimerLabel}</Text></View><View style={styles.verificationGuide}><Text style={styles.verificationGuideText}>تحقق من رقمك المسجل قبل الإدخال، ولا ترسل الرمز إلى أي جهة أخرى.</Text></View><TextInput value={verificationCode} onChangeText={(value) => setVerificationCode(value.replace(/\D/g, ""))} autoFocus keyboardType="number-pad" maxLength={6} placeholder="••••••" placeholderTextColor="#A0A0A0" style={styles.onboardingOtp} textAlign="center" editable={!codeExpired} /><Pressable onPress={verifyCode} disabled={verifyOnboarding.isPending || codeExpired} style={[styles.authAction, (verifyOnboarding.isPending || codeExpired) && styles.authActionDisabled]}>{verifyOnboarding.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>{codeExpired ? "اطلب رمزاً جديداً من المدير" : "تحقق والدخول"}</Text>}</Pressable><Pressable onPress={() => setStage("waiting")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>لم يصل الرمز بعد؟ تحقق من حالته</Text></Pressable></View></View>;
-  return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Top title={role === "driver" ? "تسجيل سفير" : "تسجيل عميل"} back={() => setStage("choose")} /><Text style={styles.onboardingTitle}>{role === "driver" ? "بيانات السفير" : "بيانات العميل"}</Text><Text style={styles.onboardingCopy}>{role === "driver" ? "تُستخدم هذه البيانات لمراجعة الحساب ثم تفعيل مساحة استقبال الطلبات." : "تُستخدم فقط لإنشاء حسابك وربط طلباتك بشكل آمن."}</Text><TextInput value={name} onChangeText={setName} placeholder="الاسم الكامل" placeholderTextColor="#999" style={styles.authInput} textAlign="right" /><TextInput value={phone} onChangeText={setPhone} placeholder="رقم WhatsApp، مثال +9639…" placeholderTextColor="#999" keyboardType="phone-pad" style={styles.authInput} textAlign="right" />{role === "driver" ? <View style={styles.vehicleChoices}>{([{ key: "motorcycle", label: "دراجة نارية" }, { key: "electric_scooter", label: "دراجة كهربائية" }] as const).map((vehicle) => <Pressable key={vehicle.key} onPress={() => setVehicleType(vehicle.key)} style={[styles.vehicleChoice, vehicleType === vehicle.key && styles.vehicleChoiceSelected]}><Text style={styles.vehicleChoiceText}>{vehicle.label}</Text></Pressable>)}</View> : null}<Pressable onPress={submitForm} disabled={submitOnboarding.isPending} style={[styles.authAction, submitOnboarding.isPending && styles.authActionDisabled]}>{submitOnboarding.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>إرسال للمراجعة</Text>}</Pressable><Text style={styles.onboardingNote}>لن تنشئ كلمة مرور أو رمزاً داخل التطبيق؛ يُرسل رمز مؤقت من المدير بعد المراجعة.</Text></View></ScrollView>;
+  if (stage === "code") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>أدخل رمز التحقق</Text><Text style={styles.onboardingCopy}>أدخل الرمز الذي وصلك ثم اختر كلمة مرور لحسابك.</Text><View style={[styles.verificationTimer, codeExpired && styles.verificationTimerExpired]}><Text style={styles.verificationTimerLabel}>{codeExpired ? "الرمز غير صالح الآن" : "صلاحية الرمز"}</Text><Text style={[styles.verificationTimerValue, codeExpired && styles.verificationTimerValueExpired]}>{codeTimerLabel}</Text></View><TextInput value={verificationCode} onChangeText={(value) => setVerificationCode(value.replace(/\D/g, ""))} autoFocus keyboardType="number-pad" maxLength={6} placeholder="••••••" placeholderTextColor="#A0A0A0" style={styles.onboardingOtp} textAlign="center" editable={!codeExpired} /><TextInput value={accountPassword} onChangeText={setAccountPassword} placeholder="كلمة المرور" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><TextInput value={passwordConfirm} onChangeText={setPasswordConfirm} placeholder="أعد كتابة كلمة المرور" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><Pressable onPress={verifyCode} disabled={verifyOnboarding.isPending || codeExpired} style={[styles.authAction, (verifyOnboarding.isPending || codeExpired) && styles.authActionDisabled]}>{verifyOnboarding.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>{codeExpired ? "اطلب رمزاً جديداً من المدير" : "تحقق والدخول"}</Text>}</Pressable><Pressable onPress={() => setStage("waiting")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>لم يصل الرمز بعد؟ تحقق من حالته</Text></Pressable></View></View>;
+  if (stage === "signin") return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Top title={role === "driver" ? "دخول سفير" : "دخول عميل"} back={() => setStage("choose")} /><Text style={styles.onboardingTitle}>تسجيل الدخول</Text><TextInput value={phone} onChangeText={setPhone} placeholder="رقم WhatsApp" placeholderTextColor="#999" keyboardType="phone-pad" style={styles.authInput} textAlign="right" /><TextInput value={accountPassword} onChangeText={setAccountPassword} placeholder="كلمة المرور" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><Pressable onPress={submitSignIn} disabled={signIn.isPending} style={[styles.authAction, signIn.isPending && styles.authActionDisabled]}>{signIn.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>تسجيل الدخول</Text>}</Pressable></View></ScrollView>;
+  return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Top title={role === "driver" ? "تسجيل سفير" : "تسجيل عميل"} back={() => setStage("choose")} /><Text style={styles.onboardingTitle}>{role === "driver" ? "بيانات السفير" : "بيانات العميل"}</Text><Text style={styles.onboardingCopy}>{role === "driver" ? "أدخل بياناتك لإرسال طلبك للمراجعة." : "أدخل بياناتك لإكمال التسجيل."}</Text><TextInput value={name} onChangeText={setName} placeholder="الاسم الكامل" placeholderTextColor="#999" style={styles.authInput} textAlign="right" /><TextInput value={phone} onChangeText={setPhone} placeholder="رقم WhatsApp، مثال +9639…" placeholderTextColor="#999" keyboardType="phone-pad" style={styles.authInput} textAlign="right" />{role === "driver" ? <View style={styles.vehicleChoices}>{([{ key: "motorcycle", label: "دراجة نارية" }, { key: "electric_scooter", label: "دراجة كهربائية" }] as const).map((vehicle) => <Pressable key={vehicle.key} onPress={() => setVehicleType(vehicle.key)} style={[styles.vehicleChoice, vehicleType === vehicle.key && styles.vehicleChoiceSelected]}><Text style={styles.vehicleChoiceText}>{vehicle.label}</Text></Pressable>)}</View> : null}<Pressable onPress={submitForm} disabled={submitOnboarding.isPending} style={[styles.authAction, submitOnboarding.isPending && styles.authActionDisabled]}>{submitOnboarding.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>إنشاء حساب</Text>}</Pressable><Pressable onPress={() => setStage("signin")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>لدي حساب بالفعل</Text></Pressable></View></ScrollView>;
 }
 
 const styles = StyleSheet.create({

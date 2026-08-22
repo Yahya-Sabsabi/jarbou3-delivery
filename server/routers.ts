@@ -19,6 +19,9 @@ let lastHamaSearchAt = 0;
 const onboardingWindows = new Map<string, { count: number; startedAt: number }>();
 const ONBOARDING_WINDOW_MS = 15 * 60 * 1000;
 const ONBOARDING_MAX_ATTEMPTS = 4;
+const CODE_MAX_ATTEMPTS = 3;
+const CODE_RETRY_DELAY_MS = 3 * 60 * 1000;
+const RECOVERY_CODE_MS = 10 * 60 * 1000;
 
 function assertOnboardingRateLimit(key: string) {
   const current = onboardingWindows.get(key);
@@ -33,6 +36,10 @@ function assertOnboardingRateLimit(key: string) {
 
 function generatedAuthPassword() {
   return randomBytes(32).toString("base64url");
+}
+
+function retryAfterIso() {
+  return new Date(Date.now() + CODE_RETRY_DELAY_MS).toISOString();
 }
 
 async function searchHamaAddresses(query: string, filter: HamaSearchFilter): Promise<HamaSearchResult[]> {
@@ -158,6 +165,72 @@ export const appRouter = router({
         return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: { id: data.user.id, name: profile.name, role: profile.role } };
       }),
 
+    requestAccountRecovery: publicProcedure
+      .input(z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().regex(/^\+?[0-9]{8,16}$/), requestedRole: z.enum(["customer", "driver"]) }))
+      .mutation(async ({ input, ctx }) => {
+        assertOnboardingRateLimit(`recovery:${ctx.req.ip ?? "unknown"}:${input.phone}`);
+        const service = asService();
+        const { data: profile, error: profileError } = await service.from("users").select("id,name,phone,role").eq("phone", input.phone).eq("role", input.requestedRole).maybeSingle();
+        if (profileError) throw new Error(profileError.message);
+        if (!profile || profile.name.trim() !== input.fullName.trim()) throw new Error("RECOVERY_ACCOUNT_NOT_FOUND");
+        const { data: active, error: activeError } = await service.from("account_recovery_requests").select("id,status,code_expires_at,retry_after").eq("phone", input.phone).in("status", ["pending_admin", "code_sent", "verified", "locked"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (activeError) throw new Error(activeError.message);
+        if (active?.status === "locked" && active.retry_after && new Date(active.retry_after).getTime() > Date.now()) return { requestId: active.id, status: "locked" as const, retryAfter: active.retry_after, codeExpiresAt: null };
+        if (active?.status === "code_sent" && active.code_expires_at && new Date(active.code_expires_at).getTime() > Date.now()) return { requestId: active.id, status: "code_sent" as const, retryAfter: null, codeExpiresAt: active.code_expires_at };
+        const { data, error } = await service.from("account_recovery_requests").insert({ full_name: input.fullName, phone: input.phone, requested_role: input.requestedRole, user_id: profile.id }).select("id,status,code_expires_at,retry_after").single();
+        if (error || !data) throw new Error(error?.message ?? "RECOVERY_REQUEST_FAILED");
+        return { requestId: data.id, status: data.status, retryAfter: data.retry_after, codeExpiresAt: data.code_expires_at };
+      }),
+
+    recoveryStatus: publicProcedure
+      .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/) }))
+      .query(async ({ input }) => {
+        const { data, error } = await asService().from("account_recovery_requests").select("status,code_expires_at,retry_after").eq("id", input.requestId).eq("phone", input.phone).maybeSingle();
+        if (error || !data) throw new Error("RECOVERY_REQUEST_NOT_FOUND");
+        return { status: data.status, codeExpiresAt: data.code_expires_at, retryAfter: data.retry_after };
+      }),
+
+    verifyRecoveryCode: publicProcedure
+      .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), code: z.string().regex(/^\d{6}$/) }))
+      .mutation(async ({ input, ctx }) => {
+        assertOnboardingRateLimit(`recovery-verify:${ctx.req.ip ?? "unknown"}:${input.requestId}`);
+        const service = asService();
+        const { data: request, error } = await service.from("account_recovery_requests").select("id,user_id,status,verification_code_hash,code_expires_at,code_attempts,retry_after").eq("id", input.requestId).eq("phone", input.phone).maybeSingle();
+        if (error || !request || request.status !== "code_sent" || !request.verification_code_hash || !request.code_expires_at) throw new Error("INVALID_OR_EXPIRED_CODE");
+        if (new Date(request.code_expires_at).getTime() <= Date.now()) throw new Error("INVALID_OR_EXPIRED_CODE");
+        const valid = await bcrypt.compare(input.code, request.verification_code_hash);
+        if (!valid) {
+          const attempts = Number(request.code_attempts) + 1;
+          const locked = attempts >= CODE_MAX_ATTEMPTS;
+          const retryAfter = locked ? retryAfterIso() : null;
+          await service.from("account_recovery_requests").update({ code_attempts: attempts, status: locked ? "locked" : "code_sent", verification_code_hash: locked ? null : request.verification_code_hash, retry_after: retryAfter }).eq("id", request.id);
+          if (locked) throw new Error("RECOVERY_CODE_LOCKED");
+          throw new Error("INVALID_OR_EXPIRED_CODE");
+        }
+        const resetToken = randomBytes(32).toString("base64url");
+        const resetTokenExpiresAt = new Date(Date.now() + RECOVERY_CODE_MS).toISOString();
+        const { error: updateError } = await service.from("account_recovery_requests").update({ status: "verified", verified_at: new Date().toISOString(), verification_code_hash: null, code_attempts: 0, reset_token_hash: await bcrypt.hash(resetToken, 12), reset_token_expires_at: resetTokenExpiresAt }).eq("id", request.id);
+        if (updateError) throw new Error(updateError.message);
+        return { resetToken, resetTokenExpiresAt };
+      }),
+
+    completeAccountRecovery: publicProcedure
+      .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), resetToken: z.string().min(20), password: z.string().min(8).max(72) }))
+      .mutation(async ({ input }) => {
+        const service = asService();
+        const { data: request, error } = await service.from("account_recovery_requests").select("id,user_id,status,reset_token_hash,reset_token_expires_at").eq("id", input.requestId).eq("phone", input.phone).maybeSingle();
+        if (error || !request || request.status !== "verified" || !request.user_id || !request.reset_token_hash || !request.reset_token_expires_at || new Date(request.reset_token_expires_at).getTime() <= Date.now()) throw new Error("RECOVERY_NOT_VERIFIED");
+        if (!await bcrypt.compare(input.resetToken, request.reset_token_hash)) throw new Error("RECOVERY_NOT_VERIFIED");
+        const { error: updateAuthError } = await service.auth.admin.updateUserById(request.user_id, { password: input.password, phone_confirm: true });
+        if (updateAuthError) throw new Error(updateAuthError.message);
+        const { error: closeError } = await service.from("account_recovery_requests").update({ status: "completed", reset_token_hash: null, reset_token_expires_at: null }).eq("id", request.id);
+        if (closeError) throw new Error(closeError.message);
+        const { data: session, error: signInError } = await asPublic().auth.signInWithPassword({ phone: input.phone, password: input.password });
+        if (signInError || !session.session || !session.user) throw new Error(signInError?.message ?? "SIGN_IN_FAILED");
+        const profile = await getUserProfile(session.user.id);
+        return { accessToken: session.session.access_token, refreshToken: session.session.refresh_token, user: { id: session.user.id, name: profile.name, role: profile.role } };
+      }),
+
     sessionProfile: publicProcedure
       .input(tokenInput)
       .query(async ({ input }) => {
@@ -171,25 +244,30 @@ export const appRouter = router({
         assertOnboardingRateLimit(`submit:${ctx.req.ip ?? "unknown"}:${input.phone}`);
         if (input.requestedRole === "driver" && !input.vehicleType) throw new Error("VEHICLE_TYPE_REQUIRED");
         const service = asService();
-        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,status,requested_role,code_expires_at").eq("phone", input.phone).maybeSingle();
+        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,status,requested_role,code_expires_at,retry_after").eq("phone", input.phone).maybeSingle();
         if (existingError) throw new Error(existingError.message);
         if (existing?.status === "verified") throw new Error("ACCOUNT_ALREADY_VERIFIED");
-        if (existing) return { requestId: existing.id, status: existing.status, requestedRole: existing.requested_role, codeExpiresAt: existing.code_expires_at };
-        const { data, error } = await service.from("account_verification_requests").insert({ full_name: input.fullName, phone: input.phone, requested_role: input.requestedRole, vehicle_type: input.requestedRole === "driver" ? input.vehicleType : null }).select("id,status,requested_role,code_expires_at").single();
+        if (existing?.status === "locked" && existing.retry_after && new Date(existing.retry_after).getTime() <= Date.now()) {
+          const { data: reopened, error: reopenError } = await service.from("account_verification_requests").update({ status: "pending_admin", retry_after: null, verification_code_hash: null, code_attempts: 0, code_expires_at: null }).eq("id", existing.id).select("id,status,requested_role,code_expires_at,retry_after").single();
+          if (reopenError || !reopened) throw new Error(reopenError?.message ?? "ONBOARDING_REQUEST_FAILED");
+          return { requestId: reopened.id, status: reopened.status, requestedRole: reopened.requested_role, codeExpiresAt: reopened.code_expires_at, retryAfter: reopened.retry_after };
+        }
+        if (existing) return { requestId: existing.id, status: existing.status, requestedRole: existing.requested_role, codeExpiresAt: existing.code_expires_at, retryAfter: existing.retry_after };
+        const { data, error } = await service.from("account_verification_requests").insert({ full_name: input.fullName, phone: input.phone, requested_role: input.requestedRole, vehicle_type: input.requestedRole === "driver" ? input.vehicleType : null }).select("id,status,requested_role,code_expires_at,retry_after").single();
         if (error || !data) throw new Error(error?.message ?? "ONBOARDING_REQUEST_FAILED");
-        return { requestId: data.id, status: data.status, requestedRole: data.requested_role, codeExpiresAt: data.code_expires_at };
+        return { requestId: data.id, status: data.status, requestedRole: data.requested_role, codeExpiresAt: data.code_expires_at, retryAfter: data.retry_after };
       }),
 
     onboardingStatus: publicProcedure
       .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/) }))
       .query(async ({ input }) => {
-        const { data, error } = await asService().from("account_verification_requests").select("status,code_expires_at").eq("id", input.requestId).eq("phone", input.phone).maybeSingle();
+        const { data, error } = await asService().from("account_verification_requests").select("status,code_expires_at,retry_after").eq("id", input.requestId).eq("phone", input.phone).maybeSingle();
         if (error || !data) throw new Error("ONBOARDING_REQUEST_NOT_FOUND");
-        return { status: data.status, codeExpiresAt: data.code_expires_at };
+        return { status: data.status, codeExpiresAt: data.code_expires_at, retryAfter: data.retry_after };
       }),
 
     verifyOnboardingCode: publicProcedure
-      .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), code: z.string().regex(/^\d{6}$/) }))
+      .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), code: z.string().regex(/^\d{6}$/), password: z.string().min(8).max(72) }))
       .mutation(async ({ input, ctx }) => {
         assertOnboardingRateLimit(`verify:${ctx.req.ip ?? "unknown"}:${input.requestId}`);
         const service = asService();
@@ -199,18 +277,19 @@ export const appRouter = router({
           await service.from("account_verification_requests").update({ status: "expired" }).eq("id", request.id);
           throw new Error("INVALID_OR_EXPIRED_CODE");
         }
-        if (request.code_attempts >= 5) {
-          await service.from("account_verification_requests").update({ status: "locked" }).eq("id", request.id);
+        if (request.code_attempts >= CODE_MAX_ATTEMPTS) {
+          await service.from("account_verification_requests").update({ status: "locked", retry_after: retryAfterIso(), verification_code_hash: null }).eq("id", request.id);
           throw new Error("INVALID_OR_EXPIRED_CODE");
         }
         const valid = await bcrypt.compare(input.code, request.verification_code_hash);
         if (!valid) {
           const attempts = request.code_attempts + 1;
-          await service.from("account_verification_requests").update({ code_attempts: attempts, status: attempts >= 5 ? "locked" : "code_sent" }).eq("id", request.id);
+          const locked = attempts >= CODE_MAX_ATTEMPTS;
+          await service.from("account_verification_requests").update({ code_attempts: attempts, status: locked ? "locked" : "code_sent", retry_after: locked ? retryAfterIso() : null, verification_code_hash: locked ? null : request.verification_code_hash }).eq("id", request.id);
           throw new Error("INVALID_OR_EXPIRED_CODE");
         }
         let userId = request.auth_user_id;
-        const authPassword = generatedAuthPassword();
+        const authPassword = input.password;
         if (!userId) {
           const { data: existingProfile, error: profileError } = await service.from("users").select("id,role").eq("phone", request.phone).maybeSingle();
           if (profileError) throw new Error(profileError.message);
