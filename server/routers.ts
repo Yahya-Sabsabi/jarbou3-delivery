@@ -1,5 +1,7 @@
 import { COOKIE_NAME } from "../shared/const.js";
 import { HAMA_BOUNDS, distanceMeters, isInsideHama } from "../shared/jarbou3";
+import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -13,6 +15,24 @@ type HamaSearchFilter = "all" | "shops" | "streets";
 type HamaSearchResult = { label: string; latitude: number; longitude: number; kind: "shop" | "street" | "place" };
 const hamaSearchCache = new Map<string, HamaSearchResult[]>();
 let lastHamaSearchAt = 0;
+const onboardingWindows = new Map<string, { count: number; startedAt: number }>();
+const ONBOARDING_WINDOW_MS = 15 * 60 * 1000;
+const ONBOARDING_MAX_ATTEMPTS = 4;
+
+function assertOnboardingRateLimit(key: string) {
+  const current = onboardingWindows.get(key);
+  const now = Date.now();
+  if (!current || now - current.startedAt > ONBOARDING_WINDOW_MS) {
+    onboardingWindows.set(key, { count: 1, startedAt: now });
+    return;
+  }
+  if (current.count >= ONBOARDING_MAX_ATTEMPTS) throw new Error("ONBOARDING_RATE_LIMITED");
+  current.count += 1;
+}
+
+function generatedAuthPassword() {
+  return randomBytes(32).toString("base64url");
+}
 
 async function searchHamaAddresses(query: string, filter: HamaSearchFilter): Promise<HamaSearchResult[]> {
   const normalized = `${filter}:${query.trim().toLowerCase()}`;
@@ -137,6 +157,77 @@ export const appRouter = router({
         return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: { id: data.user.id, name: profile.name, role: profile.role } };
       }),
 
+    sessionProfile: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        const { authUser, profile } = await requireRole(input.accessToken, ["customer", "driver"]);
+        return { id: authUser.id, name: profile.name, role: profile.role };
+      }),
+
+    submitOnboarding: publicProcedure
+      .input(z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().regex(/^\+?[0-9]{8,16}$/), requestedRole: z.enum(["customer", "driver"]), vehicleType: z.enum(["motorcycle", "electric_scooter"]).optional() }))
+      .mutation(async ({ input, ctx }) => {
+        assertOnboardingRateLimit(`submit:${ctx.req.ip ?? "unknown"}:${input.phone}`);
+        if (input.requestedRole === "driver" && !input.vehicleType) throw new Error("VEHICLE_TYPE_REQUIRED");
+        const service = asService();
+        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,status,requested_role").eq("phone", input.phone).maybeSingle();
+        if (existingError) throw new Error(existingError.message);
+        if (existing?.status === "verified") throw new Error("ACCOUNT_ALREADY_VERIFIED");
+        if (existing) return { requestId: existing.id, status: existing.status, requestedRole: existing.requested_role };
+        const { data, error } = await service.from("account_verification_requests").insert({ full_name: input.fullName, phone: input.phone, requested_role: input.requestedRole, vehicle_type: input.requestedRole === "driver" ? input.vehicleType : null }).select("id,status,requested_role").single();
+        if (error || !data) throw new Error(error?.message ?? "ONBOARDING_REQUEST_FAILED");
+        return { requestId: data.id, status: data.status, requestedRole: data.requested_role };
+      }),
+
+    verifyOnboardingCode: publicProcedure
+      .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), code: z.string().regex(/^\d{6}$/) }))
+      .mutation(async ({ input, ctx }) => {
+        assertOnboardingRateLimit(`verify:${ctx.req.ip ?? "unknown"}:${input.requestId}`);
+        const service = asService();
+        const { data: request, error: requestError } = await service.from("account_verification_requests").select("id,full_name,phone,requested_role,status,verification_code_hash,code_expires_at,code_attempts,auth_user_id").eq("id", input.requestId).eq("phone", input.phone).maybeSingle();
+        if (requestError || !request || request.status !== "code_sent" || !request.verification_code_hash || !request.code_expires_at) throw new Error("INVALID_OR_EXPIRED_CODE");
+        if (new Date(request.code_expires_at).getTime() <= Date.now()) {
+          await service.from("account_verification_requests").update({ status: "expired" }).eq("id", request.id);
+          throw new Error("INVALID_OR_EXPIRED_CODE");
+        }
+        if (request.code_attempts >= 5) {
+          await service.from("account_verification_requests").update({ status: "locked" }).eq("id", request.id);
+          throw new Error("INVALID_OR_EXPIRED_CODE");
+        }
+        const valid = await bcrypt.compare(input.code, request.verification_code_hash);
+        if (!valid) {
+          const attempts = request.code_attempts + 1;
+          await service.from("account_verification_requests").update({ code_attempts: attempts, status: attempts >= 5 ? "locked" : "code_sent" }).eq("id", request.id);
+          throw new Error("INVALID_OR_EXPIRED_CODE");
+        }
+        let userId = request.auth_user_id;
+        const authPassword = generatedAuthPassword();
+        if (!userId) {
+          const { data: existingProfile, error: profileError } = await service.from("users").select("id,role").eq("phone", request.phone).maybeSingle();
+          if (profileError) throw new Error(profileError.message);
+          if (existingProfile?.role === "admin") throw new Error("ACCOUNT_CONFLICT");
+          if (existingProfile) {
+            userId = existingProfile.id;
+            const { error: updateAuthError } = await service.auth.admin.updateUserById(userId, { password: authPassword, phone_confirm: true, user_metadata: { name: request.full_name, phone: request.phone } });
+            if (updateAuthError) throw new Error(updateAuthError.message);
+          } else {
+            const { data: created, error: createError } = await service.auth.admin.createUser({ phone: request.phone, password: authPassword, phone_confirm: true, user_metadata: { name: request.full_name, phone: request.phone } });
+            if (createError || !created.user) throw new Error(createError?.message ?? "AUTH_ACCOUNT_CREATE_FAILED");
+            userId = created.user.id;
+          }
+        } else {
+          const { error: updateAuthError } = await service.auth.admin.updateUserById(userId, { password: authPassword, phone_confirm: true, user_metadata: { name: request.full_name, phone: request.phone } });
+          if (updateAuthError) throw new Error(updateAuthError.message);
+        }
+        const { error: profileUpdateError } = await service.from("users").update({ name: request.full_name, phone: request.phone, role: request.requested_role, is_active: true }).eq("id", userId);
+        if (profileUpdateError) throw new Error(profileUpdateError.message);
+        const { error: verificationUpdateError } = await service.from("account_verification_requests").update({ status: "verified", auth_user_id: userId, verification_code_hash: null, code_attempts: 0 }).eq("id", request.id);
+        if (verificationUpdateError) throw new Error(verificationUpdateError.message);
+        const { data: sessionResult, error: sessionError } = await asPublic().auth.signInWithPassword({ phone: request.phone, password: authPassword });
+        if (sessionError || !sessionResult.session || !sessionResult.user) throw new Error(sessionError?.message ?? "SESSION_CREATE_FAILED");
+        return { accessToken: sessionResult.session.access_token, refreshToken: sessionResult.session.refresh_token, user: { id: sessionResult.user.id, name: request.full_name, role: request.requested_role } };
+      }),
+
     submitDriverVerification: publicProcedure
       .input(tokenInput.extend({ personalPhoto: imageInput, identityPhoto: imageInput }))
       .mutation(async ({ input }) => {
@@ -182,17 +273,34 @@ export const appRouter = router({
         return data;
       }),
 
+    declineOrder: publicProcedure
+      .input(tokenInput.extend({ orderId: z.string().uuid() }))
+      .mutation(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["driver"]);
+        const service = asService();
+        const { data: order, error: orderError } = await service.from("orders").select("id").eq("id", input.orderId).eq("status", "requested").is("driver_id", null).maybeSingle();
+        if (orderError || !order) throw new Error("ORDER_NOT_AVAILABLE");
+        const { error } = await service.from("driver_order_declines").upsert({ driver_id: authUser.id, order_id: order.id }, { onConflict: "driver_id,order_id", ignoreDuplicates: true });
+        if (error) throw new Error(error.message);
+        return { declined: true, orderId: order.id };
+      }),
+
     availableDriverOrders: publicProcedure
       .input(tokenInput)
       .query(async ({ input }) => {
-        await requireRole(input.accessToken, ["driver"]);
-        const { data, error } = await asUser(input.accessToken)
+        const { authUser } = await requireRole(input.accessToken, ["driver"]);
+        const { data: declines, error: declineError } = await asService().from("driver_order_declines").select("order_id").eq("driver_id", authUser.id).limit(100);
+        if (declineError) throw new Error(declineError.message);
+        const declinedIds = (declines ?? []).map((decline) => decline.order_id);
+        let query = asUser(input.accessToken)
           .from("orders")
           .select("id,source_address,source_lat,source_lng,destination_address,destination_lat,destination_lng,estimated_price,payment_method,distance_m,created_at")
           .eq("status", "requested")
           .is("driver_id", null)
           .order("created_at", { ascending: true })
           .limit(20);
+        if (declinedIds.length) query = query.not("id", "in", `(${declinedIds.join(",")})`);
+        const { data, error } = await query;
         if (error) throw new Error(error.message);
         return data;
       }),

@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { parse as parseCookie } from "cookie";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
+import { randomInt } from "node:crypto";
 
 import { asPublic, asService, asUser, getAuthenticatedUser, getUserProfile } from "./jarbou3-supabase";
 import { buildAdminNotifications, isSameOriginRequest, normalizeReportMonth, type AdminNotification } from "./admin-web-utils";
@@ -10,6 +12,7 @@ const ADMIN_SESSION_MS = 60 * 60 * 1000;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
 const loginAttempts = new Map<string, { count: number; startedAt: number }>();
+const VERIFICATION_CODE_MS = 10 * 60 * 1000;
 
 type AdminSession = {
   token: string;
@@ -119,6 +122,12 @@ async function listReports() {
   return data ?? [];
 }
 
+async function listAccountVerifications() {
+  const { data, error } = await asService().from("account_verification_requests").select("id,full_name,phone,requested_role,vehicle_type,status,code_expires_at,created_at,updated_at").in("status", ["pending_admin", "code_sent", "locked"]).order("created_at", { ascending: true }).limit(40);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
 const loginSchema = z.object({ phone: z.string().regex(/^\+?[0-9]{8,16}$/), password: z.string().min(8).max(72) });
 const generateReportSchema = z.object({ reportMonth: z.string() });
 
@@ -224,6 +233,44 @@ export function registerAdminWebRoutes(app: Express) {
       clearInterval(interval);
       clearTimeout(timeout);
     });
+  });
+
+  app.get("/admin/api/verifications", async (req, res) => {
+    try {
+      await requireAdminSession(req);
+      res.json({ requests: await listAccountVerifications() });
+    } catch (error) {
+      res.status(authErrorStatus(error)).json({ error: "ADMIN_VERIFICATIONS_DENIED" });
+    }
+  });
+
+  app.post("/admin/api/verifications/:requestId/send-code", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      const session = await requireAdminSession(req);
+      const requestId = z.string().uuid().safeParse(req.params.requestId);
+      if (!requestId.success) {
+        res.status(400).json({ error: "INVALID_VERIFICATION_REQUEST" });
+        return;
+      }
+      const service = asService();
+      const { data: request, error: requestError } = await service.from("account_verification_requests").select("id,full_name,phone,requested_role,status").eq("id", requestId.data).single();
+      if (requestError || !request || !["pending_admin", "code_sent"].includes(request.status)) {
+        res.status(409).json({ error: "VERIFICATION_NOT_AVAILABLE" });
+        return;
+      }
+      const code = String(randomInt(100000, 1000000));
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + VERIFICATION_CODE_MS);
+      const { error: updateError } = await service.from("account_verification_requests").update({ status: "code_sent", verification_code_hash: await bcrypt.hash(code, 12), code_expires_at: expiresAt.toISOString(), code_attempts: 0, code_sent_at: now.toISOString(), reviewed_by: session.user.id, reviewed_at: now.toISOString() }).eq("id", request.id);
+      if (updateError) throw new Error(updateError.message);
+      const phone = request.phone.replace(/[^0-9]/g, "");
+      const roleLabel = request.requested_role === "driver" ? "سفير" : "عميل";
+      const text = `مرحباً ${request.full_name}، رمز تحقق جربوع لحساب ${roleLabel}: ${code}. الرمز صالح لمدة 10 دقائق. لا تشاركه مع أي شخص.`;
+      res.json({ requestId: request.id, whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(text)}`, expiresAt: expiresAt.toISOString() });
+    } catch (error) {
+      res.status(authErrorStatus(error)).json({ error: error instanceof Error ? error.message : "VERIFICATION_CODE_SEND_FAILED" });
+    }
   });
 
   app.get("/admin/api/reports", async (req, res) => {
