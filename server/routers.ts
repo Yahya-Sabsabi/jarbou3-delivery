@@ -93,6 +93,60 @@ export const appRouter = router({
         return data;
       }),
 
+    updateDriverLocation: publicProcedure
+      .input(tokenInput.extend({ location: pointInput }))
+      .mutation(async ({ input }) => {
+        await requireRole(input.accessToken, ["driver"]);
+        assertHamaPoint(input.location.latitude, input.location.longitude);
+        const { data, error } = await asUser(input.accessToken).rpc("update_own_driver_location", {
+          p_lat: input.location.latitude,
+          p_lng: input.location.longitude,
+        });
+        if (error) throw new Error(error.message);
+        return data;
+      }),
+
+    currentCustomerTracking: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["customer"]);
+        const { data, error } = await asUser(input.accessToken)
+          .from("orders")
+          .select("id,driver_id,status,source_lat,source_lng,destination_lat,destination_lng")
+          .eq("customer_id", authUser.id)
+          .not("driver_id", "is", null)
+          .in("status", ["accepted", "arriving", "awaiting_otp"])
+          .order("accepted_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        return data;
+      }),
+
+    currentDriverLocation: publicProcedure
+      .input(tokenInput.extend({ driverId: z.string().uuid() }))
+      .query(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["customer"]);
+        const client = asUser(input.accessToken);
+        const { data: assignment, error: assignmentError } = await client
+          .from("orders")
+          .select("id")
+          .eq("customer_id", authUser.id)
+          .eq("driver_id", input.driverId)
+          .in("status", ["accepted", "arriving", "awaiting_otp"])
+          .limit(1)
+          .maybeSingle();
+        if (assignmentError) throw new Error(assignmentError.message);
+        if (!assignment) throw new Error("DRIVER_NOT_ASSIGNED_TO_ACTIVE_ORDER");
+        const { data, error } = await client
+          .from("users")
+          .select("last_location_lat,last_location_lng,last_location_at")
+          .eq("id", input.driverId)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        return data;
+      }),
+
     verifyDeliveryOtp: publicProcedure
       .input(tokenInput.extend({ orderId: z.string().uuid(), otp: z.string().regex(/^\d{4}$/) }))
       .mutation(async ({ input }) => {

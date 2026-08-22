@@ -1,6 +1,9 @@
 import { StyleSheet, Text, View } from "react-native";
+import type { MapPoint } from "@/shared/jarbou3";
 
-export function HamaMap({ driver = false, compact = false }: { driver?: boolean; compact?: boolean }) {
+export type HamaMapProps = { compact?: boolean; driver?: boolean; source?: MapPoint | null; destination?: MapPoint | null; driverLocation?: MapPoint | null; selecting?: "source" | "destination"; onSelect?: (point: MapPoint) => void; readOnly?: boolean };
+
+export function HamaMap({ compact = false, driverLocation }: HamaMapProps) {
   return (
     <View style={[styles.map, compact && styles.mapCompact]}>
       <View style={[styles.road, { top: "42%", transform: [{ rotate: "-18deg" }] }]} />
@@ -10,7 +13,7 @@ export function HamaMap({ driver = false, compact = false }: { driver?: boolean;
       <View style={[styles.dot, { left: "42%", bottom: "42%" }]} />
       <View style={[styles.dot, { left: "60%", bottom: "55%" }]} />
       <View style={[styles.dot, styles.target]} />
-      {driver ? <View style={styles.driver}><Text style={styles.driverText}>ج</Text></View> : null}
+      {driverLocation ? <View style={styles.driver}><Text style={styles.driverText}>ج</Text></View> : null}
       <View style={styles.badge}><Text style={styles.badgeText}>حماة فقط</Text></View>
     </View>
   );

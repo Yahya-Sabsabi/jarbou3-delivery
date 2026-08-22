@@ -87,6 +87,12 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     [
+      "expo-location",
+      {
+        locationWhenInUsePermission: "اسمح لتطبيق جربوع باستخدام موقعك لاختيار الاستلام والتسليم وتتبع الرحلة داخل حماة.",
+      },
+    ],
+    [
       "expo-audio",
       {
         microphonePermission: "Allow $(PRODUCT_NAME) to access your microphone.",
