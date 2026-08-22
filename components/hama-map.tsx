@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import type { MapPoint } from "@/shared/jarbou3";
 
-export type HamaMapProps = { compact?: boolean; driver?: boolean; source?: MapPoint | null; destination?: MapPoint | null; driverLocation?: MapPoint | null; selecting?: "source" | "destination"; onSelect?: (point: MapPoint) => void; readOnly?: boolean };
+export type HamaMapProps = { compact?: boolean; driver?: boolean; source?: MapPoint | null; destination?: MapPoint | null; driverLocation?: MapPoint | null; routePath?: MapPoint[]; selecting?: "source" | "destination"; onSelect?: (point: MapPoint) => void; onOutsideRange?: () => void; readOnly?: boolean };
 
 export function HamaMap({ compact = false, driverLocation }: HamaMapProps) {
   return (

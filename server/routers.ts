@@ -93,6 +93,21 @@ export const appRouter = router({
         return data;
       }),
 
+    availableDriverOrders: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        await requireRole(input.accessToken, ["driver"]);
+        const { data, error } = await asUser(input.accessToken)
+          .from("orders")
+          .select("id,source_address,source_lat,source_lng,destination_address,destination_lat,destination_lng,estimated_price,payment_method,distance_m,created_at")
+          .eq("status", "requested")
+          .is("driver_id", null)
+          .order("created_at", { ascending: true })
+          .limit(20);
+        if (error) throw new Error(error.message);
+        return data;
+      }),
+
     updateDriverLocation: publicProcedure
       .input(tokenInput.extend({ location: pointInput }))
       .mutation(async ({ input }) => {

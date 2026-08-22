@@ -9,8 +9,10 @@ export type HamaMapProps = {
   source?: MapPoint | null;
   destination?: MapPoint | null;
   driverLocation?: MapPoint | null;
+  routePath?: MapPoint[];
   selecting?: "source" | "destination";
   onSelect?: (point: MapPoint) => void;
+  onOutsideRange?: () => void;
   readOnly?: boolean;
 };
 
@@ -26,12 +28,12 @@ function jarbou3Icon(L: LeafletModule, label: string, color: string) {
   });
 }
 
-export function HamaMap({ compact = false, source, destination, driverLocation, selecting, onSelect, readOnly = false }: HamaMapProps) {
+export function HamaMap({ compact = false, source, destination, driverLocation, routePath, selecting, onSelect, onOutsideRange, readOnly = false }: HamaMapProps) {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const layersRef = useRef<LayerGroup | null>(null);
   const [mapReady, setMapReady] = useState(false);
-  const latestProps = useMemo(() => ({ source, destination, driverLocation, selecting, onSelect, readOnly }), [source, destination, driverLocation, selecting, onSelect, readOnly]);
+  const latestProps = useMemo(() => ({ source, destination, driverLocation, routePath, selecting, onSelect, onOutsideRange, readOnly }), [source, destination, driverLocation, routePath, selecting, onSelect, onOutsideRange, readOnly]);
 
   useEffect(() => {
     let disposed = false;
@@ -73,6 +75,7 @@ export function HamaMap({ compact = false, source, destination, driverLocation, 
       if (!map || !layers) return;
       layers.clearLayers();
       L.circle([HAMA_CENTER.latitude, HAMA_CENTER.longitude], { radius: HAMA_SERVICE_RADIUS_METERS, color: "#757575", weight: 1.5, fillColor: "#757575", fillOpacity: 0.08, dashArray: "5 6" }).addTo(layers);
+      if (latestProps.routePath && latestProps.routePath.length > 1) L.polyline(latestProps.routePath.map((point) => [point.latitude, point.longitude]), { color: "#4A4A4A", weight: 4, opacity: 0.85 }).addTo(layers);
       if (latestProps.source) L.marker([latestProps.source.latitude, latestProps.source.longitude], { icon: jarbou3Icon(L, "ا", "#4A4A4A") }).bindTooltip("موقع الاستلام", { direction: "top" }).addTo(layers);
       if (latestProps.destination) L.marker([latestProps.destination.latitude, latestProps.destination.longitude], { icon: jarbou3Icon(L, "و", "#2F7A62") }).bindTooltip("وجهة العميل", { direction: "top" }).addTo(layers);
       if (latestProps.driverLocation) L.marker([latestProps.driverLocation.latitude, latestProps.driverLocation.longitude], { icon: jarbou3Icon(L, "ج", "#757575") }).bindTooltip("سائق جربوع", { direction: "top" }).addTo(layers);
@@ -80,6 +83,7 @@ export function HamaMap({ compact = false, source, destination, driverLocation, 
         if (latestProps.readOnly || !latestProps.selecting || !latestProps.onSelect) return;
         const point = { latitude: event.latlng.lat, longitude: event.latlng.lng };
         if (isInsideHama(point.latitude, point.longitude)) latestProps.onSelect(point);
+        else latestProps.onOutsideRange?.();
       };
       map.on("click", click);
       removeClick = () => map.off("click", click);
