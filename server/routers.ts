@@ -7,6 +7,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { asPublic, asService, asUser, assertHamaPoint, createOtpHash, decodeDataUrl, getAuthenticatedUser, getUserProfile } from "./jarbou3-supabase";
+import { recordDriverLocation } from "./jarbou3-driver-location";
 
 const tokenInput = z.object({ accessToken: z.string().min(20) });
 const pointInput = z.object({ latitude: z.number(), longitude: z.number() });
@@ -170,13 +171,21 @@ export const appRouter = router({
         assertOnboardingRateLimit(`submit:${ctx.req.ip ?? "unknown"}:${input.phone}`);
         if (input.requestedRole === "driver" && !input.vehicleType) throw new Error("VEHICLE_TYPE_REQUIRED");
         const service = asService();
-        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,status,requested_role").eq("phone", input.phone).maybeSingle();
+        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,status,requested_role,code_expires_at").eq("phone", input.phone).maybeSingle();
         if (existingError) throw new Error(existingError.message);
         if (existing?.status === "verified") throw new Error("ACCOUNT_ALREADY_VERIFIED");
-        if (existing) return { requestId: existing.id, status: existing.status, requestedRole: existing.requested_role };
-        const { data, error } = await service.from("account_verification_requests").insert({ full_name: input.fullName, phone: input.phone, requested_role: input.requestedRole, vehicle_type: input.requestedRole === "driver" ? input.vehicleType : null }).select("id,status,requested_role").single();
+        if (existing) return { requestId: existing.id, status: existing.status, requestedRole: existing.requested_role, codeExpiresAt: existing.code_expires_at };
+        const { data, error } = await service.from("account_verification_requests").insert({ full_name: input.fullName, phone: input.phone, requested_role: input.requestedRole, vehicle_type: input.requestedRole === "driver" ? input.vehicleType : null }).select("id,status,requested_role,code_expires_at").single();
         if (error || !data) throw new Error(error?.message ?? "ONBOARDING_REQUEST_FAILED");
-        return { requestId: data.id, status: data.status, requestedRole: data.requested_role };
+        return { requestId: data.id, status: data.status, requestedRole: data.requested_role, codeExpiresAt: data.code_expires_at };
+      }),
+
+    onboardingStatus: publicProcedure
+      .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/) }))
+      .query(async ({ input }) => {
+        const { data, error } = await asService().from("account_verification_requests").select("status,code_expires_at").eq("id", input.requestId).eq("phone", input.phone).maybeSingle();
+        if (error || !data) throw new Error("ONBOARDING_REQUEST_NOT_FOUND");
+        return { status: data.status, codeExpiresAt: data.code_expires_at };
       }),
 
     verifyOnboardingCode: publicProcedure
@@ -306,23 +315,9 @@ export const appRouter = router({
       }),
 
     updateDriverLocation: publicProcedure
-      .input(tokenInput.extend({ location: pointInput }))
+      .input(tokenInput.extend({ location: pointInput.extend({ accuracy: z.number().min(0).max(80).nullable().optional() }) }))
       .mutation(async ({ input }) => {
-        await requireRole(input.accessToken, ["driver"]);
-        assertHamaPoint(input.location.latitude, input.location.longitude);
-        const { data, error } = await asUser(input.accessToken).rpc("update_own_driver_location", {
-          p_lat: input.location.latitude,
-          p_lng: input.location.longitude,
-        });
-        if (error) throw new Error(error.message);
-        const { authUser } = await requireRole(input.accessToken, ["driver"]);
-        const service = asService();
-        const { data: activeOrder } = await service.from("orders").select("id,customer_id,source_lat,source_lng,driver_near_notified_at").eq("driver_id", authUser.id).in("status", ["accepted", "arriving"]).is("driver_near_notified_at", null).order("accepted_at", { ascending: true }).limit(1).maybeSingle();
-        if (activeOrder && distanceMeters(input.location, { latitude: Number(activeOrder.source_lat), longitude: Number(activeOrder.source_lng) }) <= 500) {
-          const { data: marked } = await service.from("orders").update({ driver_near_notified_at: new Date().toISOString(), status: "arriving" }).eq("id", activeOrder.id).is("driver_near_notified_at", null).select("id").maybeSingle();
-          if (marked) await notifyCustomer(activeOrder.customer_id, "السائق قريب منك", "سائق جربوع أصبح قريباً من نقطة الاستلام.", { orderId: activeOrder.id, status: "arriving" });
-        }
-        return data;
+        return recordDriverLocation(input.accessToken, input.location);
       }),
 
     currentCustomerTracking: publicProcedure
@@ -333,9 +328,8 @@ export const appRouter = router({
           .from("orders")
           .select("id,driver_id,status,source_lat,source_lng,destination_lat,destination_lng")
           .eq("customer_id", authUser.id)
-          .not("driver_id", "is", null)
-          .in("status", ["accepted", "arriving", "awaiting_otp"])
-          .order("accepted_at", { ascending: false })
+          .in("status", ["requested", "accepted", "arriving", "awaiting_otp"])
+          .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
         if (error) throw new Error(error.message);

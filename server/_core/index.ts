@@ -8,6 +8,8 @@ import { registerAdminWebRoutes } from "../admin-web";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
+import { recordDriverLocation } from "../jarbou3-driver-location";
+import { registerJarbou3RealtimeBridge } from "../jarbou3-realtime-bridge";
 import { createContext } from "./context";
 
 function isAllowedCorsOrigin(req: express.Request) {
@@ -43,6 +45,16 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  registerJarbou3RealtimeBridge(server, (request) => {
+    const origin = request.headers.origin;
+    if (!origin) return false;
+    const configuredOrigin = process.env.APP_WEB_ORIGIN;
+    if (configuredOrigin && origin === configuredOrigin) return true;
+    const forwarded = request.headers["x-forwarded-proto"];
+    const protocol = typeof forwarded === "string" ? forwarded.split(",")[0].trim() : "https";
+    if (request.headers.host && origin === `${protocol}://${request.headers.host}`) return true;
+    return process.env.NODE_ENV !== "production" && /^https:\/\/(?:3000|8081)-[a-z0-9-]+\.us\d+\.manus\.computer$/.test(origin);
+  });
   app.disable("x-powered-by");
 
   // Native builds do not send an Origin; browser clients receive credentials only from an approved origin.
@@ -98,6 +110,21 @@ async function startServer() {
   app.use("/api", (_req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
     next();
+  });
+  app.post("/api/jarbou3/driver-location", async (req, res) => {
+    const accessToken = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim();
+    const location = req.body as { latitude?: unknown; longitude?: unknown; accuracy?: unknown };
+    if (!accessToken || typeof location.latitude !== "number" || typeof location.longitude !== "number" || (location.accuracy != null && typeof location.accuracy !== "number")) {
+      res.status(400).json({ error: "INVALID_LOCATION_REQUEST" });
+      return;
+    }
+    try {
+      const result = await recordDriverLocation(accessToken, { latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy ?? null });
+      res.json({ ok: true, location: result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "LOCATION_UPDATE_FAILED";
+      res.status(message === "JARBOU3_FORBIDDEN" ? 403 : 400).json({ error: message });
+    }
   });
   app.use(
     "/api/trpc",

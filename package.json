@@ -53,6 +53,7 @@
     "expo-status-bar": "~3.0.9",
     "expo-symbols": "~1.0.8",
     "expo-system-ui": "~6.0.9",
+    "expo-task-manager": "~14.0.9",
     "expo-video": "~3.0.15",
     "expo-web-browser": "~15.0.10",
     "express": "^4.22.1",
@@ -73,6 +74,7 @@
     "react-native-worklets": "0.5.1",
     "superjson": "^1.13.3",
     "tailwind-merge": "^2.6.0",
+    "ws": "^8.21.3",
     "zod": "^4.2.1"
   },
   "devDependencies": {
@@ -83,6 +85,7 @@
     "@types/node": "^22.19.3",
     "@types/qrcode": "^1.5.6",
     "@types/react": "~19.1.17",
+    "@types/ws": "^8.18.1",
     "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
     "drizzle-kit": "^0.31.8",

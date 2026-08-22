@@ -28,7 +28,7 @@ const schemeFromBundleId = `manus${timestamp}`;
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: "جربوع للتوصيل",
+  appName: "جربوع",
   appSlug: "jarbou3-delivery",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
@@ -64,7 +64,7 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS"],
+    permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
     intentFilters: [
       {
         action: "VIEW",
@@ -90,6 +90,10 @@ const config: ExpoConfig = {
       "expo-location",
       {
         locationWhenInUsePermission: "اسمح لتطبيق جربوع باستخدام موقعك لاختيار الاستلام والتسليم وتتبع الرحلة داخل حماة.",
+        locationAlwaysAndWhenInUsePermission: "اسمح لتطبيق جربوع بتتبع موقع السفير أثناء الطلب النشط فقط حتى يرى العميل تقدم الرحلة.",
+        isIosBackgroundLocationEnabled: true,
+        isAndroidBackgroundLocationEnabled: true,
+        isAndroidForegroundServiceEnabled: true,
       },
     ],
     [
