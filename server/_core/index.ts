@@ -110,6 +110,9 @@ async function startServer() {
   app.use("/admin/vendor/leaflet", express.static(path.resolve(process.cwd(), "node_modules/leaflet/dist")));
   app.use("/admin", express.static(path.resolve(process.cwd(), "admin-site"), { index: "index.html" }));
   app.use("/operations-portal/vendor/leaflet", express.static(path.resolve(process.cwd(), "node_modules/leaflet/dist")));
+  app.get(["/operations-portal", "/operations-portal/"], (_req, res) => {
+    res.sendFile(path.resolve(process.cwd(), "admin-site", "index.html"));
+  });
   app.use("/operations-portal", express.static(path.resolve(process.cwd(), "admin-site"), { index: "index.html" }));
 
   app.get("/api/health", (_req, res) => {
