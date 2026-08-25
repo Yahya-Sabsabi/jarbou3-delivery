@@ -25,11 +25,13 @@ describe("بوابة كلمة مرور موقع الإدارة", () => {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   });
 
-  it("يعرض صفحة التهيئة الأولى عبر مسار الحالة القائم عند فتحه من المتصفح", async () => {
-    const page = await fetch(`${baseUrl}/admin/api/setup-status`, { headers: { Accept: "text/html" } });
+  it("يعرض رابط الإدارة الطبيعي صفحة التهيئة عبر ملفات خارجية قابلة للتنفيذ", async () => {
+    const page = await fetch(`${baseUrl}/admin`);
     expect(page.status).toBe(200);
-    expect(page.headers.get("cache-control")).toContain("no-store");
-    expect(await page.text()).toContain("اختر كلمة مرور الإدارة");
+    const html = await page.text();
+    expect(html).toContain("اختر كلمة مرور الإدارة");
+    expect(html).toContain('/admin/setup-page.js?v=canonical-setup-1');
+    expect(html).not.toContain("جارٍ فتح التهيئة");
   });
 
   it("يفتح جلسة موقّعة بواسطة كلمة المرور السرية ويقبلها في فحص الوصول", async () => {
