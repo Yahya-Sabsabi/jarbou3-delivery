@@ -14,6 +14,7 @@ const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
 const loginAttempts = new Map<string, { count: number; startedAt: number }>();
 const VERIFICATION_CODE_MS = 10 * 60 * 1000;
+const ADMIN_PUBLIC_ORIGIN = "https://jarbou-deliv-xoohmte2.manus.space";
 
 type SiteSession = { issuedAt: number; expiresAt: number };
 
@@ -117,7 +118,9 @@ function rejectForeignOrigin(req: Request, res: Response) {
   if (!origin) return false;
   try {
     // The public gateway can terminate HTTPS before forwarding to this server.
-    // Compare the browser origin with the target host rather than the internal protocol.
+    // The production host is therefore checked explicitly in addition to the local host.
+    const normalizedOrigin = new URL(origin).origin;
+    if (normalizedOrigin === ADMIN_PUBLIC_ORIGIN) return false;
     if (req.headers.host && new URL(origin).host === req.headers.host) return false;
   } catch {
     // Fall through to the rejection below for malformed Origin headers.

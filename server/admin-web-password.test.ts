@@ -44,6 +44,15 @@ describe("بوابة كلمة مرور موقع الإدارة", () => {
     expect(setup.status).toBe(400);
   });
 
+  it("يقبل أصل بوابة الإدارة العامة عندما يحجب البروكسي المضيف الخارجي", async () => {
+    const setup = await fetch(`${baseUrl}/admin/api/setup`, {
+      method: "POST",
+      headers: { Origin: "https://jarbou-deliv-xoohmte2.manus.space", "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "short", confirmation: "short" }),
+    });
+    expect(setup.status).toBe(400);
+  });
+
   it("يفتح جلسة موقّعة بواسطة كلمة المرور السرية ويقبلها في فحص الوصول", async () => {
     const login = await fetch(`${baseUrl}/admin/api/login`, {
       method: "POST",
