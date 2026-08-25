@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { type GestureResponderEvent, Image, type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Animated, type GestureResponderEvent, Image, type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { HAMA_BOUNDS, type MapPoint } from "@/shared/jarbou3";
 
 export type HamaMapProps = { compact?: boolean; driver?: boolean; source?: MapPoint | null; destination?: MapPoint | null; driverLocation?: MapPoint | null; routePath?: MapPoint[]; actualPath?: MapPoint[]; selecting?: "source" | "destination"; onSelect?: (point: MapPoint) => void; onOutsideRange?: () => void; readOnly?: boolean };
@@ -11,9 +11,23 @@ function project(point: MapPoint) {
   };
 }
 
+function RunningMouse() {
+  const bounce = useRef(new Animated.Value(0)).current;
+  const tilt = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const animation = Animated.loop(Animated.parallel([
+      Animated.sequence([Animated.timing(bounce, { toValue: -3, duration: 150, useNativeDriver: true }), Animated.timing(bounce, { toValue: 0, duration: 150, useNativeDriver: true })]),
+      Animated.sequence([Animated.timing(tilt, { toValue: 1, duration: 150, useNativeDriver: true }), Animated.timing(tilt, { toValue: -1, duration: 150, useNativeDriver: true }), Animated.timing(tilt, { toValue: 0, duration: 150, useNativeDriver: true })]),
+    ]));
+    animation.start();
+    return () => animation.stop();
+  }, [bounce, tilt]);
+  return <Animated.View style={[styles.mouseRunner, { transform: [{ translateY: bounce }, { rotate: tilt.interpolate({ inputRange: [-1, 1], outputRange: ["-7deg", "7deg"] }) }] }]}><Image source={require("@/assets/images/icon.png")} style={styles.mouseIcon} /></Animated.View>;
+}
+
 function Marker({ point, label, kind }: { point: MapPoint; label: string; kind: "source" | "destination" | "driver" }) {
   const position = project(point);
-  return <View pointerEvents="none" style={[styles.marker, styles[`marker_${kind}`], { left: `${position.left}%`, bottom: `${position.bottom}%` }]}>{kind === "driver" ? <Image source={require("@/assets/images/icon.png")} style={styles.mouseIcon} /> : <Text style={styles.markerText}>{label}</Text>}</View>;
+  return <View pointerEvents="none" style={[styles.marker, styles[`marker_${kind}`], { left: `${position.left}%`, bottom: `${position.bottom}%` }]}>{kind === "driver" ? <RunningMouse /> : <Text style={styles.markerText}>{label}</Text>}</View>;
 }
 
 function Path({ points, live }: { points: MapPoint[]; live: boolean }) {
@@ -68,6 +82,7 @@ const styles = StyleSheet.create({
   marker_source: { backgroundColor: "#536B78" },
   marker_destination: { backgroundColor: "#2F7A62" },
   marker_driver: { backgroundColor: "#252525", minWidth: 38, height: 38, borderRadius: 15, transform: [{ translateX: -19 }, { translateY: 19 }] },
+  mouseRunner: { width: 31, height: 31, alignItems: "center", justifyContent: "center" },
   mouseIcon: { width: 31, height: 31, borderRadius: 11 },
   markerText: { color: "#FFFFFF", fontWeight: "900", fontSize: 10 },
   badge: { position: "absolute", bottom: 11, right: 11, backgroundColor: "#FFFFFFE8", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
