@@ -6,6 +6,7 @@ import { createHash, createHmac, randomInt, timingSafeEqual } from "node:crypto"
 
 import { asService } from "./jarbou3-supabase";
 import { generateManualArchive, listManualArchives, prepareManualArchiveDownload, purgeManualArchive } from "./jarbou3-manual-archive";
+import { calculateTripFinance } from "./jarbou3-finance";
 import { buildAdminNotifications, normalizeReportMonth, type AdminNotification } from "./admin-web-utils";
 
 const SITE_COOKIE = "jarbou3_admin_access";
@@ -144,31 +145,87 @@ async function readNotifications(): Promise<AdminNotification[]> {
   return buildAdminNotifications(ordersResult.data ?? [], verificationResult.data ?? []);
 }
 
+type FinancialOrder = {
+  status: string;
+  estimated_price: number | null;
+  final_price: number | null;
+  company_commission_amount: number | null;
+  driver_net_amount: number | null;
+  commission_calculated_at: string | null;
+};
+
+function financialSnapshot(order: FinancialOrder) {
+  const grossAmount = Number(order.final_price ?? order.estimated_price ?? 0);
+  if (order.commission_calculated_at) {
+    return {
+      grossAmount,
+      companyCommissionAmount: Number(order.company_commission_amount ?? 0),
+      driverNetAmount: Number(order.driver_net_amount ?? 0),
+    };
+  }
+  return calculateTripFinance(grossAmount);
+}
+
+function summarizeCompletedOrders(orders: FinancialOrder[]) {
+  return orders
+    .filter((order) => order.status === "delivered")
+    .reduce(
+      (summary, order) => {
+        const snapshot = financialSnapshot(order);
+        summary.completedTrips += 1;
+        summary.grossRevenue += snapshot.grossAmount;
+        summary.companyCommission += snapshot.companyCommissionAmount;
+        summary.driverNetAmount += snapshot.driverNetAmount;
+        return summary;
+      },
+      { completedTrips: 0, grossRevenue: 0, companyCommission: 0, driverNetAmount: 0 },
+    );
+}
+
+function reportMonthWindow(reportMonth: string) {
+  const start = new Date(`${reportMonth}T00:00:00+03:00`);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+async function readFinancialSummary(reportMonth: string) {
+  const { start, end } = reportMonthWindow(reportMonth);
+  const { data, error } = await asService()
+    .from("orders")
+    .select("status,estimated_price,final_price,company_commission_amount,driver_net_amount,commission_calculated_at")
+    .eq("status", "delivered")
+    .gte("delivered_at", start)
+    .lt("delivered_at", end)
+    .limit(10_000);
+  if (error) throw new Error(error.message);
+  return { reportMonth, ...summarizeCompletedOrders((data ?? []) as FinancialOrder[]) };
+}
+
 async function readDashboard() {
   const service = asService();
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
   const [todayOrdersResult, activeDriversResult, pendingDriversResult, openShiftsResult, latestOrdersResult, notifications] = await Promise.all([
-    service.from("orders").select("id,status,estimated_price,final_price,created_at,updated_at,driver_id,source_address,destination_address").gte("created_at", startOfDay.toISOString()).order("updated_at", { ascending: false }),
+    service.from("orders").select("id,status,estimated_price,final_price,company_commission_amount,driver_net_amount,commission_calculated_at,created_at,updated_at,driver_id,source_address,destination_address").gte("created_at", startOfDay.toISOString()).order("updated_at", { ascending: false }),
     service.from("users").select("id,name,last_location_lat,last_location_lng,last_location_at").eq("role", "driver").eq("is_active", true).limit(12),
     service.from("drivers_verification").select("id").eq("status", "pending"),
     service.from("driver_shifts").select("id").eq("is_closed", false),
-    service.from("orders").select("id,status,estimated_price,final_price,created_at,updated_at,driver_id,source_address,destination_address").order("updated_at", { ascending: false }).limit(8),
+    service.from("orders").select("id,status,estimated_price,final_price,company_commission_amount,driver_net_amount,commission_calculated_at,created_at,updated_at,driver_id,source_address,destination_address").order("updated_at", { ascending: false }).limit(8),
     readNotifications(),
   ]);
 
   const errors = [todayOrdersResult.error, activeDriversResult.error, pendingDriversResult.error, openShiftsResult.error, latestOrdersResult.error].filter(Boolean);
   if (errors.length) throw new Error(errors[0]?.message ?? "ADMIN_DATA_UNAVAILABLE");
   const todayOrders = todayOrdersResult.data ?? [];
-  const completed = todayOrders.filter((order) => order.status === "delivered");
-  const revenue = completed.reduce((sum, order) => sum + Number(order.final_price ?? order.estimated_price ?? 0), 0);
+  const finance = summarizeCompletedOrders(todayOrders as FinancialOrder[]);
   return {
     metrics: {
       todayOrders: todayOrders.length,
       activeDrivers: (activeDriversResult.data ?? []).length,
       pendingDrivers: (pendingDriversResult.data ?? []).length,
       openShifts: (openShiftsResult.data ?? []).length,
-      revenue,
+      ...finance,
     },
     orders: latestOrdersResult.data ?? [],
     drivers: activeDriversResult.data ?? [],
@@ -676,7 +733,11 @@ export function registerAdminWebRoutes(app: Express) {
   app.get("/admin/api/reports", async (req, res) => {
     try {
       requireSiteSession(req);
-      res.json({ reports: await listReports() });
+      const requestedMonth = typeof req.query.reportMonth === "string" ? normalizeReportMonth(req.query.reportMonth) : null;
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const reportMonth = requestedMonth ?? `${currentMonth}-01`;
+      const [reports, financialSummary] = await Promise.all([listReports(), readFinancialSummary(reportMonth)]);
+      res.json({ reports, financialSummary });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: "SITE_REPORTS_UNAVAILABLE" });
     }

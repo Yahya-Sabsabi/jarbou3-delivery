@@ -26,6 +26,19 @@ function safeText(value: string | null | undefined) {
   return (value ?? "-").replace(/[^\x20-\x7E]/g, "?").slice(0, 88);
 }
 
+function financialSnapshot(order: any) {
+  const grossAmount = Number(order.final_price ?? order.estimated_price ?? 0);
+  if (order.commission_calculated_at) {
+    return {
+      grossAmount,
+      companyCommissionAmount: Number(order.company_commission_amount ?? 0),
+      driverNetAmount: Number(order.driver_net_amount ?? 0),
+    };
+  }
+  const companyCommissionAmount = Math.floor((grossAmount * 3) / 100);
+  return { grossAmount, companyCommissionAmount, driverNetAmount: grossAmount - companyCommissionAmount };
+}
+
 async function buildReportPdf(reportMonth: string, orders: any[], shifts: any[]) {
   const document = await PDFDocument.create();
   const regular = await document.embedFont(StandardFonts.Helvetica);
@@ -34,7 +47,13 @@ async function buildReportPdf(reportMonth: string, orders: any[], shifts: any[])
 
   const completed = orders.filter((order) => order.status === "delivered");
   const cancelled = orders.filter((order) => order.status === "cancelled");
-  const revenue = completed.reduce((sum, order) => sum + Number(order.final_price ?? order.estimated_price ?? 0), 0);
+  const financialSummary = completed.reduce((summary, order) => {
+    const snapshot = financialSnapshot(order);
+    summary.grossRevenue += snapshot.grossAmount;
+    summary.companyCommission += snapshot.companyCommissionAmount;
+    summary.driverNetAmount += snapshot.driverNetAmount;
+    return summary;
+  }, { grossRevenue: 0, companyCommission: 0, driverNetAmount: 0 });
   const elapsed = completed.reduce((sum, order) => sum + Number(order.actual_time_seconds ?? 0), 0);
   const averageMinutes = completed.length ? Math.round(elapsed / completed.length / 60) : 0;
 
@@ -57,7 +76,9 @@ async function buildReportPdf(reportMonth: string, orders: any[], shifts: any[])
   write(`Total orders: ${orders.length}`);
   write(`Completed trips: ${completed.length}`);
   write(`Cancelled orders: ${cancelled.length}`);
-  write(`Revenue (new SYP): ${revenue}`);
+  write(`Gross collected trips (new SYP): ${financialSummary.grossRevenue}`);
+  write(`Company commission 3% (new SYP): ${financialSummary.companyCommission}`);
+  write(`Driver net payable (new SYP): ${financialSummary.driverNetAmount}`);
   write(`Average actual trip time: ${averageMinutes} minutes`);
   write(`Driver shifts: ${shifts.length}`);
   y -= 10;
@@ -65,10 +86,11 @@ async function buildReportPdf(reportMonth: string, orders: any[], shifts: any[])
 
   for (const order of orders) {
     if (y < 84) addPage();
-    const price = Number(order.final_price ?? order.estimated_price ?? 0);
-    write(`#${order.id.slice(0, 8)} | ${order.status} | ${price} new SYP | ${Number(order.distance_m ?? 0)} m`, 9, true);
+    const snapshot = financialSnapshot(order);
+    write(`#${order.id.slice(0, 8)} | ${order.status} | ${snapshot.grossAmount} new SYP | ${Number(order.distance_m ?? 0)} m`, 9, true);
     write(`From: ${safeText(order.source_address)}`, 8);
     write(`To: ${safeText(order.destination_address)} | payment: ${order.payment_method} | created: ${order.created_at}`, 8);
+    if (order.status === "delivered") write(`Company 3%: ${snapshot.companyCommissionAmount} | Driver net: ${snapshot.driverNetAmount}`, 8);
     y -= 3;
   }
 
@@ -105,7 +127,7 @@ Deno.serve(async (request) => {
     const { error: reportError } = await admin.from("monthly_reports").upsert({ report_month: reportMonth, status: "generating", error_message: null }, { onConflict: "report_month" });
     if (reportError) throw reportError;
     const [{ data: orders, error: ordersError }, { data: shifts, error: shiftsError }] = await Promise.all([
-      admin.from("orders").select("id,source_address,destination_address,estimated_price,final_price,payment_method,status,distance_m,actual_time_seconds,created_at").gte("created_at", start).lt("created_at", end).order("created_at"),
+      admin.from("orders").select("id,source_address,destination_address,estimated_price,final_price,company_commission_amount,driver_net_amount,commission_calculated_at,payment_method,status,distance_m,actual_time_seconds,created_at").gte("created_at", start).lt("created_at", end).order("created_at"),
       admin.from("driver_shifts").select("driver_id,shift_date,total_amount,is_closed").gte("shift_date", reportMonth).lt("shift_date", end.slice(0, 10)).order("shift_date"),
     ]);
     if (ordersError) throw ordersError;

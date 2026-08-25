@@ -1,5 +1,6 @@
 import PDFDocument from "pdfkit";
 
+import { calculateTripFinance } from "./jarbou3-finance";
 import { asService } from "./jarbou3-supabase";
 
 type ArchiveKind = "weekly_documents" | "monthly_text";
@@ -106,8 +107,8 @@ async function buildMonthlyTextPdf(periodStart: string, periodEnd: string) {
   const start = isoDate(periodStart);
   const end = endOfPeriod(periodEnd);
   const [ordersResult, shiftsResult] = await Promise.all([
-    service.from("orders").select("id,status,estimated_price,final_price,discount_amount,source_address,destination_address,created_at,updated_at").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: true }).limit(1_000),
-    service.from("driver_shifts").select("id,driver_id,started_at,ended_at,is_closed,created_at").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: true }).limit(1_000),
+    service.from("orders").select("id,status,estimated_price,final_price,discount_amount,company_commission_amount,driver_net_amount,commission_calculated_at,source_address,destination_address,created_at,updated_at").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: true }).limit(1_000),
+    service.from("driver_shifts").select("id,driver_id,shift_date,total_amount,settlement_method,is_closed,closed_at,created_at").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: true }).limit(1_000),
   ]);
   if (ordersResult.error) throw new Error(ordersResult.error.message);
   if (shiftsResult.error) throw new Error(shiftsResult.error.message);
@@ -121,7 +122,12 @@ async function buildMonthlyTextPdf(periodStart: string, periodEnd: string) {
     if (document.y > 700) document.addPage();
     document.fontSize(10).fillColor("#202020").text(`Order ${order.id} | ${order.status} | ${order.created_at}`);
     document.fontSize(9).fillColor("#555555").text(`${order.source_address} -> ${order.destination_address}`);
-    document.text(`Estimated: ${order.estimated_price ?? 0} | Final: ${order.final_price ?? order.estimated_price ?? 0} | Discount: ${order.discount_amount ?? 0}`);
+    const grossAmount = Number(order.final_price ?? order.estimated_price ?? 0);
+    const snapshot = order.commission_calculated_at
+      ? { companyCommissionAmount: Number(order.company_commission_amount ?? 0), driverNetAmount: Number(order.driver_net_amount ?? 0) }
+      : calculateTripFinance(grossAmount);
+    document.text(`Estimated: ${order.estimated_price ?? 0} | Final: ${grossAmount} | Discount: ${order.discount_amount ?? 0}`);
+    if (order.status === "delivered") document.text(`Company 3%: ${snapshot.companyCommissionAmount} | Driver net: ${snapshot.driverNetAmount}`);
     document.moveDown(0.45);
   }
   document.addPage();
@@ -130,7 +136,7 @@ async function buildMonthlyTextPdf(periodStart: string, periodEnd: string) {
   for (const shift of shiftsResult.data ?? []) {
     if (document.y > 720) document.addPage();
     document.fontSize(10).fillColor("#202020").text(`Shift ${shift.id} | Driver: ${shift.driver_id} | ${shift.is_closed ? "closed" : "open"}`);
-    document.fontSize(9).fillColor("#555555").text(`Started: ${shift.started_at ?? "—"} | Ended: ${shift.ended_at ?? "—"}`);
+    document.fontSize(9).fillColor("#555555").text(`Date: ${shift.shift_date} | Amount: ${shift.total_amount} | Closed: ${shift.closed_at ?? "—"}`);
     document.moveDown(0.45);
   }
   document.end();
