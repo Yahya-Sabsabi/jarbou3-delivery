@@ -30,8 +30,12 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# Secret runtime configuration — never commit credentials or production settings.
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
 
 # typescript
 *.tsbuildinfo

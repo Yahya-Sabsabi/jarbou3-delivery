@@ -544,6 +544,16 @@ export const appRouter = router({
         return data;
       }),
 
+    currentCustomerTripPath: publicProcedure
+      .input(tokenInput.extend({ orderId: z.string().uuid() }))
+      .query(async ({ input }) => {
+        await requireRole(input.accessToken, ["customer"]);
+        const { data, error } = await asUser(input.accessToken)
+          .rpc("get_customer_order_trip_path", { p_order_id: input.orderId });
+        if (error) throw new Error(error.message);
+        return data ?? [];
+      }),
+
     currentDriverLocation: publicProcedure
       .input(tokenInput.extend({ driverId: z.string().uuid() }))
       .query(async ({ input }) => {
