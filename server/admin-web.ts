@@ -95,6 +95,10 @@ function recoveryTokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function recoveryPageHtml() {
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>استرداد دخول الإدارة</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f5f5f5;color:#171717;font-family:Arial,sans-serif}.card{max-width:420px;margin:24px;background:#fff;border:1px solid #ddd;border-radius:18px;padding:32px;text-align:center;box-shadow:0 12px 28px #0001}h1{font-size:22px;margin:0 0 12px}p{line-height:1.7;color:#555;margin:0}</style></head><body><main class="card"><h1>جارٍ فتح بوابة الإدارة</h1><p id="status">يُتحقق من رابط الاسترداد الآمن…</p></main><script>const token=location.hash.slice(1);const status=document.getElementById('status');if(!/^[a-f0-9]{64}$/.test(token)){status.textContent='رابط الاسترداد غير صالح أو انتهت صلاحيته.'}else{fetch('/admin/api/recover',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({token})}).then(async r=>{if(!r.ok)throw new Error();history.replaceState(null,'','/admin');location.replace('/admin')}).catch(()=>{status.textContent='رابط الاسترداد غير صالح أو تم استخدامه أو انتهت صلاحيته.'})}</script></body></html>`;
+}
+
 function rejectForeignOrigin(req: Request, res: Response) {
   if (isSameOriginRequest(req.headers.origin, req.headers.host, getProtocol(req))) return false;
   res.status(403).json({ error: "REQUEST_ORIGIN_REJECTED" });
@@ -223,21 +227,27 @@ export function registerAdminWebRoutes(app: Express) {
     res.json({ user: { name: "مالك الموقع", role: "owner" } });
   });
 
-  app.get("/admin/recover/:token", async (req, res) => {
-    const token = z.string().regex(/^[a-f0-9]{64}$/).safeParse(req.params.token);
-    if (!token.success) return res.status(404).send("الرابط غير صالح أو انتهت صلاحيته.");
+  app.get("/admin/recover", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.status(200).type("html").send(recoveryPageHtml());
+  });
+
+  app.post("/admin/api/recover", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    const token = z.object({ token: z.string().regex(/^[a-f0-9]{64}$/) }).safeParse(req.body);
+    if (!token.success) return res.status(400).json({ error: "RECOVERY_LINK_INVALID" });
     try {
       const service = asService();
       const now = new Date().toISOString();
-      const { data: link, error } = await service.from("admin_access_recovery_links").select("id").eq("token_hash", recoveryTokenHash(token.data)).is("used_at", null).gt("expires_at", now).maybeSingle();
-      if (error || !link) return res.status(404).send("الرابط غير صالح أو انتهت صلاحيته.");
+      const { data: link, error } = await service.from("admin_access_recovery_links").select("id").eq("token_hash", recoveryTokenHash(token.data.token)).is("used_at", null).gt("expires_at", now).maybeSingle();
+      if (error || !link) return res.status(400).json({ error: "RECOVERY_LINK_INVALID" });
       const { data: consumed, error: consumeError } = await service.from("admin_access_recovery_links").update({ used_at: now }).eq("id", link.id).is("used_at", null).select("id").maybeSingle();
-      if (consumeError || !consumed) return res.status(404).send("الرابط غير صالح أو تم استخدامه.");
-      res.setHeader("Referrer-Policy", "no-referrer");
+      if (consumeError || !consumed) return res.status(400).json({ error: "RECOVERY_LINK_INVALID" });
       res.cookie(SITE_COOKIE, createSiteSession(), cookieOptions(req));
-      res.redirect(303, "/admin");
+      res.json({ recovered: true });
     } catch {
-      res.status(503).send("تعذر فتح رابط الاسترداد الآن.");
+      res.status(503).json({ error: "RECOVERY_LINK_UNAVAILABLE" });
     }
   });
 
