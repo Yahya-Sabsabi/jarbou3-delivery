@@ -96,6 +96,7 @@ async function startServer() {
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "same-origin");
+    res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     next();
   });

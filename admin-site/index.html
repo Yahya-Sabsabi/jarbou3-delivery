@@ -27,6 +27,15 @@
             <p id="login-error" class="form-error" role="alert" hidden></p>
             <button id="login-button" class="primary-button" type="submit">فتح الموقع</button>
           </form>
+          <form id="setup-form" novalidate hidden>
+            <p class="security-note">هذه التهيئة متاحة مرة واحدة فقط. اختر كلمة مرور قوية، وبعد حفظها ستُقفل البوابة ولا يمكن فتحها لاحقاً إلا بها.</p>
+            <label for="setup-password">كلمة المرور الجديدة</label>
+            <input id="setup-password" autocomplete="new-password" type="password" placeholder="16 حرفاً على الأقل" minlength="16" required />
+            <label for="setup-confirmation">تأكيد كلمة المرور</label>
+            <input id="setup-confirmation" autocomplete="new-password" type="password" placeholder="أعد كتابة كلمة المرور" minlength="16" required />
+            <p id="setup-error" class="form-error" role="alert" hidden></p>
+            <button id="setup-button" class="primary-button" type="submit">حفظ كلمة المرور وفتح الموقع</button>
+          </form>
           <p class="security-note">عند النجاح، تحفظ البوابة جلسة آمنة وطويلة الأمد على هذا المتصفح. لا تُخزّن كلمة المرور في المتصفح أو في الكود.</p>
         </div>
       </section>

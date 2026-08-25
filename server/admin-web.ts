@@ -86,9 +86,10 @@ function requireSiteSession(req: Request): SiteSession {
 }
 
 function passwordMatches(value: string) {
-  const expected = Buffer.from(adminPassword());
-  const received = Buffer.from(value);
-  return expected.length === received.length && timingSafeEqual(expected, received);
+  return asService().from("admin_site_settings").select("password_hash").eq("singleton", true).single().then(async ({ data, error }) => {
+    if (error) throw new Error(error.message);
+    return Boolean(data?.password_hash) && bcrypt.compare(value, data.password_hash);
+  });
 }
 
 function recoveryTokenHash(token: string) {
@@ -171,6 +172,7 @@ async function listRecoveryRequests() {
 }
 
 const loginSchema = z.object({ password: z.string().min(16).max(512) });
+const siteSetupSchema = z.object({ password: z.string().min(16).max(512), confirmation: z.string().min(16).max(512) }).refine((value) => value.password === value.confirmation, { message: "PASSWORD_CONFIRMATION_MISMATCH" });
 const generateReportSchema = z.object({ reportMonth: z.string() });
 const discountSchema = z.object({ code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,32}$/), discountType: z.enum(["fixed", "percentage"]), discountValue: z.number().positive(), startsAt: z.string().datetime().nullable().optional(), endsAt: z.string().datetime().nullable().optional() }).superRefine((value, context) => {
   if (value.discountType === "percentage" && value.discountValue > 100) context.addIssue({ code: "custom", message: "PERCENTAGE_TOO_HIGH" });
@@ -203,6 +205,32 @@ export function registerAdminWebRoutes(app: Express) {
     res.setHeader("Cache-Control", "no-store");
     next();
   });
+  app.get("/admin/api/setup-status", async (_req, res) => {
+    try {
+      const { data, error } = await asService().from("admin_site_settings").select("password_hash").eq("singleton", true).single();
+      if (error) throw new Error(error.message);
+      res.json({ setupRequired: !data?.password_hash });
+    } catch {
+      res.status(503).json({ error: "SITE_SETUP_UNAVAILABLE" });
+    }
+  });
+  app.post("/admin/api/setup", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    const parsed = siteSetupSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "INVALID_SETUP_PASSWORD" });
+    try {
+      const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+      const now = new Date().toISOString();
+      const { data, error } = await asService().from("admin_site_settings").update({ password_hash: passwordHash, password_set_at: now, updated_at: now }).eq("singleton", true).is("password_hash", null).select("singleton").maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) return res.status(409).json({ error: "SITE_ALREADY_CONFIGURED" });
+      loginAttempts.clear();
+      res.cookie(SITE_COOKIE, createSiteSession(), cookieOptions(req));
+      res.json({ user: { name: "مالك الموقع", role: "owner" } });
+    } catch {
+      res.status(503).json({ error: "SITE_SETUP_UNAVAILABLE" });
+    }
+  });
   app.post("/admin/api/login", async (req, res) => {
     if (rejectForeignOrigin(req, res)) return;
     const key = requestKey(req);
@@ -213,7 +241,7 @@ export function registerAdminWebRoutes(app: Express) {
     }
     const parsed = loginSchema.safeParse(req.body);
     try {
-      if (!parsed.success || !passwordMatches(parsed.data.password)) {
+      if (!parsed.success || !(await passwordMatches(parsed.data.password))) {
         attempt.count += 1;
         res.status(401).json({ error: "INVALID_SITE_PASSWORD" });
         return;
