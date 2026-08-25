@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { parse as parseCookie } from "cookie";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomInt, timingSafeEqual } from "node:crypto";
 
 import { asService } from "./jarbou3-supabase";
 import { generateManualArchive, listManualArchives, prepareManualArchiveDownload, purgeManualArchive } from "./jarbou3-manual-archive";
@@ -89,6 +89,10 @@ function passwordMatches(value: string) {
   const expected = Buffer.from(adminPassword());
   const received = Buffer.from(value);
   return expected.length === received.length && timingSafeEqual(expected, received);
+}
+
+function recoveryTokenHash(token: string) {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 function rejectForeignOrigin(req: Request, res: Response) {
@@ -217,6 +221,24 @@ export function registerAdminWebRoutes(app: Express) {
     loginAttempts.delete(key);
     res.cookie(SITE_COOKIE, createSiteSession(), cookieOptions(req));
     res.json({ user: { name: "مالك الموقع", role: "owner" } });
+  });
+
+  app.get("/admin/recover/:token", async (req, res) => {
+    const token = z.string().regex(/^[a-f0-9]{64}$/).safeParse(req.params.token);
+    if (!token.success) return res.status(404).send("الرابط غير صالح أو انتهت صلاحيته.");
+    try {
+      const service = asService();
+      const now = new Date().toISOString();
+      const { data: link, error } = await service.from("admin_access_recovery_links").select("id").eq("token_hash", recoveryTokenHash(token.data)).is("used_at", null).gt("expires_at", now).maybeSingle();
+      if (error || !link) return res.status(404).send("الرابط غير صالح أو انتهت صلاحيته.");
+      const { data: consumed, error: consumeError } = await service.from("admin_access_recovery_links").update({ used_at: now }).eq("id", link.id).is("used_at", null).select("id").maybeSingle();
+      if (consumeError || !consumed) return res.status(404).send("الرابط غير صالح أو تم استخدامه.");
+      res.setHeader("Referrer-Policy", "no-referrer");
+      res.cookie(SITE_COOKIE, createSiteSession(), cookieOptions(req));
+      res.redirect(303, "/admin");
+    } catch {
+      res.status(503).send("تعذر فتح رابط الاسترداد الآن.");
+    }
   });
 
   app.post("/admin/api/logout", async (req, res) => {
