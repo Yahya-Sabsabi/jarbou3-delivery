@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <title>جربوع | تهيئة بوابة الإدارة</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <main class="login-layout">
+      <section class="login-aside" aria-hidden="true">
+        <div class="brand-lockup"><span class="brand-mark">ج</span><span>جربوع</span></div>
+        <div class="aside-copy"><p class="eyebrow">تهيئة أولى لمرة واحدة</p><h1>قفل بوابة الإدارة بكلمة مرورك.</h1><p>بعد حفظ كلمة المرور، لن يبقى هذا الوضع متاحاً، وستطلب البوابة كلمة المرور عند كل دخول جديد.</p></div>
+      </section>
+      <section class="login-panel">
+        <div class="login-card">
+          <p class="eyebrow">الخطوة الأخيرة</p>
+          <h1>اختر كلمة مرور الإدارة</h1>
+          <p class="muted">استخدم 16 حرفاً على الأقل، واحفظها في مدير كلمات مرور.</p>
+          <form id="setup-form" novalidate hidden>
+            <label for="password">كلمة المرور الجديدة</label>
+            <input id="password" autocomplete="new-password" type="password" minlength="16" placeholder="16 حرفاً على الأقل" required />
+            <label for="confirmation">تأكيد كلمة المرور</label>
+            <input id="confirmation" autocomplete="new-password" type="password" minlength="16" placeholder="أعد كتابة كلمة المرور" required />
+            <p id="error" class="form-error" hidden role="alert"></p>
+            <button id="save" class="primary-button" type="submit">حفظ كلمة المرور وفتح الموقع</button>
+          </form>
+          <div id="configured" hidden><p class="security-note">تم إعداد كلمة مرور الموقع بالفعل.</p><a class="primary-button" href="/admin">فتح بوابة الإدارة</a></div>
+          <p id="loading" class="security-note">جارٍ التحقق من حالة التهيئة…</p>
+        </div>
+      </section>
+    </main>
+    <script>
+      const form = document.getElementById('setup-form');
+      const configured = document.getElementById('configured');
+      const loading = document.getElementById('loading');
+      const errorBox = document.getElementById('error');
+      const save = document.getElementById('save');
+      const showError = (text) => { errorBox.textContent = text; errorBox.hidden = false; };
+      async function request(url, options = {}) {
+        const response = await fetch(url, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...options });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) { const error = new Error(payload.error || 'REQUEST_FAILED'); error.status = response.status; throw error; }
+        return payload;
+      }
+      (async () => {
+        try {
+          const status = await request('/admin/api/setup-status');
+          loading.hidden = true;
+          if (status.setupRequired) form.hidden = false;
+          else configured.hidden = false;
+        } catch { loading.textContent = 'تعذر فتح حالة التهيئة. أعد تحميل الصفحة.'; }
+      })();
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const password = document.getElementById('password').value;
+        const confirmation = document.getElementById('confirmation').value;
+        errorBox.hidden = true;
+        if (password.length < 16) return showError('استخدم كلمة مرور بطول 16 حرفاً على الأقل.');
+        if (password !== confirmation) return showError('كلمتا المرور غير متطابقتين.');
+        save.disabled = true; save.textContent = 'جارٍ حفظ القفل…';
+        try { await request('/admin/api/setup', { method: 'POST', body: JSON.stringify({ password, confirmation }) }); window.location.replace('/admin'); }
+        catch (error) { showError(error.status === 409 ? 'تمت تهيئة الموقع بالفعل. افتح بوابة الإدارة.' : 'تعذر حفظ كلمة المرور. أعد المحاولة.'); save.disabled = false; save.textContent = 'حفظ كلمة المرور وفتح الموقع'; }
+      });
+    </script>
+  </body>
+</html>
