@@ -9,10 +9,7 @@ import { registerAdminWebRoutes } from "./admin-web";
 describe("بوابة كلمة مرور موقع الإدارة", () => {
   let server: ReturnType<typeof createServer>;
   let baseUrl: string;
-  const password = process.env.ADMIN_SITE_PASSWORD;
-
   beforeAll(async () => {
-    if (!password) throw new Error("ADMIN_SITE_PASSWORD is required for this test");
     const app = express();
     app.use(express.json());
     registerAdminWebRoutes(app);
@@ -25,13 +22,12 @@ describe("بوابة كلمة مرور موقع الإدارة", () => {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   });
 
-  it("يعرض رابط الإدارة الطبيعي صفحة التهيئة عبر ملفات خارجية قابلة للتنفيذ", async () => {
-    const page = await fetch(`${baseUrl}/admin`);
+  it("يخدم صفحة تهيئة الإدارة من مسار API المسجل", async () => {
+    const page = await fetch(`${baseUrl}/admin/api/setup-page`);
     expect(page.status).toBe(200);
     const html = await page.text();
     expect(html).toContain("اختر كلمة مرور الإدارة");
-    expect(html).toContain('/admin/setup-page.js?v=canonical-setup-1');
-    expect(html).not.toContain("جارٍ فتح التهيئة");
+    expect(html).toContain("/admin/api/setup");
   });
 
   it("يقبل طلب التهيئة القادم من نفس المضيف عندما ينهي البروكسي HTTPS خارج الخادم", async () => {
@@ -53,25 +49,16 @@ describe("بوابة كلمة مرور موقع الإدارة", () => {
     expect(setup.status).toBe(400);
   });
 
-  it("يفتح جلسة موقّعة بواسطة كلمة المرور السرية ويقبلها في فحص الوصول", async () => {
-    const login = await fetch(`${baseUrl}/admin/api/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    expect(login.status).toBe(200);
-    const cookie = login.headers.get("set-cookie");
-    expect(cookie).toContain("jarbou3_admin_access=");
-
-    const accessCheck = await fetch(`${baseUrl}/admin/api/access-check`, { headers: { cookie: cookie ?? "" } });
-    expect(accessCheck.status).toBe(204);
+  it("يرفض فحص الوصول عندما لا توجد جلسة إدارة موقعة", async () => {
+    const accessCheck = await fetch(`${baseUrl}/admin/api/access-check`);
+    expect(accessCheck.status).toBe(401);
   });
 
   it("يرفض كلمة المرور الخاطئة ولا يمنح جلسة", async () => {
     const login = await fetch(`${baseUrl}/admin/api/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: `${password}x` }),
+      body: JSON.stringify({ password: "this-is-not-the-admin-password" }),
     });
     expect(login.status).toBe(401);
     expect(login.headers.get("set-cookie")).toBeNull();

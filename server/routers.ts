@@ -23,6 +23,7 @@ const CODE_MAX_ATTEMPTS = 3;
 const CODE_RETRY_DELAY_MS = 3 * 60 * 1000;
 const RECOVERY_CODE_MS = 10 * 60 * 1000;
 const MAX_ONBOARDING_IMAGE_BYTES = 3 * 1024 * 1024;
+type DriverOfferAssignment = { driver_id: string | null; offer_expires_at: string | null; offer_round: number };
 
 function assertOnboardingRateLimit(key: string) {
   const current = onboardingWindows.get(key);
@@ -104,6 +105,37 @@ async function notifyCustomer(userId: string, title: string, body: string, data:
   } catch (error) {
     console.warn("[Jarbou3] Push notification skipped", error);
   }
+}
+
+async function notifyDriver(userId: string, title: string, body: string, data: Record<string, string>) {
+  try {
+    const { data: tokens, error } = await asService().from("push_tokens").select("expo_push_token").eq("user_id", userId).limit(10);
+    if (error || !tokens?.length) return;
+    await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(tokens.map((token) => ({ to: token.expo_push_token, sound: "default", title, body, data, channelId: "jarbou3-orders" }))),
+    });
+  } catch (error) {
+    console.warn("[Jarbou3] Driver offer push skipped", error);
+  }
+}
+
+async function assignNextDriverOffer(orderId: string): Promise<DriverOfferAssignment | null> {
+  const { data, error } = await asService()
+    .rpc("assign_next_driver_offer", { p_order_id: orderId })
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const offer = data as DriverOfferAssignment | null;
+  if (offer?.driver_id) {
+    await notifyDriver(
+      offer.driver_id,
+      "طلب قريب متاح",
+      "لديك عرض جديد لفترة قصيرة. افتح جربوع للقبول أو الرفض.",
+      { orderId, status: "offered" },
+    );
+  }
+  return offer;
 }
 
 async function requireRole(accessToken: string, allowedRoles: Array<"customer" | "driver" | "admin">) {
@@ -443,7 +475,13 @@ export const appRouter = router({
         const { hash } = await createOtpHash();
         const { data, error } = await asUser(input.accessToken).from("orders").insert({ customer_id: authUser.id, source_address: input.sourceAddress, source_lat: input.source.latitude, source_lng: input.source.longitude, destination_address: input.destinationAddress, destination_lat: input.destination.latitude, destination_lng: input.destination.longitude, estimated_price: input.estimatedPrice, pre_discount_price: input.estimatedPrice, discount_amount: discount.discountAmount, discount_code_id: discount.discountCodeId, final_price: discount.finalPrice, payment_method: input.paymentMethod, distance_m: input.distanceM, status: "requested", delivery_otp_hash: hash }).select("id,status,created_at,final_price,discount_amount").single();
         if (error) throw new Error(error.message);
-        return data;
+        try {
+          const offer = await assignNextDriverOffer(data.id);
+          return { ...data, offerExpiresAt: offer?.offer_expires_at ?? null };
+        } catch (offerError) {
+          console.warn("[Jarbou3] Order created but first offer was not dispatched", offerError);
+          return { ...data, offerExpiresAt: null };
+        }
       }),
 
     acceptOrder: publicProcedure
@@ -459,39 +497,35 @@ export const appRouter = router({
     declineOrder: publicProcedure
       .input(tokenInput.extend({ orderId: z.string().uuid() }))
       .mutation(async ({ input }) => {
-        const { authUser } = await requireRole(input.accessToken, ["driver"]);
-        const service = asService();
-        const { data: order, error: orderError } = await service.from("orders").select("id").eq("id", input.orderId).eq("status", "requested").is("driver_id", null).maybeSingle();
-        if (orderError || !order) throw new Error("ORDER_NOT_AVAILABLE");
-        const { error } = await service.from("driver_order_declines").upsert({ driver_id: authUser.id, order_id: order.id }, { onConflict: "driver_id,order_id", ignoreDuplicates: true });
+        await requireRole(input.accessToken, ["driver"]);
+        const { error } = await asUser(input.accessToken).rpc("decline_order_offer", { p_order_id: input.orderId });
         if (error) throw new Error(error.message);
-        return { declined: true, orderId: order.id };
+        const offer = await assignNextDriverOffer(input.orderId);
+        return { declined: true, orderId: input.orderId, nextDriverNotified: Boolean(offer?.driver_id) };
       }),
 
     availableDriverOrders: publicProcedure
       .input(tokenInput)
       .query(async ({ input }) => {
-        const { authUser } = await requireRole(input.accessToken, ["driver"]);
-        const { data: declines, error: declineError } = await asService().from("driver_order_declines").select("order_id").eq("driver_id", authUser.id).limit(100);
-        if (declineError) throw new Error(declineError.message);
-        const declinedIds = (declines ?? []).map((decline) => decline.order_id);
-        let query = asUser(input.accessToken)
-          .from("orders")
-          .select("id,source_address,source_lat,source_lng,destination_address,destination_lat,destination_lng,estimated_price,payment_method,distance_m,created_at")
-          .eq("status", "requested")
-          .is("driver_id", null)
-          .order("created_at", { ascending: true })
-          .limit(20);
-        if (declinedIds.length) query = query.not("id", "in", `(${declinedIds.join(",")})`);
-        const { data, error } = await query;
+        await requireRole(input.accessToken, ["driver"]);
+        const { data, error } = await asUser(input.accessToken).rpc("list_driver_order_offers");
         if (error) throw new Error(error.message);
-        return data;
+        return data ?? [];
       }),
 
     updateDriverLocation: publicProcedure
       .input(tokenInput.extend({ location: pointInput.extend({ accuracy: z.number().min(0).max(80).nullable().optional() }) }))
       .mutation(async ({ input }) => {
         return recordDriverLocation(input.accessToken, input.location);
+      }),
+
+    activeDriverTripMetrics: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        await requireRole(input.accessToken, ["driver"]);
+        const { data, error } = await asUser(input.accessToken).rpc("get_own_active_trip_metrics").maybeSingle();
+        if (error) throw new Error(error.message);
+        return data;
       }),
 
     currentCustomerTracking: publicProcedure

@@ -35,5 +35,10 @@ export async function recordDriverLocation(accessToken: string, location: Driver
     const { data: marked } = await service.from("orders").update({ driver_near_notified_at: new Date().toISOString(), status: "arriving" }).eq("id", activeOrder.id).is("driver_near_notified_at", null).select("id").maybeSingle();
     if (marked) await notifyCustomer(activeOrder.customer_id, "السفير قريب منك", "سفير جربوع أصبح قريباً من نقطة الاستلام.", { orderId: activeOrder.id, status: "arriving" });
   }
-  return data;
+  const { data: tripMetrics, error: metricsError } = await asUser(accessToken)
+    .rpc("get_own_active_trip_metrics")
+    .maybeSingle();
+  if (metricsError) throw new Error(metricsError.message);
+
+  return { location: data, tripMetrics };
 }
