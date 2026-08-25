@@ -22,6 +22,18 @@ async function sendLocationToServer(sample: GpsSample) {
   return response.ok;
 }
 
+export async function flushJarbou3QueuedLocation() {
+  const queued = await jarbou3Session.getQueuedLocation();
+  if (!queued) return false;
+  try {
+    const sent = await sendLocationToServer({ latitude: queued.latitude, longitude: queued.longitude, accuracy: queued.accuracy ?? null, timestamp: Date.now() });
+    if (sent) await jarbou3Session.clearQueuedLocation();
+    return sent;
+  } catch {
+    return false;
+  }
+}
+
 function toGpsSample(location: Location.LocationObject): GpsSample {
   return {
     latitude: location.coords.latitude,
@@ -42,9 +54,10 @@ if (Platform.OS !== "web" && !TaskManager.isTaskDefined(JARBOU3_BACKGROUND_LOCAT
       if (validateHamaGpsSample(sample, previousLocation) !== "good") continue;
       previousLocation = sample;
       try {
-        await sendLocationToServer(sample);
+        const sent = await sendLocationToServer(sample);
+        if (!sent) await jarbou3Session.saveQueuedLocation({ latitude: sample.latitude, longitude: sample.longitude, accuracy: sample.accuracy, capturedAt: new Date(sample.timestamp).toISOString() });
       } catch {
-        // The operating system will request a new position later; never retry in a tight loop.
+        await jarbou3Session.saveQueuedLocation({ latitude: sample.latitude, longitude: sample.longitude, accuracy: sample.accuracy, capturedAt: new Date(sample.timestamp).toISOString() });
       }
     }
   });

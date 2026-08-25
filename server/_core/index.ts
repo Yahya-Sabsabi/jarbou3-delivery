@@ -99,21 +99,9 @@ async function startServer() {
     res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     next();
   });
-  app.use("/operations-portal", (_req, res, next) => {
-    res.setHeader("X-Frame-Options", "DENY");
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Referrer-Policy", "same-origin");
-    res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
-    next();
-  });
   registerAdminWebRoutes(app);
   app.use("/admin/vendor/leaflet", express.static(path.resolve(process.cwd(), "node_modules/leaflet/dist")));
   app.use("/admin", express.static(path.resolve(process.cwd(), "admin-site"), { index: "index.html" }));
-  app.use("/operations-portal/vendor/leaflet", express.static(path.resolve(process.cwd(), "node_modules/leaflet/dist")));
-  app.get(["/operations-portal", "/operations-portal/"], (_req, res) => {
-    res.sendFile(path.resolve(process.cwd(), "admin-site", "index.html"));
-  });
-  app.use("/operations-portal", express.static(path.resolve(process.cwd(), "admin-site"), { index: "index.html" }));
 
   app.get("/api/health", (_req, res) => {
     res.setHeader("Cache-Control", "no-store");

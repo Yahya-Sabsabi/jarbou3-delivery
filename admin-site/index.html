@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="بوابة الإدارة المستقلة لجربوع للتوصيل" />
     <title>جربوع | بوابة الإدارة</title>
-    <link rel="stylesheet" href="/operations-portal/vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="/operations-portal/styles.css" />
+    <link rel="stylesheet" href="/admin/vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="/admin/styles.css" />
   </head>
   <body>
     <main id="login-view" class="login-layout">
@@ -40,7 +40,11 @@
           <button class="nav-link active" data-view="overview"><span>▦</span>نظرة عامة</button>
           <button class="nav-link" data-view="operations"><span>□</span>الطلبات والسائقون</button>
           <button class="nav-link" data-view="verifications"><span>✓</span>طلبات التحقق</button>
+          <button class="nav-link" data-view="accounts"><span>◉</span>الحسابات والوثائق</button>
+          <button class="nav-link" data-view="discounts"><span>٪</span>رموز الخصم</button>
           <button class="nav-link" data-view="reports"><span>▤</span>التقارير المالية</button>
+          <button class="nav-link" data-view="archives"><span>▣</span>الأرشفة اليدوية</button>
+          <button class="nav-link" data-view="release"><span>↑</span>تحديث التطبيق</button>
         </nav>
         <div class="sidebar-footer"><div class="manager-chip"><span id="manager-initial" class="manager-avatar">م</span><div><strong id="manager-name">مدير جربوع</strong><small>مدير معتمد</small></div></div><button id="logout-button" class="logout-button">تسجيل الخروج</button></div>
       </aside>
@@ -53,8 +57,8 @@
     </div>
 
     <template id="loading-template"><div class="loading-card"><span class="loading-ring"></span><p>جارٍ تحميل بيانات الإدارة…</p></div></template>
-    <script src="/operations-portal/vendor/leaflet/leaflet.js" defer></script>
-    <script src="/operations-portal/app.js" defer></script>
-    <script src="/operations-portal/live-map.js" defer></script>
+    <script src="/admin/vendor/leaflet/leaflet.js" defer></script>
+    <script src="/admin/app.js" defer></script>
+    <script src="/admin/live-map.js" defer></script>
   </body>
 </html>

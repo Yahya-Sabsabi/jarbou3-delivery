@@ -22,6 +22,7 @@ const ONBOARDING_MAX_ATTEMPTS = 4;
 const CODE_MAX_ATTEMPTS = 3;
 const CODE_RETRY_DELAY_MS = 3 * 60 * 1000;
 const RECOVERY_CODE_MS = 10 * 60 * 1000;
+const MAX_ONBOARDING_IMAGE_BYTES = 3 * 1024 * 1024;
 
 function assertOnboardingRateLimit(key: string) {
   const current = onboardingWindows.get(key);
@@ -40,6 +41,26 @@ function generatedAuthPassword() {
 
 function retryAfterIso() {
   return new Date(Date.now() + CODE_RETRY_DELAY_MS).toISOString();
+}
+
+function decodeSmallPrivateImage(value: string) {
+  const image = decodeDataUrl(value);
+  if (image.buffer.byteLength === 0 || image.buffer.byteLength > MAX_ONBOARDING_IMAGE_BYTES) {
+    throw new Error("IMAGE_TOO_LARGE");
+  }
+  return image;
+}
+
+async function resolveActiveDiscount(code: string | undefined, preDiscountPrice: number) {
+  if (!code?.trim()) return { discountCodeId: null, discountAmount: 0, finalPrice: preDiscountPrice };
+  const normalized = code.trim().toUpperCase();
+  const { data, error } = await asService().from("discount_codes").select("id,discount_type,discount_value,starts_at,ends_at,is_active").eq("code", normalized).maybeSingle();
+  if (error) throw new Error(error.message);
+  const now = Date.now();
+  if (!data || !data.is_active || (data.starts_at && new Date(data.starts_at).getTime() > now) || (data.ends_at && new Date(data.ends_at).getTime() <= now)) throw new Error("DISCOUNT_CODE_INVALID");
+  const rawAmount = data.discount_type === "percentage" ? Math.floor(preDiscountPrice * Number(data.discount_value) / 100) : Math.floor(Number(data.discount_value));
+  const discountAmount = Math.max(0, Math.min(preDiscountPrice, rawAmount));
+  return { discountCodeId: data.id, discountAmount, finalPrice: Math.max(0, preDiscountPrice - discountAmount) };
 }
 
 async function searchHamaAddresses(query: string, filter: HamaSearchFilter): Promise<HamaSearchResult[]> {
@@ -107,6 +128,16 @@ export const appRouter = router({
   }),
 
   jarbou3: router({
+    releaseSettings: publicProcedure.query(async () => {
+      const { data, error } = await asService().from("app_release_settings").select("min_version,force_update,update_url,updated_at").eq("singleton", true).maybeSingle();
+      if (error) throw new Error(error.message);
+      return { minVersion: data?.min_version ?? null, forceUpdate: Boolean(data?.force_update), updateUrl: data?.update_url ?? null, updatedAt: data?.updated_at ?? null };
+    }),
+
+    previewDiscount: publicProcedure
+      .input(z.object({ code: z.string().trim().min(3).max(32), preDiscountPrice: z.number().int().nonnegative() }))
+      .query(async ({ input }) => resolveActiveDiscount(input.code, input.preDiscountPrice)),
+
     searchHamaAddresses: publicProcedure
       .input(z.object({ query: z.string().trim().min(2).max(80), filter: z.enum(["all", "shops", "streets"]).default("all") }))
       .query(async ({ input }) => searchHamaAddresses(input.query, input.filter)),
@@ -234,27 +265,70 @@ export const appRouter = router({
     sessionProfile: publicProcedure
       .input(tokenInput)
       .query(async ({ input }) => {
-        const { authUser, profile } = await requireRole(input.accessToken, ["customer", "driver"]);
-        return { id: authUser.id, name: profile.name, role: profile.role };
+        const authUser = await getAuthenticatedUser(input.accessToken);
+        const profile = await getUserProfile(authUser.id);
+        const { data: pendingRequest, error } = await asService()
+          .from("account_verification_requests")
+          .select("id")
+          .eq("auth_user_id", authUser.id)
+          .eq("status", "password_pending")
+          .limit(1)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!profile.is_active && !pendingRequest) throw new Error("JARBOU3_FORBIDDEN");
+        return { id: authUser.id, name: profile.name, role: profile.role, pendingPassword: Boolean(pendingRequest) };
       }),
 
     submitOnboarding: publicProcedure
-      .input(z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().regex(/^\+?[0-9]{8,16}$/), requestedRole: z.enum(["customer", "driver"]), vehicleType: z.enum(["motorcycle", "electric_scooter"]).optional() }))
+      .input(z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().regex(/^\+?[0-9]{8,16}$/), requestedRole: z.enum(["customer", "driver"]), vehicleType: z.enum(["motorcycle", "electric_scooter"]).optional(), personalPhoto: imageInput.optional(), identityPhoto: imageInput.optional() }))
       .mutation(async ({ input, ctx }) => {
         assertOnboardingRateLimit(`submit:${ctx.req.ip ?? "unknown"}:${input.phone}`);
         if (input.requestedRole === "driver" && !input.vehicleType) throw new Error("VEHICLE_TYPE_REQUIRED");
+        if (input.requestedRole === "driver" && (!input.personalPhoto || !input.identityPhoto)) throw new Error("DRIVER_DOCUMENTS_REQUIRED");
+        if (input.requestedRole === "customer" && (input.personalPhoto || input.identityPhoto)) throw new Error("CUSTOMER_DOCUMENTS_NOT_ALLOWED");
         const service = asService();
-        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,status,requested_role,code_expires_at,retry_after").eq("phone", input.phone).maybeSingle();
+        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,status,requested_role,code_expires_at,retry_after,personal_photo_path,identity_photo_path").eq("phone", input.phone).maybeSingle();
         if (existingError) throw new Error(existingError.message);
         if (existing?.status === "verified") throw new Error("ACCOUNT_ALREADY_VERIFIED");
+        if (existing?.status === "password_pending") throw new Error("PASSWORD_SETUP_PENDING");
         if (existing?.status === "locked" && existing.retry_after && new Date(existing.retry_after).getTime() <= Date.now()) {
           const { data: reopened, error: reopenError } = await service.from("account_verification_requests").update({ status: "pending_admin", retry_after: null, verification_code_hash: null, code_attempts: 0, code_expires_at: null }).eq("id", existing.id).select("id,status,requested_role,code_expires_at,retry_after").single();
           if (reopenError || !reopened) throw new Error(reopenError?.message ?? "ONBOARDING_REQUEST_FAILED");
           return { requestId: reopened.id, status: reopened.status, requestedRole: reopened.requested_role, codeExpiresAt: reopened.code_expires_at, retryAfter: reopened.retry_after };
         }
-        if (existing) return { requestId: existing.id, status: existing.status, requestedRole: existing.requested_role, codeExpiresAt: existing.code_expires_at, retryAfter: existing.retry_after };
+        if (existing) {
+          if (input.requestedRole === "driver" && input.personalPhoto && input.identityPhoto && (!existing.personal_photo_path || !existing.identity_photo_path)) {
+            const personal = decodeSmallPrivateImage(input.personalPhoto);
+            const identity = decodeSmallPrivateImage(input.identityPhoto);
+            const prefix = `onboarding-documents/${existing.id}`;
+            const personalPath = `${prefix}/personal-${Date.now()}.${personal.contentType.endsWith("png") ? "png" : "jpg"}`;
+            const identityPath = `${prefix}/identity-${Date.now()}.${identity.contentType.endsWith("png") ? "png" : "jpg"}`;
+            const [personalUpload, identityUpload] = await Promise.all([
+              service.storage.from("jarbou3-private").upload(personalPath, personal.buffer, { contentType: personal.contentType, upsert: false }),
+              service.storage.from("jarbou3-private").upload(identityPath, identity.buffer, { contentType: identity.contentType, upsert: false }),
+            ]);
+            if (personalUpload.error || identityUpload.error) throw new Error(personalUpload.error?.message ?? identityUpload.error?.message ?? "DOCUMENT_UPLOAD_FAILED");
+            const { error: documentUpdateError } = await service.from("account_verification_requests").update({ personal_photo_path: personalPath, identity_photo_path: identityPath }).eq("id", existing.id);
+            if (documentUpdateError) throw new Error(documentUpdateError.message);
+          }
+          return { requestId: existing.id, status: existing.status, requestedRole: existing.requested_role, codeExpiresAt: existing.code_expires_at, retryAfter: existing.retry_after };
+        }
         const { data, error } = await service.from("account_verification_requests").insert({ full_name: input.fullName, phone: input.phone, requested_role: input.requestedRole, vehicle_type: input.requestedRole === "driver" ? input.vehicleType : null }).select("id,status,requested_role,code_expires_at,retry_after").single();
         if (error || !data) throw new Error(error?.message ?? "ONBOARDING_REQUEST_FAILED");
+        if (input.requestedRole === "driver" && input.personalPhoto && input.identityPhoto) {
+          const personal = decodeSmallPrivateImage(input.personalPhoto);
+          const identity = decodeSmallPrivateImage(input.identityPhoto);
+          const prefix = `onboarding-documents/${data.id}`;
+          const personalPath = `${prefix}/personal-${Date.now()}.${personal.contentType.endsWith("png") ? "png" : "jpg"}`;
+          const identityPath = `${prefix}/identity-${Date.now()}.${identity.contentType.endsWith("png") ? "png" : "jpg"}`;
+          const [personalUpload, identityUpload] = await Promise.all([
+            service.storage.from("jarbou3-private").upload(personalPath, personal.buffer, { contentType: personal.contentType, upsert: false }),
+            service.storage.from("jarbou3-private").upload(identityPath, identity.buffer, { contentType: identity.contentType, upsert: false }),
+          ]);
+          if (personalUpload.error || identityUpload.error) throw new Error(personalUpload.error?.message ?? identityUpload.error?.message ?? "DOCUMENT_UPLOAD_FAILED");
+          const { error: documentUpdateError } = await service.from("account_verification_requests").update({ personal_photo_path: personalPath, identity_photo_path: identityPath }).eq("id", data.id);
+          if (documentUpdateError) throw new Error(documentUpdateError.message);
+        }
         return { requestId: data.id, status: data.status, requestedRole: data.requested_role, codeExpiresAt: data.code_expires_at, retryAfter: data.retry_after };
       }),
 
@@ -267,7 +341,7 @@ export const appRouter = router({
       }),
 
     verifyOnboardingCode: publicProcedure
-      .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), code: z.string().regex(/^\d{6}$/), password: z.string().min(8).max(72) }))
+      .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), code: z.string().regex(/^\d{6}$/) }))
       .mutation(async ({ input, ctx }) => {
         assertOnboardingRateLimit(`verify:${ctx.req.ip ?? "unknown"}:${input.requestId}`);
         const service = asService();
@@ -279,17 +353,17 @@ export const appRouter = router({
         }
         if (request.code_attempts >= CODE_MAX_ATTEMPTS) {
           await service.from("account_verification_requests").update({ status: "locked", retry_after: retryAfterIso(), verification_code_hash: null }).eq("id", request.id);
-          throw new Error("INVALID_OR_EXPIRED_CODE");
+          throw new Error("ONBOARDING_CODE_LOCKED");
         }
         const valid = await bcrypt.compare(input.code, request.verification_code_hash);
         if (!valid) {
           const attempts = request.code_attempts + 1;
           const locked = attempts >= CODE_MAX_ATTEMPTS;
           await service.from("account_verification_requests").update({ code_attempts: attempts, status: locked ? "locked" : "code_sent", retry_after: locked ? retryAfterIso() : null, verification_code_hash: locked ? null : request.verification_code_hash }).eq("id", request.id);
-          throw new Error("INVALID_OR_EXPIRED_CODE");
+          throw new Error(locked ? "ONBOARDING_CODE_LOCKED" : "INVALID_OR_EXPIRED_CODE");
         }
         let userId = request.auth_user_id;
-        const authPassword = input.password;
+        const authPassword = generatedAuthPassword();
         if (!userId) {
           const { data: existingProfile, error: profileError } = await service.from("users").select("id,role").eq("phone", request.phone).maybeSingle();
           if (profileError) throw new Error(profileError.message);
@@ -307,21 +381,41 @@ export const appRouter = router({
           const { error: updateAuthError } = await service.auth.admin.updateUserById(userId, { password: authPassword, phone_confirm: true, user_metadata: { name: request.full_name, phone: request.phone } });
           if (updateAuthError) throw new Error(updateAuthError.message);
         }
-        const { error: profileUpdateError } = await service.from("users").update({ name: request.full_name, phone: request.phone, role: request.requested_role, is_active: true }).eq("id", userId);
+        const { error: profileUpdateError } = await service.from("users").update({ name: request.full_name, phone: request.phone, role: request.requested_role, is_active: false }).eq("id", userId);
         if (profileUpdateError) throw new Error(profileUpdateError.message);
-        const { error: verificationUpdateError } = await service.from("account_verification_requests").update({ status: "verified", auth_user_id: userId, verification_code_hash: null, code_attempts: 0 }).eq("id", request.id);
+        const { error: verificationUpdateError } = await service.from("account_verification_requests").update({ status: "password_pending", auth_user_id: userId, verification_code_hash: null, code_attempts: 0, retry_after: null }).eq("id", request.id);
         if (verificationUpdateError) throw new Error(verificationUpdateError.message);
         const { data: sessionResult, error: sessionError } = await asPublic().auth.signInWithPassword({ phone: request.phone, password: authPassword });
         if (sessionError || !sessionResult.session || !sessionResult.user) throw new Error(sessionError?.message ?? "SESSION_CREATE_FAILED");
         return { accessToken: sessionResult.session.access_token, refreshToken: sessionResult.session.refresh_token, user: { id: sessionResult.user.id, name: request.full_name, role: request.requested_role } };
       }),
 
+    completeOnboardingPassword: publicProcedure
+      .input(tokenInput.extend({ password: z.string().min(8).max(72) }))
+      .mutation(async ({ input }) => {
+        const authUser = await getAuthenticatedUser(input.accessToken);
+        const service = asService();
+        const { data: request, error } = await service.from("account_verification_requests")
+          .select("id,full_name,requested_role")
+          .eq("auth_user_id", authUser.id)
+          .eq("status", "password_pending")
+          .maybeSingle();
+        if (error || !request) throw new Error("PASSWORD_SETUP_NOT_AVAILABLE");
+        const { error: passwordError } = await service.auth.admin.updateUserById(authUser.id, { password: input.password, phone_confirm: true });
+        if (passwordError) throw new Error(passwordError.message);
+        const { error: profileError } = await service.from("users").update({ is_active: true, role: request.requested_role, name: request.full_name }).eq("id", authUser.id);
+        if (profileError) throw new Error(profileError.message);
+        const { error: requestError } = await service.from("account_verification_requests").update({ status: "verified" }).eq("id", request.id);
+        if (requestError) throw new Error(requestError.message);
+        return { user: { id: authUser.id, name: request.full_name, role: request.requested_role } };
+      }),
+
     submitDriverVerification: publicProcedure
       .input(tokenInput.extend({ personalPhoto: imageInput, identityPhoto: imageInput }))
       .mutation(async ({ input }) => {
         const { authUser } = await requireRole(input.accessToken, ["customer", "driver"]);
-        const personal = decodeDataUrl(input.personalPhoto);
-        const identity = decodeDataUrl(input.identityPhoto);
+        const personal = decodeSmallPrivateImage(input.personalPhoto);
+        const identity = decodeSmallPrivateImage(input.identityPhoto);
         const service = asService();
         const prefix = `driver-verification/${authUser.id}`;
         const personalPath = `${prefix}/personal-${Date.now()}.${personal.contentType.endsWith("png") ? "png" : "jpg"}`;
@@ -339,14 +433,15 @@ export const appRouter = router({
       }),
 
     createOrder: publicProcedure
-      .input(tokenInput.extend({ sourceAddress: z.string().trim().min(3).max(300), destinationAddress: z.string().trim().min(3).max(300), source: pointInput, destination: pointInput, estimatedPrice: z.number().int().nonnegative(), paymentMethod: z.enum(["cash", "sham_cash"]), distanceM: z.number().int().nonnegative() }))
+      .input(tokenInput.extend({ sourceAddress: z.string().trim().min(3).max(300), destinationAddress: z.string().trim().min(3).max(300), source: pointInput, destination: pointInput, estimatedPrice: z.number().int().nonnegative(), paymentMethod: z.enum(["cash", "sham_cash"]), distanceM: z.number().int().nonnegative(), discountCode: z.string().trim().max(32).optional() }))
       .mutation(async ({ input }) => {
         const { authUser } = await requireRole(input.accessToken, ["customer"]);
         assertHamaPoint(input.source.latitude, input.source.longitude);
         assertHamaPoint(input.destination.latitude, input.destination.longitude);
         if (!isInsideHama(input.destination.latitude, input.destination.longitude)) throw new Error("OUTSIDE_HAMA");
+        const discount = await resolveActiveDiscount(input.discountCode, input.estimatedPrice);
         const { hash } = await createOtpHash();
-        const { data, error } = await asUser(input.accessToken).from("orders").insert({ customer_id: authUser.id, source_address: input.sourceAddress, source_lat: input.source.latitude, source_lng: input.source.longitude, destination_address: input.destinationAddress, destination_lat: input.destination.latitude, destination_lng: input.destination.longitude, estimated_price: input.estimatedPrice, payment_method: input.paymentMethod, distance_m: input.distanceM, status: "requested", delivery_otp_hash: hash }).select("id,status,created_at").single();
+        const { data, error } = await asUser(input.accessToken).from("orders").insert({ customer_id: authUser.id, source_address: input.sourceAddress, source_lat: input.source.latitude, source_lng: input.source.longitude, destination_address: input.destinationAddress, destination_lat: input.destination.latitude, destination_lng: input.destination.longitude, estimated_price: input.estimatedPrice, pre_discount_price: input.estimatedPrice, discount_amount: discount.discountAmount, discount_code_id: discount.discountCodeId, final_price: discount.finalPrice, payment_method: input.paymentMethod, distance_m: input.distanceM, status: "requested", delivery_otp_hash: hash }).select("id,status,created_at,final_price,discount_amount").single();
         if (error) throw new Error(error.message);
         return data;
       }),

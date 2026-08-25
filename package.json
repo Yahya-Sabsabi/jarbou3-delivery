@@ -21,6 +21,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-community/netinfo": "11.4.1",
     "@react-navigation/bottom-tabs": "^7.8.12",
     "@react-navigation/elements": "^2.9.2",
     "@react-navigation/native": "^7.1.25",
@@ -61,6 +62,7 @@
     "leaflet": "^1.9.4",
     "mysql2": "^3.16.0",
     "nativewind": "^4.2.1",
+    "pdfkit": "^0.20.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
@@ -83,6 +85,7 @@
     "@types/express": "^4.17.25",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^22.19.3",
+    "@types/pdfkit": "^0.17.6",
     "@types/qrcode": "^1.5.6",
     "@types/react": "~19.1.17",
     "@types/ws": "^8.18.1",

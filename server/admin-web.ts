@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 
 import { asService } from "./jarbou3-supabase";
+import { generateManualArchive, listManualArchives, prepareManualArchiveDownload, purgeManualArchive } from "./jarbou3-manual-archive";
 import { buildAdminNotifications, isSameOriginRequest, normalizeReportMonth, type AdminNotification } from "./admin-web-utils";
 
 const SITE_COOKIE = "jarbou3_admin_access";
@@ -150,13 +151,44 @@ async function listReports() {
 }
 
 async function listAccountVerifications() {
-  const { data, error } = await asService().from("account_verification_requests").select("id,full_name,phone,requested_role,vehicle_type,status,code_expires_at,created_at,updated_at").in("status", ["pending_admin", "code_sent", "locked"]).order("created_at", { ascending: true }).limit(40);
+  const { data, error } = await asService().from("account_verification_requests").select("id,full_name,phone,requested_role,vehicle_type,status,personal_photo_path,identity_photo_path,code_expires_at,created_at,updated_at").in("status", ["pending_admin", "code_sent", "locked"]).order("created_at", { ascending: true }).limit(40);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+async function listRecoveryRequests() {
+  const { data, error } = await asService().from("account_recovery_requests").select("id,full_name,phone,requested_role,status,code_expires_at,retry_after,created_at,updated_at").in("status", ["pending_admin", "code_sent", "locked"]).order("created_at", { ascending: true }).limit(40);
   if (error) throw new Error(error.message);
   return data ?? [];
 }
 
 const loginSchema = z.object({ password: z.string().min(16).max(512) });
 const generateReportSchema = z.object({ reportMonth: z.string() });
+const discountSchema = z.object({ code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,32}$/), discountType: z.enum(["fixed", "percentage"]), discountValue: z.number().positive(), startsAt: z.string().datetime().nullable().optional(), endsAt: z.string().datetime().nullable().optional() }).superRefine((value, context) => {
+  if (value.discountType === "percentage" && value.discountValue > 100) context.addIssue({ code: "custom", message: "PERCENTAGE_TOO_HIGH" });
+  if (value.endsAt && value.startsAt && new Date(value.endsAt).getTime() <= new Date(value.startsAt).getTime()) context.addIssue({ code: "custom", message: "INVALID_DISCOUNT_WINDOW" });
+});
+const archiveSchema = z.object({ archiveKind: z.enum(["weekly_documents", "monthly_text"]), periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
+const releaseSchema = z.object({ minVersion: z.string().regex(/^\d+\.\d+\.\d+$/).nullable(), forceUpdate: z.boolean(), updateUrl: z.string().url().nullable() }).superRefine((value, context) => {
+  if (value.forceUpdate && (!value.minVersion || !value.updateUrl)) context.addIssue({ code: "custom", message: "FORCED_RELEASE_REQUIRES_VERSION_AND_URL" });
+});
+
+async function listManagedAccounts() {
+  const service = asService();
+  const [usersResult, onboardingResult, driverVerificationResult] = await Promise.all([
+    service.from("users").select("id,name,phone,role,is_active,created_at").in("role", ["customer", "driver"]).order("created_at", { ascending: false }).limit(250),
+    service.from("account_verification_requests").select("auth_user_id,phone,personal_photo_path,identity_photo_path,status,created_at").not("auth_user_id", "is", null).order("created_at", { ascending: false }).limit(300),
+    service.from("drivers_verification").select("user_id,personal_photo_path,id_photo_path,status,updated_at").limit(300),
+  ]);
+  if (usersResult.error || onboardingResult.error || driverVerificationResult.error) throw new Error(usersResult.error?.message ?? onboardingResult.error?.message ?? driverVerificationResult.error?.message ?? "ACCOUNTS_UNAVAILABLE");
+  const onboardingByUser = new Map((onboardingResult.data ?? []).map((row) => [row.auth_user_id, row]));
+  const driverByUser = new Map((driverVerificationResult.data ?? []).map((row) => [row.user_id, row]));
+  return (usersResult.data ?? []).map((user) => {
+    const onboarding = onboardingByUser.get(user.id);
+    const driver = driverByUser.get(user.id);
+    return { ...user, verificationStatus: driver?.status ?? onboarding?.status ?? null, personalPhotoPath: driver?.personal_photo_path ?? onboarding?.personal_photo_path ?? null, identityPhotoPath: driver?.id_photo_path ?? onboarding?.identity_photo_path ?? null };
+  });
+}
 
 export function registerAdminWebRoutes(app: Express) {
   app.use("/admin/api", (_req, res, next) => {
@@ -304,6 +336,230 @@ export function registerAdminWebRoutes(app: Express) {
       res.json({ requestId: request.id, whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(text)}`, expiresAt: expiresAt.toISOString() });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "VERIFICATION_CODE_SEND_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/verifications/:requestId/document/:kind", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      const requestId = z.string().uuid().safeParse(req.params.requestId);
+      const kind = z.enum(["personal", "identity"]).safeParse(req.params.kind);
+      if (!requestId.success || !kind.success) return res.status(400).json({ error: "INVALID_DOCUMENT_REQUEST" });
+      const service = asService();
+      const { data: request, error } = await service.from("account_verification_requests").select("personal_photo_path,identity_photo_path").eq("id", requestId.data).single();
+      const path = kind.data === "personal" ? request?.personal_photo_path : request?.identity_photo_path;
+      if (error || !path) return res.status(404).json({ error: "DOCUMENT_NOT_AVAILABLE" });
+      const { data, error: signedError } = await service.storage.from("jarbou3-private").createSignedUrl(path, 90);
+      if (signedError || !data?.signedUrl) throw new Error(signedError?.message ?? "DOCUMENT_URL_UNAVAILABLE");
+      res.json({ url: data.signedUrl });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "DOCUMENT_PREVIEW_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/recovery-requests", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      res.json({ requests: await listRecoveryRequests() });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: "SITE_RECOVERY_REQUESTS_UNAVAILABLE" });
+    }
+  });
+
+  app.post("/admin/api/recovery-requests/:requestId/send-code", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const requestId = z.string().uuid().safeParse(req.params.requestId);
+      if (!requestId.success) {
+        res.status(400).json({ error: "INVALID_RECOVERY_REQUEST" });
+        return;
+      }
+      const service = asService();
+      const { data: request, error: requestError } = await service.from("account_recovery_requests").select("id,full_name,phone,requested_role,status,retry_after").eq("id", requestId.data).single();
+      if (requestError || !request || !["pending_admin", "code_sent", "locked"].includes(request.status) || (request.status === "locked" && request.retry_after && new Date(request.retry_after).getTime() > Date.now())) {
+        res.status(409).json({ error: "RECOVERY_NOT_AVAILABLE" });
+        return;
+      }
+      const code = String(randomInt(100000, 1000000));
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + VERIFICATION_CODE_MS);
+      const { error: updateError } = await service.from("account_recovery_requests").update({ status: "code_sent", verification_code_hash: await bcrypt.hash(code, 12), code_expires_at: expiresAt.toISOString(), code_attempts: 0, retry_after: null, code_sent_at: now.toISOString() }).eq("id", request.id);
+      if (updateError) throw new Error(updateError.message);
+      const phone = request.phone.replace(/[^0-9]/g, "");
+      const text = `مرحباً ${request.full_name}، رمز جربوع لإعادة تعيين كلمة المرور: ${code}. الرمز صالح لمدة 10 دقائق. لا تشاركه مع أي شخص.`;
+      res.json({ requestId: request.id, whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(text)}`, expiresAt: expiresAt.toISOString() });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "RECOVERY_CODE_SEND_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/accounts", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      res.json({ accounts: await listManagedAccounts() });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: "SITE_ACCOUNTS_UNAVAILABLE" });
+    }
+  });
+
+  app.post("/admin/api/accounts/:userId/deactivate", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const userId = z.string().uuid().safeParse(req.params.userId);
+      if (!userId.success) return res.status(400).json({ error: "INVALID_ACCOUNT" });
+      const { error } = await asService().from("users").update({ is_active: false }).eq("id", userId.data).in("role", ["customer", "driver"]);
+      if (error) throw new Error(error.message);
+      res.json({ deactivated: true });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "ACCOUNT_DEACTIVATION_FAILED" });
+    }
+  });
+
+  app.post("/admin/api/accounts/:userId/reactivate", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const userId = z.string().uuid().safeParse(req.params.userId);
+      if (!userId.success) return res.status(400).json({ error: "INVALID_ACCOUNT" });
+      const { error } = await asService().from("users").update({ is_active: true }).eq("id", userId.data).in("role", ["customer", "driver"]);
+      if (error) throw new Error(error.message);
+      res.json({ reactivated: true });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "ACCOUNT_REACTIVATION_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/accounts/:userId/document/:kind", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      const userId = z.string().uuid().safeParse(req.params.userId);
+      const kind = z.enum(["personal", "identity"]).safeParse(req.params.kind);
+      if (!userId.success || !kind.success) return res.status(400).json({ error: "INVALID_DOCUMENT_REQUEST" });
+      const service = asService();
+      const [driverResult, onboardingResult] = await Promise.all([
+        service.from("drivers_verification").select("personal_photo_path,id_photo_path").eq("user_id", userId.data).maybeSingle(),
+        service.from("account_verification_requests").select("personal_photo_path,identity_photo_path").eq("auth_user_id", userId.data).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      const path = kind.data === "personal" ? driverResult.data?.personal_photo_path ?? onboardingResult.data?.personal_photo_path : driverResult.data?.id_photo_path ?? onboardingResult.data?.identity_photo_path;
+      if (!path) return res.status(404).json({ error: "DOCUMENT_NOT_AVAILABLE" });
+      const { data, error } = await service.storage.from("jarbou3-private").createSignedUrl(path, 90);
+      if (error || !data?.signedUrl) throw new Error(error?.message ?? "DOCUMENT_URL_UNAVAILABLE");
+      res.json({ url: data.signedUrl });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "DOCUMENT_PREVIEW_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/discounts", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      const { data, error } = await asService().from("discount_codes").select("id,code,discount_type,discount_value,starts_at,ends_at,is_active,deactivated_at,created_at").order("created_at", { ascending: false }).limit(100);
+      if (error) throw new Error(error.message);
+      res.json({ codes: data ?? [] });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: "DISCOUNTS_UNAVAILABLE" });
+    }
+  });
+
+  app.post("/admin/api/discounts", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const parsed = discountSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "INVALID_DISCOUNT" });
+      const { data, error } = await asService().from("discount_codes").insert({ code: parsed.data.code, discount_type: parsed.data.discountType, discount_value: parsed.data.discountValue, starts_at: parsed.data.startsAt ?? null, ends_at: parsed.data.endsAt ?? null, is_active: true }).select("id,code,discount_type,discount_value,starts_at,ends_at,is_active,deactivated_at,created_at").single();
+      if (error || !data) throw new Error(error?.message ?? "DISCOUNT_CREATE_FAILED");
+      res.json({ code: data });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "DISCOUNT_CREATE_FAILED" });
+    }
+  });
+
+  app.post("/admin/api/discounts/:codeId/toggle", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const codeId = z.string().uuid().safeParse(req.params.codeId);
+      const active = z.object({ isActive: z.boolean() }).safeParse(req.body);
+      if (!codeId.success || !active.success) return res.status(400).json({ error: "INVALID_DISCOUNT" });
+      const { error } = await asService().from("discount_codes").update({ is_active: active.data.isActive, deactivated_at: active.data.isActive ? null : new Date().toISOString() }).eq("id", codeId.data);
+      if (error) throw new Error(error.message);
+      res.json({ updated: true });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "DISCOUNT_UPDATE_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/release-settings", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      const { data, error } = await asService().from("app_release_settings").select("min_version,force_update,update_url,updated_at").eq("singleton", true).single();
+      if (error) throw new Error(error.message);
+      res.json({ settings: { minVersion: data.min_version, forceUpdate: data.force_update, updateUrl: data.update_url, updatedAt: data.updated_at } });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: "RELEASE_SETTINGS_UNAVAILABLE" });
+    }
+  });
+
+  app.put("/admin/api/release-settings", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const parsed = releaseSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "INVALID_RELEASE_SETTINGS" });
+      const { error } = await asService().from("app_release_settings").update({ min_version: parsed.data.minVersion, force_update: parsed.data.forceUpdate, update_url: parsed.data.updateUrl }).eq("singleton", true);
+      if (error) throw new Error(error.message);
+      res.json({ updated: true });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "RELEASE_SETTINGS_UPDATE_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/manual-archives", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      res.json({ archives: await listManualArchives() });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: "MANUAL_ARCHIVES_UNAVAILABLE" });
+    }
+  });
+
+  app.post("/admin/api/manual-archives/generate", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const parsed = archiveSchema.safeParse(req.body);
+      if (!parsed.success || parsed.data.periodEnd < parsed.data.periodStart) return res.status(400).json({ error: "INVALID_ARCHIVE_PERIOD" });
+      res.json(await generateManualArchive(parsed.data.archiveKind, parsed.data.periodStart, parsed.data.periodEnd));
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "MANUAL_ARCHIVE_GENERATION_FAILED" });
+    }
+  });
+
+  app.post("/admin/api/manual-archives/:archiveId/download", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const archiveId = z.string().uuid().safeParse(req.params.archiveId);
+      if (!archiveId.success) return res.status(400).json({ error: "INVALID_ARCHIVE" });
+      res.json(await prepareManualArchiveDownload(archiveId.data));
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "MANUAL_ARCHIVE_DOWNLOAD_FAILED" });
+    }
+  });
+
+  app.post("/admin/api/manual-archives/:archiveId/purge", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const archiveId = z.string().uuid().safeParse(req.params.archiveId);
+      const confirmation = z.object({ confirmation: z.string() }).safeParse(req.body);
+      if (!archiveId.success || !confirmation.success) return res.status(400).json({ error: "INVALID_ARCHIVE_PURGE" });
+      res.json(await purgeManualArchive(archiveId.data, confirmation.data.confirmation));
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "MANUAL_ARCHIVE_PURGE_FAILED" });
     }
   });
 

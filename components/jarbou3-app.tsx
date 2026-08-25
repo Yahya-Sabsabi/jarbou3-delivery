@@ -2,17 +2,20 @@ import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, BackHandler, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from "react-native";
 
 import { trpc } from "@/lib/trpc";
 import { jarbou3Session } from "@/lib/jarbou3-session";
 import { HAMA_CENTER, formatSyp, type MapPoint } from "@/shared/jarbou3";
 import { HamaMap } from "@/components/hama-map";
 import { getCurrentHamaLocation, watchHamaLocation } from "@/lib/jarbou3-location";
-import { startJarbou3BackgroundTracking, stopJarbou3BackgroundTracking } from "@/lib/jarbou3-background-location";
+import { flushJarbou3QueuedLocation, startJarbou3BackgroundTracking, stopJarbou3BackgroundTracking } from "@/lib/jarbou3-background-location";
 import { getOsrmRoute, type RouteEstimate } from "@/lib/osrm";
 import { configureJarbou3Realtime, subscribeToCustomerOrder, subscribeToOrderLiveLocation, unsubscribeRealtime } from "@/lib/jarbou3-realtime";
 import { registerJarbou3PushToken } from "@/lib/jarbou3-notifications";
+import { readRuntimeReadiness, requestRuntimeLocationPermission, type RuntimeReadiness } from "@/lib/jarbou3-runtime";
+import { isVersionBelow } from "@/lib/jarbou3-release";
+import Constants from "expo-constants";
 
 type Role = "customer" | "driver";
 type CustomerPage = "home" | "order" | "track" | "otp";
@@ -56,7 +59,7 @@ function RoleSwitch({ role, onSelect }: { role: Role; onSelect: (role: Role) => 
   return <View style={styles.roleSwitch}>{(["customer", "driver"] as Role[]).map((option) => <Pressable key={option} onPress={() => onSelect(option)} style={[styles.role, role === option && styles.roleSelected]}><Text style={[styles.roleText, role === option && styles.roleTextSelected]}>{option === "customer" ? "عميل" : "سائق"}</Text></Pressable>)}</View>;
 }
 
-function Customer({ name }: { name: string }) {
+function Customer({ name, onTripActivity }: { name: string; onTripActivity: (active: boolean) => void }) {
   const [page, setPage] = useState<CustomerPage>("home");
   const [source, setSource] = useState<MapPoint | null>({ latitude: 35.1319, longitude: 36.7547 });
   const [destination, setDestination] = useState<MapPoint | null>({ latitude: 35.1511, longitude: 36.7304 });
@@ -76,15 +79,40 @@ function Customer({ name }: { name: string }) {
   const [realtimeStatus, setRealtimeStatus] = useState("جارٍ فتح التحديث المباشر…");
   const [searchFilter, setSearchFilter] = useState<"all" | "shops" | "streets">("all");
   const [favoriteLabel, setFavoriteLabel] = useState("");
-  const createOrder = trpc.jarbou3.createOrder.useMutation({ onSuccess: () => setPage("track"), onError: (error) => Alert.alert("تعذر إنشاء الطلب", error.message) });
+  const [discountCode, setDiscountCode] = useState("");
+  const [appliedDiscount, setAppliedDiscount] = useState<{ discountAmount: number; finalPrice: number } | null>(null);
+  const createOrder = trpc.jarbou3.createOrder.useMutation({ onSuccess: async (order) => {
+    await jarbou3Session.saveActiveTrip({ role: "customer", orderId: order.id, sourceAddress: "نقطة الاستلام المحددة على الخريطة، حماة", sourceLat: source?.latitude ?? 0, sourceLng: source?.longitude ?? 0, destinationAddress: "وجهة التسليم المحددة على الخريطة، حماة", destinationLat: destination?.latitude ?? 0, destinationLng: destination?.longitude ?? 0, distanceM: route?.distanceM ?? 0, savedAt: new Date().toISOString() });
+    onTripActivity(true);
+    setPage("track");
+  }, onError: (error) => Alert.alert("تعذر إنشاء الطلب", error.message) });
   const currentTracking = trpc.jarbou3.currentCustomerTracking.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: page === "track" && Boolean(accessToken) });
   const addressSearch = trpc.jarbou3.searchHamaAddresses.useQuery({ query: addressQuery.trim().length >= 2 ? addressQuery.trim() : "حماة", filter: searchFilter }, { enabled: false });
+  const discountPreview = trpc.jarbou3.previewDiscount.useQuery({ code: discountCode.trim() || "---", preDiscountPrice: route?.price ?? 0 }, { enabled: false, retry: false });
   const favoriteAddresses = trpc.jarbou3.listFavoriteAddresses.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: Boolean(accessToken) });
   const saveFavorite = trpc.jarbou3.saveFavoriteAddress.useMutation({ onSuccess: () => { favoriteAddresses.refetch(); setFavoriteLabel(""); Alert.alert("تم الحفظ", "أصبح العنوان ضمن عناوينك المفضلة."); }, onError: (error) => Alert.alert("تعذر الحفظ", error.message) });
   const deleteFavorite = trpc.jarbou3.deleteFavoriteAddress.useMutation({ onSuccess: () => favoriteAddresses.refetch() });
   const registerPushToken = trpc.jarbou3.registerPushToken.useMutation();
 
   useEffect(() => { jarbou3Session.getAccessToken().then(setAccessToken); }, []);
+  useEffect(() => {
+    jarbou3Session.getActiveTrip().then((trip) => {
+      if (trip?.role === "customer") setPage("track");
+    });
+  }, []);
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    let previousBackAt = 0;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (page === "order" || page === "track") { setPage("home"); return true; }
+      if (page === "otp") { setPage("track"); return true; }
+      if (Date.now() - previousBackAt < 2_000) return false;
+      previousBackAt = Date.now();
+      ToastAndroid.show("اضغط رجوع مرة أخرى للخروج", ToastAndroid.SHORT);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [page]);
   useEffect(() => {
     if (!accessToken) return;
     configureJarbou3Realtime(accessToken);
@@ -169,7 +197,19 @@ function Customer({ name }: { name: string }) {
     if (!source || !destination || !route) return Alert.alert("اختر النقطتين", "ضع دبوس الاستلام ودبوس التسليم داخل دائرة حماة أولاً.");
     const accessToken = await jarbou3Session.getAccessToken();
     if (!accessToken) return Alert.alert("سجّل الدخول أولاً", "يلزم الدخول الآمن لإنشاء طلب محفوظ ومتابعة السائق.");
-    createOrder.mutate({ accessToken, sourceAddress: "نقطة الاستلام المحددة على الخريطة، حماة", destinationAddress: "وجهة التسليم المحددة على الخريطة، حماة", source, destination, estimatedPrice: route.price, paymentMethod: payment === "نقدي" ? "cash" : "sham_cash", distanceM: route.distanceM });
+    createOrder.mutate({ accessToken, sourceAddress: "نقطة الاستلام المحددة على الخريطة، حماة", destinationAddress: "وجهة التسليم المحددة على الخريطة، حماة", source, destination, estimatedPrice: route.price, paymentMethod: payment === "نقدي" ? "cash" : "sham_cash", distanceM: route.distanceM, discountCode: discountCode.trim() || undefined });
+  };
+  const verifyDiscount = async () => {
+    if (!route || discountCode.trim().length < 3) return Alert.alert("أدخل الرمز", "اكتب رمز الخصم الذي وصلك ثم اضغط تحقق.");
+    try {
+      const result = await discountPreview.refetch();
+      if (!result.data) throw new Error("DISCOUNT_CODE_INVALID");
+      setAppliedDiscount(result.data);
+      Alert.alert("تم تطبيق الخصم", `يوفّر لك الخصم ${formatSyp(result.data.discountAmount)} على هذا الطلب.`);
+    } catch {
+      setAppliedDiscount(null);
+      Alert.alert("الرمز غير صالح", "تحقق من الرمز أو من تاريخ صلاحيته.");
+    }
   };
 
   if (page === "order") return (
@@ -194,10 +234,11 @@ function Customer({ name }: { name: string }) {
           <Text style={styles.favoriteTitle}>عناويني المفضلة</Text>
           {accessToken ? <><View style={styles.favoriteRow}>{(favoriteAddresses.data ?? []).length ? favoriteAddresses.data?.map((favorite) => <Pressable key={favorite.id} onPress={() => chooseFavorite(favorite)} style={styles.favoriteChip}><Text numberOfLines={1} style={styles.favoriteChipText}>{favorite.label}</Text><Pressable onPress={() => deleteFavorite.mutate({ accessToken, favoriteId: favorite.id })} hitSlop={8}><Text style={styles.favoriteDelete}>×</Text></Pressable></Pressable>) : <Text style={styles.favoriteEmpty}>احفظ الدبوس الحالي ليظهر هنا.</Text>}</View><View style={styles.saveFavoriteRow}><TextInput value={favoriteLabel} onChangeText={setFavoriteLabel} placeholder="اسم اختياري، مثل المنزل" placeholderTextColor="#909090" style={styles.favoriteInput} textAlign="right" /><Pressable onPress={saveCurrentFavorite} style={styles.saveFavoriteButton}><Text style={styles.saveFavoriteButtonText}>{saveFavorite.isPending ? "…" : "حفظ"}</Text></Pressable></View></> : <Text style={styles.favoriteEmpty}>سجّل الدخول لحفظ العناوين واستعمالها في الطلبات القادمة.</Text>}
         </View>
-        <View style={styles.quote}><View><Text style={styles.quoteLabel}>السعر التقديري</Text><Text style={styles.quoteValue}>{route ? formatSyp(route.price) : "—"}</Text></View><View style={styles.quoteLine} /><View><Text style={styles.quoteLabel}>المسافة والوقت</Text><Text style={styles.quoteValueSmall}>{routeLoading ? "يُحسب المسار…" : route ? `${(route.distanceM / 1000).toFixed(1)} كم · ${Math.max(1, Math.round(route.durationSeconds / 60))} دقيقة` : "اختر الدبوسين"}</Text></View></View>
+        <View style={styles.quote}><View><Text style={styles.quoteLabel}>{appliedDiscount ? "السعر بعد الخصم" : "السعر التقديري"}</Text><Text style={styles.quoteValue}>{route ? formatSyp(appliedDiscount?.finalPrice ?? route.price) : "—"}</Text>{appliedDiscount ? <Text style={styles.discountSaving}>وفّرت {formatSyp(appliedDiscount.discountAmount)}</Text> : null}</View><View style={styles.quoteLine} /><View><Text style={styles.quoteLabel}>المسافة والوقت</Text><Text style={styles.quoteValueSmall}>{routeLoading ? "يُحسب المسار…" : route ? `${(route.distanceM / 1000).toFixed(1)} كم · ${Math.max(1, Math.round(route.durationSeconds / 60))} دقيقة` : "اختر الدبوسين"}</Text></View></View>
+        <View style={styles.discountBox}><Text style={styles.discountTitle}>رمز الخصم</Text><View style={styles.discountRow}><TextInput value={discountCode} onChangeText={(value) => { setDiscountCode(value.toUpperCase()); setAppliedDiscount(null); }} autoCapitalize="characters" placeholder="مثال: JARBOU3" placeholderTextColor="#909090" style={styles.discountInput} textAlign="right" /><Pressable onPress={verifyDiscount} style={styles.discountButton}><Text style={styles.discountButtonText}>{discountPreview.isFetching ? "…" : "تحقق"}</Text></Pressable></View><Text style={styles.discountHint}>اختياري، ويُراجع من الخادم قبل إنشاء الطلب.</Text></View>
         <Text style={styles.label}>طريقة الدفع</Text>
         <View style={styles.paymentRow}>{(["نقدي", "شام كاش"] as const).map((method) => <Pressable key={method} onPress={() => setPayment(method)} style={[styles.payment, payment === method && styles.paymentSelected]}><Text style={styles.paymentText}>{method}</Text></Pressable>)}</View>
-        <Action title={createOrder.isPending ? "جارٍ إنشاء الطلب…" : `تأكيد الطلب · ${route ? formatSyp(route.price) : "—"}`} onPress={submitOrder} />
+        <Action title={createOrder.isPending ? "جارٍ إنشاء الطلب…" : `تأكيد الطلب · ${route ? formatSyp(appliedDiscount?.finalPrice ?? route.price) : "—"}`} onPress={submitOrder} />
       </View>
     </ScrollView>
   );
@@ -209,7 +250,7 @@ function Customer({ name }: { name: string }) {
   return <ScrollView contentContainerStyle={styles.scroll}><View style={styles.hero}><View><Text style={styles.eyebrow}>جربوع في حماة</Text><Text style={styles.heroTitle}>أهلاً، {name}</Text><Text style={styles.copy}>توصيل قريب وواضح وبالليرة السورية الجديدة.</Text></View><Mark /></View><HamaMap compact source={source} destination={destination} routePath={route?.path} readOnly /><View style={styles.space}><Heading eyebrow="الخدمة متاحة" title="إلى أين نوصلك اليوم؟" /><Action title="إنشاء طلب توصيل" onPress={() => setPage("order")} /><View style={styles.note}><Text style={styles.noteIcon}>↗</Text><View style={styles.flex}><Text style={styles.noteTitle}>اختر نقاطك بحرية داخل حماة</Text><Text style={styles.noteCopy}>اضغط الخريطة لوضع دبوس الاستلام ودبوس التسليم ضمن دائرة ٧ كم.</Text></View></View><Heading eyebrow="آخر الطلبات" title="لا توجد طلبات نشطة" aside="عرض السجل" /><View style={styles.empty}><Text style={styles.emptyText}>ستظهر حالة طلبك وتفاصيل السفير هنا فور التأكيد.</Text></View></View></ScrollView>;
 }
 
-function Driver({ name }: { name: string }) {
+function Driver({ name, onTripActivity }: { name: string; onTripActivity: (active: boolean) => void }) {
   const [page, setPage] = useState<DriverPage>("home");
   const [personal, setPersonal] = useState<string | null>(null);
   const [identity, setIdentity] = useState<string | null>(null);
@@ -219,22 +260,49 @@ function Driver({ name }: { name: string }) {
   const [livePoint, setLivePoint] = useState<MapPoint | null>(null);
   const [gpsQuality, setGpsQuality] = useState("بانتظار إشارة GPS عالية الدقة");
   const [activeOrder, setActiveOrder] = useState<DriverOrderPreview | null>(null);
-  const updateLocation = trpc.jarbou3.updateDriverLocation.useMutation();
+  const updateLocation = trpc.jarbou3.updateDriverLocation.useMutation({
+    onError: async (_error, variables) => {
+      await jarbou3Session.saveQueuedLocation({ ...variables.location, capturedAt: new Date().toISOString() });
+    },
+  });
   const submitVerification = trpc.jarbou3.submitDriverVerification.useMutation({
     onSuccess: () => { setPage("home"); Alert.alert("تم إرسال الوثائق", "تم إرسال الصورة الشخصية وصورة الهوية للمراجعة."); },
     onError: (error) => Alert.alert("تعذر إرسال الوثائق", error.message),
   });
   const availableOrders = trpc.jarbou3.availableDriverOrders.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: Boolean(accessToken), refetchInterval: 8_000 });
-  const acceptOrder = trpc.jarbou3.acceptOrder.useMutation({ onSuccess: (_result, variables) => { const order = (availableOrders.data as DriverOrderPreview[] | undefined)?.find((item) => item.id === variables.orderId) ?? null; setActiveOrder(order); setPage("drive"); }, onError: (error) => Alert.alert("تعذر قبول الطلب", error.message) });
+  const acceptOrder = trpc.jarbou3.acceptOrder.useMutation({ onSuccess: async (_result, variables) => { const order = (availableOrders.data as DriverOrderPreview[] | undefined)?.find((item) => item.id === variables.orderId) ?? null; setActiveOrder(order); if (order) await jarbou3Session.saveActiveTrip({ role: "driver", orderId: order.id, sourceAddress: order.source_address, sourceLat: Number(order.source_lat), sourceLng: Number(order.source_lng), destinationAddress: order.destination_address, destinationLat: Number(order.destination_lat), destinationLng: Number(order.destination_lng), distanceM: order.distance_m, savedAt: new Date().toISOString() }); onTripActivity(true); setPage("drive"); }, onError: (error) => Alert.alert("تعذر قبول الطلب", error.message) });
   const declineOrder = trpc.jarbou3.declineOrder.useMutation({ onSuccess: () => { availableOrders.refetch(); Alert.alert("تم رفض العرض", "لن يظهر هذا الطلب لك مجدداً، وسيبقى متاحاً لبقية السفراء."); }, onError: (error) => Alert.alert("تعذر رفض الطلب", error.message) });
   const camera = async (which: "personal" | "identity" | "proof") => { const permission = await ImagePicker.requestCameraPermissionsAsync(); if (!permission.granted) return Alert.alert("إذن الكاميرا مطلوب", "يلزم الإذن لالتقاط الصور المطلوبة."); const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.65, base64: which !== "proof" }); if (result.canceled) return; const asset = result.assets[0]; const uri = which === "proof" || !asset.base64 ? asset.uri : `data:${asset.mimeType ?? "image/jpeg"};base64,${asset.base64}`; if (which === "personal") setPersonal(uri); if (which === "identity") setIdentity(uri); if (which === "proof") setProof(uri); };
 
   useEffect(() => { jarbou3Session.getAccessToken().then(setAccessToken); }, []);
   useEffect(() => {
+    jarbou3Session.getActiveTrip().then((trip) => {
+      if (!trip || trip.role !== "driver") return;
+      setActiveOrder({ id: trip.orderId, source_address: trip.sourceAddress, source_lat: trip.sourceLat, source_lng: trip.sourceLng, destination_address: trip.destinationAddress, destination_lat: trip.destinationLat, destination_lng: trip.destinationLng, estimated_price: 0, payment_method: "cash", distance_m: trip.distanceM });
+      onTripActivity(true);
+      setPage("drive");
+    });
+  }, [onTripActivity]);
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    let previousBackAt = 0;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (page === "verify") { setPage("home"); return true; }
+      if (page === "deliver") { setPage("drive"); return true; }
+      if (page === "drive") { setPage("home"); return true; }
+      if (Date.now() - previousBackAt < 2_000) return false;
+      previousBackAt = Date.now();
+      ToastAndroid.show("اضغط رجوع مرة أخرى للخروج", ToastAndroid.SHORT);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [page]);
+  useEffect(() => {
     if (page !== "drive" || !accessToken) return;
     let active = true;
     let remove: (() => void) | undefined;
     let backgroundStarted = false;
+    flushJarbou3QueuedLocation().catch(() => undefined);
     startJarbou3BackgroundTracking().then((status) => {
       if (!active) return;
       backgroundStarted = status === "started";
@@ -265,7 +333,7 @@ function Top({ title, back }: { title: string; back: () => void }) { return <Vie
 
 export function Jarbou3App() {
   const [role, setRole] = useState<Role>("customer");
-  const [stage, setStage] = useState<"loading" | "choose" | "form" | "waiting" | "code" | "signin" | "workspace">("loading");
+  const [stage, setStage] = useState<"loading" | "choose" | "form" | "waiting" | "code" | "password" | "signin" | "recoveryRequest" | "recoveryWaiting" | "recoveryCode" | "recoveryPassword" | "workspace">("loading");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [vehicleType, setVehicleType] = useState<"motorcycle" | "electric_scooter">("motorcycle");
@@ -274,9 +342,17 @@ export function Jarbou3App() {
   const [accountPassword, setAccountPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [codeExpiresAt, setCodeExpiresAt] = useState<string | null>(null);
+  const [retryAfter, setRetryAfter] = useState<string | null>(null);
   const [codeClock, setCodeClock] = useState(Date.now());
   const [savedToken, setSavedToken] = useState<string | null | undefined>(undefined);
   const [workspaceName, setWorkspaceName] = useState("");
+  const [onboardingPersonalPhoto, setOnboardingPersonalPhoto] = useState<string | null>(null);
+  const [onboardingIdentityPhoto, setOnboardingIdentityPhoto] = useState<string | null>(null);
+  const [recoveryRequestId, setRecoveryRequestId] = useState<string | null>(null);
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [recoveryResetToken, setRecoveryResetToken] = useState<string | null>(null);
+  const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadiness | null>(null);
+  const [activeTrip, setActiveTrip] = useState(false);
 
   useEffect(() => {
     jarbou3Session.getAccessToken().then(setSavedToken);
@@ -287,10 +363,13 @@ export function Jarbou3App() {
       setPhone(saved.phone);
       setRequestId(saved.requestId);
       setCodeExpiresAt(saved.codeExpiresAt);
+      setRetryAfter(saved.retryAfter ?? null);
       setStage(saved.stage);
     });
   }, []);
   const savedSession = trpc.jarbou3.sessionProfile.useQuery({ accessToken: savedToken ?? "pending-session-token-000" }, { enabled: Boolean(savedToken), retry: false });
+  const releaseSettings = trpc.jarbou3.releaseSettings.useQuery(undefined, { enabled: Boolean(savedToken), refetchInterval: 30_000, retry: false });
+  const currentVersion = Constants.expoConfig?.version ?? "1.0.0";
   const onboardingStatus = trpc.jarbou3.onboardingStatus.useQuery({ requestId: requestId ?? "00000000-0000-0000-0000-000000000000", phone }, { enabled: Boolean(requestId) && Boolean(phone) && (stage === "waiting" || stage === "code"), refetchInterval: stage === "waiting" ? 4_000 : false, retry: false });
   useEffect(() => {
     if (savedToken === undefined) return;
@@ -298,31 +377,79 @@ export function Jarbou3App() {
     if (savedSession.data) {
       setRole(savedSession.data.role);
       setWorkspaceName(savedSession.data.name);
-      setStage("workspace");
+      setStage(savedSession.data.pendingPassword ? "password" : "workspace");
     } else if (savedSession.isError) {
       jarbou3Session.clear().finally(() => { setSavedToken(null); setStage("choose"); });
     }
   }, [savedToken, savedSession.data, savedSession.isError]);
   useEffect(() => {
+    if (!savedToken || stage !== "workspace") {
+      setRuntimeReadiness(null);
+      return;
+    }
+    let active = true;
+    const refresh = () => readRuntimeReadiness().then((next) => { if (active) setRuntimeReadiness(next); }).catch(() => { if (active) setRuntimeReadiness({ online: false, gpsEnabled: false, locationGranted: false }); });
+    refresh();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        refresh();
+        releaseSettings.refetch();
+      }
+    });
+    return () => { active = false; subscription.remove(); };
+  }, [savedToken, stage]);
+  useEffect(() => {
+    if (!savedToken || stage !== "workspace") return;
+    jarbou3Session.getActiveTrip().then((trip) => setActiveTrip(Boolean(trip)));
+  }, [savedToken, stage]);
+  useEffect(() => {
+    if (runtimeReadiness?.online) flushJarbou3QueuedLocation().catch(() => undefined);
+  }, [runtimeReadiness?.online]);
+  useEffect(() => {
+    if (Platform.OS !== "android" || stage === "workspace" || stage === "loading") return;
+    let previousBackAt = 0;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (stage === "form" || stage === "signin") { setStage("choose"); return true; }
+      if (stage === "waiting") { setStage("form"); return true; }
+      if (stage === "code") { setStage("waiting"); return true; }
+      if (stage === "recoveryRequest") { setStage("signin"); return true; }
+      if (stage === "recoveryWaiting") { setStage("recoveryRequest"); return true; }
+      if (stage === "recoveryCode") { setStage("recoveryWaiting"); return true; }
+      if (stage === "recoveryPassword" || stage === "password") return true;
+      if (Date.now() - previousBackAt < 2_000) return false;
+      previousBackAt = Date.now();
+      ToastAndroid.show("اضغط رجوع مرة أخرى للخروج", ToastAndroid.SHORT);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [stage]);
+  useEffect(() => {
     const next = onboardingStatus.data;
     if (!next) return;
     if (next.codeExpiresAt) setCodeExpiresAt(next.codeExpiresAt);
+    if (next.retryAfter) setRetryAfter(next.retryAfter);
     if (next.status === "code_sent" && stage === "waiting") setStage("code");
+    if (next.status === "locked") {
+      setVerificationCode("");
+      setCodeExpiresAt(null);
+      setStage("waiting");
+    }
   }, [onboardingStatus.data, stage]);
   useEffect(() => {
-    if (stage !== "code" || !codeExpiresAt) return;
+    if ((stage !== "code" && stage !== "recoveryCode") || !codeExpiresAt) return;
     setCodeClock(Date.now());
     const interval = setInterval(() => setCodeClock(Date.now()), 1_000);
     return () => clearInterval(interval);
   }, [stage, codeExpiresAt]);
 
   useEffect(() => {
-    if (stage === "form" || stage === "waiting" || stage === "code") {
-      jarbou3Session.saveOnboarding({ role, stage, name, phone, requestId, codeExpiresAt }).catch(() => undefined);
+    if (stage === "form" || stage === "waiting" || stage === "code" || stage === "password") {
+      jarbou3Session.saveOnboarding({ role, stage, name, phone, requestId, codeExpiresAt, retryAfter }).catch(() => undefined);
     }
-  }, [role, stage, name, phone, requestId, codeExpiresAt]);
+  }, [role, stage, name, phone, requestId, codeExpiresAt, retryAfter]);
 
   const remainingSeconds = codeExpiresAt ? Math.max(0, Math.ceil((new Date(codeExpiresAt).getTime() - codeClock) / 1_000)) : null;
+  const retrySeconds = retryAfter ? Math.max(0, Math.ceil((new Date(retryAfter).getTime() - codeClock) / 1_000)) : 0;
   const codeExpired = remainingSeconds === 0;
   const codeTimerLabel = remainingSeconds == null ? "بانتظار إرسال الرمز" : codeExpired ? "انتهت صلاحية الرمز" : `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")} متبقية`;
 
@@ -331,6 +458,7 @@ export function Jarbou3App() {
       setRequestId(result.requestId);
       setRole(result.requestedRole);
       setCodeExpiresAt(result.codeExpiresAt ?? null);
+      setRetryAfter(result.retryAfter ?? null);
       setStage(result.status === "code_sent" ? "code" : "waiting");
     },
     onError: (error) => Alert.alert("تعذر إرسال الطلب", error.message === "ONBOARDING_RATE_LIMITED" ? "تم إيقاف المحاولات مؤقتاً لحماية الحساب. حاول بعد قليل." : "راجع البيانات ثم حاول مرة أخرى."),
@@ -342,11 +470,25 @@ export function Jarbou3App() {
       setRole(result.user.role);
       setWorkspaceName(result.user.name);
       setVerificationCode("");
+      setStage("password");
+      Alert.alert("تم التحقق", "اختر الآن كلمة مرور لحسابك لإتمام الدخول.");
+    },
+    onError: async (error) => {
+      await onboardingStatus.refetch();
+      Alert.alert("تعذر التحقق", error.message === "ONBOARDING_CODE_LOCKED" ? "توقفت المحاولات. انتظر ثلاث دقائق قبل طلب رمز جديد." : "الرمز غير صحيح أو انتهت صلاحيته. بعد ثلاث محاولات خاطئة يُلغى الرمز تلقائياً.");
+    },
+  });
+  const completeOnboardingPassword = trpc.jarbou3.completeOnboardingPassword.useMutation({
+    onSuccess: async (result) => {
+      setWorkspaceName(result.user.name);
+      setRole(result.user.role);
+      setAccountPassword("");
+      setPasswordConfirm("");
       await jarbou3Session.clearOnboarding();
       setStage("workspace");
-      Alert.alert("تم التحقق", `أهلاً ${result.user.name}`);
+      Alert.alert("تم إنشاء الحساب", `أهلاً ${result.user.name}`);
     },
-    onError: (error) => Alert.alert("تعذر التحقق", error.message === "INVALID_OR_EXPIRED_CODE" ? "الرمز غير صحيح أو انتهت صلاحيته. راجع المدير لطلب رمز جديد." : "تعذر التحقق الآن. حاول لاحقاً."),
+    onError: (error) => Alert.alert("تعذر حفظ كلمة المرور", error.message === "PASSWORD_SETUP_NOT_AVAILABLE" ? "انتهت جلسة إعداد كلمة المرور. تواصل مع الإدارة لإرسال رمز جديد." : "حاول مرة أخرى بكلمة مرور مختلفة."),
   });
   const signIn = trpc.jarbou3.signIn.useMutation({
     onSuccess: async (result) => {
@@ -358,38 +500,133 @@ export function Jarbou3App() {
     },
     onError: () => Alert.alert("تعذر الدخول", "تحقق من الرقم وكلمة المرور ثم أعد المحاولة."),
   });
+  const requestRecovery = trpc.jarbou3.requestAccountRecovery.useMutation({
+    onSuccess: (result) => {
+      setRecoveryRequestId(result.requestId);
+      setCodeExpiresAt(result.codeExpiresAt ?? null);
+      setRetryAfter(result.retryAfter ?? null);
+      setStage(result.status === "code_sent" ? "recoveryCode" : "recoveryWaiting");
+    },
+    onError: (error) => Alert.alert("تعذر إرسال الطلب", error.message === "RECOVERY_ACCOUNT_NOT_FOUND" ? "لم نجد حساباً مطابقاً للاسم والرقم ونوع الحساب." : "تعذر إنشاء طلب الاسترجاع الآن."),
+  });
+  const recoveryStatus = trpc.jarbou3.recoveryStatus.useQuery({ requestId: recoveryRequestId ?? "00000000-0000-0000-0000-000000000000", phone }, { enabled: Boolean(recoveryRequestId) && Boolean(phone) && (stage === "recoveryWaiting" || stage === "recoveryCode"), refetchInterval: stage === "recoveryWaiting" ? 4_000 : false, retry: false });
+  useEffect(() => {
+    const next = recoveryStatus.data;
+    if (!next) return;
+    if (next.codeExpiresAt) setCodeExpiresAt(next.codeExpiresAt);
+    if (next.retryAfter) setRetryAfter(next.retryAfter);
+    if (next.status === "code_sent" && stage === "recoveryWaiting") setStage("recoveryCode");
+    if (next.status === "locked") {
+      setRecoveryCode("");
+      setCodeExpiresAt(null);
+      setStage("recoveryWaiting");
+    }
+  }, [recoveryStatus.data, stage]);
+  const verifyRecovery = trpc.jarbou3.verifyRecoveryCode.useMutation({
+    onSuccess: (result) => {
+      setRecoveryResetToken(result.resetToken);
+      setRecoveryCode("");
+      setCodeExpiresAt(result.resetTokenExpiresAt);
+      setStage("recoveryPassword");
+    },
+    onError: async (error) => {
+      await recoveryStatus.refetch();
+      Alert.alert("تعذر التحقق", error.message === "RECOVERY_CODE_LOCKED" ? "توقفت المحاولات. انتظر ثلاث دقائق قبل طلب رمز جديد." : "الرمز غير صحيح أو انتهت صلاحيته.");
+    },
+  });
+  const completeRecovery = trpc.jarbou3.completeAccountRecovery.useMutation({
+    onSuccess: async (result) => {
+      await jarbou3Session.save(result.accessToken, result.refreshToken);
+      setSavedToken(result.accessToken);
+      setRole(result.user.role);
+      setWorkspaceName(result.user.name);
+      setRecoveryResetToken(null);
+      setAccountPassword("");
+      setPasswordConfirm("");
+      setStage("workspace");
+      Alert.alert("تمت إعادة التعيين", "تم إلغاء كلمة المرور السابقة وتسجيل دخولك بأمان.");
+    },
+    onError: () => Alert.alert("تعذر حفظ كلمة المرور", "انتهت صلاحية جلسة الاسترجاع أو تعذر تغيير كلمة المرور."),
+  });
   const submitForm = () => {
     if (!/^\+?[0-9]{8,16}$/.test(phone) || name.trim().length < 2) {
       Alert.alert("تحقق من البيانات", "أدخل اسماً من حرفين على الأقل ورقم WhatsApp بصيغة دولية صحيحة.");
       return;
     }
-    submitOnboarding.mutate({ fullName: name.trim(), phone, requestedRole: role, vehicleType: role === "driver" ? vehicleType : undefined });
+    if (role === "driver" && (!onboardingPersonalPhoto || !onboardingIdentityPhoto)) {
+      Alert.alert("وثائق السفير مطلوبة", "التقط الصورة الشخصية وصورة الهوية قبل إرسال طلب المراجعة.");
+      return;
+    }
+    submitOnboarding.mutate({ fullName: name.trim(), phone, requestedRole: role, vehicleType: role === "driver" ? vehicleType : undefined, personalPhoto: role === "driver" ? onboardingPersonalPhoto ?? undefined : undefined, identityPhoto: role === "driver" ? onboardingIdentityPhoto ?? undefined : undefined });
   };
   const verifyCode = () => {
     if (codeExpired) return Alert.alert("انتهت صلاحية الرمز", "اطلب من المدير إنشاء رمز WhatsApp جديد ثم تحقق منه." );
     if (!requestId || verificationCode.replace(/\D/g, "").length !== 6) return Alert.alert("الرمز غير مكتمل", "أدخل رمز التحقق المكوّن من ستة أرقام.");
+    verifyOnboarding.mutate({ requestId, phone, code: verificationCode.replace(/\D/g, "") });
+  };
+  const saveOnboardingPassword = () => {
     if (accountPassword.length < 8 || accountPassword !== passwordConfirm) return Alert.alert("تحقق من كلمة المرور", "اكتب كلمة مرور من ثمانية أحرف على الأقل وأعد كتابتها مطابقة.");
-    verifyOnboarding.mutate({ requestId, phone, code: verificationCode.replace(/\D/g, ""), password: accountPassword });
+    if (!savedToken) return Alert.alert("انتهت الجلسة", "أدخل رمز WhatsApp مرة أخرى لإكمال التسجيل.");
+    completeOnboardingPassword.mutate({ accessToken: savedToken, password: accountPassword });
+  };
+  const submitRecoveryRequest = () => {
+    if (!/^\+?[0-9]{8,16}$/.test(phone) || name.trim().length < 2) return Alert.alert("تحقق من البيانات", "أدخل الاسم الكامل ورقم WhatsApp الصحيحين.");
+    requestRecovery.mutate({ fullName: name.trim(), phone, requestedRole: role });
+  };
+  const submitRecoveryCode = () => {
+    if (!recoveryRequestId || recoveryCode.replace(/\D/g, "").length !== 6) return Alert.alert("الرمز غير مكتمل", "أدخل رمز التحقق المكوّن من ستة أرقام.");
+    if (codeExpired) return Alert.alert("انتهت صلاحية الرمز", "اطلب من الإدارة إرسال رمز جديد.");
+    verifyRecovery.mutate({ requestId: recoveryRequestId, phone, code: recoveryCode.replace(/\D/g, "") });
+  };
+  const saveRecoveredPassword = () => {
+    if (!recoveryRequestId || !recoveryResetToken) return Alert.alert("انتهت الجلسة", "ابدأ طلب استرجاع كلمة المرور من جديد.");
+    if (accountPassword.length < 8 || accountPassword !== passwordConfirm) return Alert.alert("تحقق من كلمة المرور", "اكتب كلمة مرور من ثمانية أحرف على الأقل وأعد كتابتها مطابقة.");
+    completeRecovery.mutate({ requestId: recoveryRequestId, phone, resetToken: recoveryResetToken, password: accountPassword });
+  };
+  const captureOnboardingDocument = async (kind: "personal" | "identity") => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) return Alert.alert("إذن الكاميرا مطلوب", "يلزم إذن الكاميرا لالتقاط وثائق السفير.");
+    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.6, base64: true });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (!asset.base64) return Alert.alert("تعذر قراءة الصورة", "التقط الصورة من جديد ثم حاول مرة أخرى.");
+    if (asset.base64.length > 4_000_000) return Alert.alert("الصورة كبيرة جداً", "التقط صورة أوضح من مسافة أبعد قليلاً ثم حاول مرة أخرى.");
+    const uri = `data:${asset.mimeType ?? "image/jpeg"};base64,${asset.base64}`;
+    if (kind === "personal") setOnboardingPersonalPhoto(uri); else setOnboardingIdentityPhoto(uri);
   };
   const submitSignIn = () => {
     if (!/^\+?[0-9]{8,16}$/.test(phone) || accountPassword.length < 8) return Alert.alert("تحقق من البيانات", "أدخل رقم WhatsApp وكلمة المرور.");
     signIn.mutate({ phone, password: accountPassword });
   };
-  const logout = async () => { await Promise.all([jarbou3Session.clear(), jarbou3Session.clearOnboarding()]); setSavedToken(null); setRequestId(null); setVerificationCode(""); setCodeExpiresAt(null); setName(""); setPhone(""); setStage("choose"); };
+  const logout = async () => { await Promise.all([jarbou3Session.clear(), jarbou3Session.clearOnboarding()]); setSavedToken(null); setRequestId(null); setVerificationCode(""); setCodeExpiresAt(null); setRetryAfter(null); setName(""); setPhone(""); setAccountPassword(""); setPasswordConfirm(""); setStage("choose"); };
+  const refreshRuntimeReadiness = async () => {
+    await requestRuntimeLocationPermission();
+    setRuntimeReadiness(await readRuntimeReadiness());
+  };
+  const updateRequired = Boolean(releaseSettings.data?.forceUpdate && releaseSettings.data.updateUrl && isVersionBelow(currentVersion, releaseSettings.data.minVersion));
+  const runtimeBlocked = stage === "workspace" && !activeTrip && (!runtimeReadiness || !runtimeReadiness.online || !runtimeReadiness.gpsEnabled || !runtimeReadiness.locationGranted);
+  const runtimeProblem = !runtimeReadiness ? "جارٍ التحقق من الجاهزية…" : !runtimeReadiness.online ? "يلزم اتصال بالإنترنت لاستخدام جربوع." : !runtimeReadiness.locationGranted ? "اسمح للموقع الجغرافي لاستخدام جربوع." : "فعّل خدمات GPS من إعدادات الجهاز ثم أعد المحاولة.";
 
   if (stage === "loading") return <View style={styles.onboardingRoot}><ActivityIndicator color={gray} size="large" /></View>;
-  if (stage === "workspace") return <View style={styles.root}><View style={styles.accessBar}><Text style={styles.accessCopy}>{role === "driver" ? "مساحة السفير" : "مساحة العميل"} · جلسة محمية على هذا الجهاز</Text><Pressable onPress={logout} style={styles.accessButton}><Text style={styles.accessButtonText}>تسجيل الخروج</Text></Pressable></View>{role === "customer" ? <Customer name={workspaceName} /> : <Driver name={workspaceName} />}</View>;
+  if (updateRequired) return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>تحديث مطلوب</Text><Text style={styles.onboardingCopy}>توجد نسخة أحدث مطلوبة لمتابعة استخدام جربوع. حدّث التطبيق ثم افتحه من جديد.</Text><Pressable onPress={() => Linking.openURL(releaseSettings.data?.updateUrl ?? "").catch(() => Alert.alert("تعذر فتح الرابط", "تواصل مع الإدارة للحصول على رابط التحديث."))} style={styles.authAction}><Text style={styles.actionText}>تحديث التطبيق</Text></Pressable></View></View>;
+  if (runtimeBlocked) return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>يلزم الإنترنت وGPS</Text><Text style={styles.onboardingCopy}>{runtimeProblem}</Text><Pressable onPress={() => refreshRuntimeReadiness().catch(() => Alert.alert("تعذر الفحص", "تحقق من أذونات الموقع والاتصال ثم حاول مرة أخرى."))} style={styles.authAction}><Text style={styles.actionText}>إعادة التحقق</Text></Pressable><Pressable onPress={logout} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>تسجيل الخروج</Text></Pressable></View></View>;
+  if (stage === "workspace") return <View style={styles.root}>{activeTrip && runtimeReadiness && (!runtimeReadiness.online || !runtimeReadiness.gpsEnabled || !runtimeReadiness.locationGranted) ? <View style={styles.runtimeBanner}><Text style={styles.runtimeBannerText}>{!runtimeReadiness.online ? "انقطع الإنترنت؛ ستُستأنف المزامنة تلقائياً عند عودته." : "تعذر الوصول إلى GPS مؤقتاً؛ الرحلة محفوظة وستستأنف عند عودته."}</Text></View> : null}<View style={styles.accessBar}><Text style={styles.accessCopy}>{role === "driver" ? "مساحة السفير" : "مساحة العميل"} · جلسة محمية على هذا الجهاز</Text><Pressable onPress={logout} style={styles.accessButton}><Text style={styles.accessButtonText}>تسجيل الخروج</Text></Pressable></View>{role === "customer" ? <Customer name={workspaceName} onTripActivity={setActiveTrip} /> : <Driver name={workspaceName} onTripActivity={setActiveTrip} />}</View>;
   if (stage === "choose") return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>اختر نوع الحساب</Text><Pressable onPress={() => { setRole("customer"); setStage("form"); }} style={styles.roleChoice}><Text style={styles.roleChoiceTitle}>أنا عميل</Text></Pressable><Pressable onPress={() => { setRole("driver"); setStage("form"); }} style={[styles.roleChoice, styles.roleChoiceDark]}><Text style={styles.roleChoiceTitleDark}>أنا سفير</Text></Pressable></View></ScrollView>;
-  if (stage === "waiting") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>تم إرسال طلبك</Text><Text style={styles.onboardingCopy}>يراجع المدير بياناتك ثم يرسل رمزاً من ستة أرقام إلى WhatsApp على الرقم المسجّل.</Text><Tag status>بانتظار مراجعة الإدارة</Tag><View style={styles.verificationGuide}><Text style={styles.verificationGuideTitle}>ماذا سيحدث الآن؟</Text><Text style={styles.verificationGuideText}>١. أبقِ رقم WhatsApp متاحاً.</Text><Text style={styles.verificationGuideText}>٢. ستنتقل تلقائياً إلى إدخال الرمز عند إرساله من الإدارة.</Text><Text style={styles.verificationGuideText}>٣. لا تشارك الرمز مع أي شخص؛ يستخدم للدخول إلى حسابك فقط.</Text></View><Action title={onboardingStatus.isFetching ? "جارٍ التحقق…" : "تحقق من وصول الرمز"} onPress={() => onboardingStatus.refetch()} /><Pressable onPress={() => setStage("form")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>تعديل البيانات</Text></Pressable></View></View>;
-  if (stage === "code") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>أدخل رمز التحقق</Text><Text style={styles.onboardingCopy}>أدخل الرمز الذي وصلك ثم اختر كلمة مرور لحسابك.</Text><View style={[styles.verificationTimer, codeExpired && styles.verificationTimerExpired]}><Text style={styles.verificationTimerLabel}>{codeExpired ? "الرمز غير صالح الآن" : "صلاحية الرمز"}</Text><Text style={[styles.verificationTimerValue, codeExpired && styles.verificationTimerValueExpired]}>{codeTimerLabel}</Text></View><TextInput value={verificationCode} onChangeText={(value) => setVerificationCode(value.replace(/\D/g, ""))} autoFocus keyboardType="number-pad" maxLength={6} placeholder="••••••" placeholderTextColor="#A0A0A0" style={styles.onboardingOtp} textAlign="center" editable={!codeExpired} /><TextInput value={accountPassword} onChangeText={setAccountPassword} placeholder="كلمة المرور" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><TextInput value={passwordConfirm} onChangeText={setPasswordConfirm} placeholder="أعد كتابة كلمة المرور" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><Pressable onPress={verifyCode} disabled={verifyOnboarding.isPending || codeExpired} style={[styles.authAction, (verifyOnboarding.isPending || codeExpired) && styles.authActionDisabled]}>{verifyOnboarding.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>{codeExpired ? "اطلب رمزاً جديداً من المدير" : "تحقق والدخول"}</Text>}</Pressable><Pressable onPress={() => setStage("waiting")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>لم يصل الرمز بعد؟ تحقق من حالته</Text></Pressable></View></View>;
-  if (stage === "signin") return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Top title={role === "driver" ? "دخول سفير" : "دخول عميل"} back={() => setStage("choose")} /><Text style={styles.onboardingTitle}>تسجيل الدخول</Text><TextInput value={phone} onChangeText={setPhone} placeholder="رقم WhatsApp" placeholderTextColor="#999" keyboardType="phone-pad" style={styles.authInput} textAlign="right" /><TextInput value={accountPassword} onChangeText={setAccountPassword} placeholder="كلمة المرور" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><Pressable onPress={submitSignIn} disabled={signIn.isPending} style={[styles.authAction, signIn.isPending && styles.authActionDisabled]}>{signIn.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>تسجيل الدخول</Text>}</Pressable></View></ScrollView>;
-  return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Top title={role === "driver" ? "تسجيل سفير" : "تسجيل عميل"} back={() => setStage("choose")} /><Text style={styles.onboardingTitle}>{role === "driver" ? "بيانات السفير" : "بيانات العميل"}</Text><Text style={styles.onboardingCopy}>{role === "driver" ? "أدخل بياناتك لإرسال طلبك للمراجعة." : "أدخل بياناتك لإكمال التسجيل."}</Text><TextInput value={name} onChangeText={setName} placeholder="الاسم الكامل" placeholderTextColor="#999" style={styles.authInput} textAlign="right" /><TextInput value={phone} onChangeText={setPhone} placeholder="رقم WhatsApp، مثال +9639…" placeholderTextColor="#999" keyboardType="phone-pad" style={styles.authInput} textAlign="right" />{role === "driver" ? <View style={styles.vehicleChoices}>{([{ key: "motorcycle", label: "دراجة نارية" }, { key: "electric_scooter", label: "دراجة كهربائية" }] as const).map((vehicle) => <Pressable key={vehicle.key} onPress={() => setVehicleType(vehicle.key)} style={[styles.vehicleChoice, vehicleType === vehicle.key && styles.vehicleChoiceSelected]}><Text style={styles.vehicleChoiceText}>{vehicle.label}</Text></Pressable>)}</View> : null}<Pressable onPress={submitForm} disabled={submitOnboarding.isPending} style={[styles.authAction, submitOnboarding.isPending && styles.authActionDisabled]}>{submitOnboarding.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>إنشاء حساب</Text>}</Pressable><Pressable onPress={() => setStage("signin")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>لدي حساب بالفعل</Text></Pressable></View></ScrollView>;
+  if (stage === "waiting") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>تم إرسال طلبك</Text><Text style={styles.onboardingCopy}>{retrySeconds > 0 ? "أُلغي الرمز بعد ثلاث محاولات غير صحيحة. انتظر قبل طلب رمز جديد من الإدارة." : "يراجع المدير بياناتك ثم يرسل رمزاً من ستة أرقام إلى WhatsApp على الرقم المسجّل."}</Text>{retrySeconds > 0 ? <View style={styles.verificationTimer}><Text style={styles.verificationTimerLabel}>إعادة المحاولة بعد</Text><Text style={styles.verificationTimerValue}>{`${Math.floor(retrySeconds / 60)}:${String(retrySeconds % 60).padStart(2, "0")}`}</Text></View> : <Tag status>بانتظار مراجعة الإدارة</Tag>}<Action title={onboardingStatus.isFetching ? "جارٍ التحقق…" : "تحقق من وصول الرمز"} onPress={() => onboardingStatus.refetch()} /><Pressable onPress={() => setStage("form")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>تعديل البيانات</Text></Pressable></View></View>;
+  if (stage === "code") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>أدخل رمز التحقق</Text><Text style={styles.onboardingCopy}>أدخل الرمز الذي وصلك. ستظهر خطوة مستقلة لاختيار كلمة المرور بعد نجاح التحقق.</Text><View style={[styles.verificationTimer, codeExpired && styles.verificationTimerExpired]}><Text style={styles.verificationTimerLabel}>{codeExpired ? "الرمز غير صالح الآن" : "صلاحية الرمز"}</Text><Text style={[styles.verificationTimerValue, codeExpired && styles.verificationTimerValueExpired]}>{codeTimerLabel}</Text></View><TextInput value={verificationCode} onChangeText={(value) => setVerificationCode(value.replace(/\D/g, ""))} autoFocus keyboardType="number-pad" maxLength={6} placeholder="••••••" placeholderTextColor="#A0A0A0" style={styles.onboardingOtp} textAlign="center" editable={!codeExpired} /><Pressable onPress={verifyCode} disabled={verifyOnboarding.isPending || codeExpired} style={[styles.authAction, (verifyOnboarding.isPending || codeExpired) && styles.authActionDisabled]}>{verifyOnboarding.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>تحقق من الرمز</Text>}</Pressable><Pressable onPress={() => setStage("waiting")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>لم يصل الرمز بعد؟ تحقق من حالته</Text></Pressable></View></View>;
+  if (stage === "password") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>اختر كلمة المرور</Text><Text style={styles.onboardingCopy}>تم التحقق من رمز WhatsApp. اختر كلمة مرور من ثمانية أحرف على الأقل لإكمال إنشاء الحساب.</Text><TextInput value={accountPassword} onChangeText={setAccountPassword} placeholder="كلمة المرور الجديدة" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><TextInput value={passwordConfirm} onChangeText={setPasswordConfirm} placeholder="أعد كتابة كلمة المرور" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><Pressable onPress={saveOnboardingPassword} disabled={completeOnboardingPassword.isPending} style={[styles.authAction, completeOnboardingPassword.isPending && styles.authActionDisabled]}>{completeOnboardingPassword.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>تأكيد وإنشاء الحساب</Text>}</Pressable></View></View>;
+  if (stage === "signin") return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Top title={role === "driver" ? "دخول سفير" : "دخول عميل"} back={() => setStage("choose")} /><Text style={styles.onboardingTitle}>تسجيل الدخول</Text><TextInput value={phone} onChangeText={setPhone} placeholder="رقم WhatsApp" placeholderTextColor="#999" keyboardType="phone-pad" style={styles.authInput} textAlign="right" /><TextInput value={accountPassword} onChangeText={setAccountPassword} placeholder="كلمة المرور" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><Pressable onPress={submitSignIn} disabled={signIn.isPending} style={[styles.authAction, signIn.isPending && styles.authActionDisabled]}>{signIn.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>تسجيل الدخول</Text>}</Pressable><Pressable onPress={() => { setAccountPassword(""); setStage("recoveryRequest"); }} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>نسيت كلمة المرور؟</Text></Pressable></View></ScrollView>;
+  if (stage === "recoveryRequest") return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Top title="استرجاع كلمة المرور" back={() => setStage("signin")} /><Text style={styles.onboardingTitle}>تأكيد الحساب</Text><Text style={styles.onboardingCopy}>أدخل الاسم الكامل ورقم WhatsApp المسجلين في الحساب. ترسل الإدارة رمزاً إلى WhatsApp بعد المطابقة.</Text><TextInput value={name} onChangeText={setName} placeholder="الاسم الكامل" placeholderTextColor="#999" style={styles.authInput} textAlign="right" /><TextInput value={phone} onChangeText={setPhone} placeholder="رقم WhatsApp" placeholderTextColor="#999" keyboardType="phone-pad" style={styles.authInput} textAlign="right" /><Pressable onPress={submitRecoveryRequest} disabled={requestRecovery.isPending} style={[styles.authAction, requestRecovery.isPending && styles.authActionDisabled]}>{requestRecovery.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>إرسال طلب الاسترجاع</Text>}</Pressable></View></ScrollView>;
+  if (stage === "recoveryWaiting") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>طلب الاسترجاع قيد المراجعة</Text><Text style={styles.onboardingCopy}>{retrySeconds > 0 ? "أُلغي الرمز للحماية بعد ثلاث محاولات خاطئة. انتظر قبل طلب رمز جديد." : "بعد مطابقة بياناتك سترسل الإدارة رمزاً من ستة أرقام إلى WhatsApp."}</Text>{retrySeconds > 0 ? <View style={styles.verificationTimer}><Text style={styles.verificationTimerLabel}>إعادة المحاولة بعد</Text><Text style={styles.verificationTimerValue}>{`${Math.floor(retrySeconds / 60)}:${String(retrySeconds % 60).padStart(2, "0")}`}</Text></View> : <Tag status>بانتظار إرسال الرمز</Tag>}<Action title={recoveryStatus.isFetching ? "جارٍ التحقق…" : "تحقق من وصول الرمز"} onPress={() => recoveryStatus.refetch()} /><Pressable onPress={() => setStage("signin")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>العودة لتسجيل الدخول</Text></Pressable></View></View>;
+  if (stage === "recoveryCode") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>أدخل رمز الاسترجاع</Text><Text style={styles.onboardingCopy}>أدخل رمز WhatsApp ثم اختر كلمة مرور جديدة في الخطوة التالية.</Text><View style={[styles.verificationTimer, codeExpired && styles.verificationTimerExpired]}><Text style={styles.verificationTimerLabel}>{codeExpired ? "انتهت الصلاحية" : "صلاحية الرمز"}</Text><Text style={[styles.verificationTimerValue, codeExpired && styles.verificationTimerValueExpired]}>{codeTimerLabel}</Text></View><TextInput value={recoveryCode} onChangeText={(value) => setRecoveryCode(value.replace(/\D/g, ""))} autoFocus keyboardType="number-pad" maxLength={6} placeholder="••••••" placeholderTextColor="#A0A0A0" style={styles.onboardingOtp} textAlign="center" editable={!codeExpired} /><Pressable onPress={submitRecoveryCode} disabled={verifyRecovery.isPending || codeExpired} style={[styles.authAction, (verifyRecovery.isPending || codeExpired) && styles.authActionDisabled]}>{verifyRecovery.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>تحقق من الرمز</Text>}</Pressable></View></View>;
+  if (stage === "recoveryPassword") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>كلمة مرور جديدة</Text><Text style={styles.onboardingCopy}>سيُلغى استخدام كلمة المرور السابقة فور التأكيد.</Text><TextInput value={accountPassword} onChangeText={setAccountPassword} placeholder="كلمة المرور الجديدة" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><TextInput value={passwordConfirm} onChangeText={setPasswordConfirm} placeholder="أعد كتابة كلمة المرور" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><Pressable onPress={saveRecoveredPassword} disabled={completeRecovery.isPending} style={[styles.authAction, completeRecovery.isPending && styles.authActionDisabled]}>{completeRecovery.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>تأكيد كلمة المرور الجديدة</Text>}</Pressable></View></View>;
+  return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Top title={role === "driver" ? "تسجيل سفير" : "تسجيل عميل"} back={() => setStage("choose")} /><Text style={styles.onboardingTitle}>{role === "driver" ? "بيانات السفير" : "بيانات العميل"}</Text><Text style={styles.onboardingCopy}>{role === "driver" ? "أدخل بياناتك ووثيقتيك لإرسال طلبك للمراجعة." : "أدخل بياناتك لإكمال التسجيل."}</Text><TextInput value={name} onChangeText={setName} placeholder="الاسم الكامل" placeholderTextColor="#999" style={styles.authInput} textAlign="right" /><TextInput value={phone} onChangeText={setPhone} placeholder="رقم WhatsApp، مثال +9639…" placeholderTextColor="#999" keyboardType="phone-pad" style={styles.authInput} textAlign="right" />{role === "driver" ? <><View style={styles.vehicleChoices}>{([{ key: "motorcycle", label: "دراجة نارية" }, { key: "electric_scooter", label: "دراجة كهربائية" }] as const).map((vehicle) => <Pressable key={vehicle.key} onPress={() => setVehicleType(vehicle.key)} style={[styles.vehicleChoice, vehicleType === vehicle.key && styles.vehicleChoiceSelected]}><Text style={styles.vehicleChoiceText}>{vehicle.label}</Text></Pressable>)}</View><Upload title="الصورة الشخصية" detail={onboardingPersonalPhoto ? "تم التقاط الصورة" : "التقط صورة واضحة للوجه"} uri={onboardingPersonalPhoto} onPress={() => captureOnboardingDocument("personal")} /><Upload title="صورة الهوية" detail={onboardingIdentityPhoto ? "تم التقاط الصورة" : "التقط صورة الهوية بوضوح"} uri={onboardingIdentityPhoto} onPress={() => captureOnboardingDocument("identity")} /></> : null}<Pressable onPress={submitForm} disabled={submitOnboarding.isPending} style={[styles.authAction, submitOnboarding.isPending && styles.authActionDisabled]}>{submitOnboarding.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>إرسال للمراجعة</Text>}</Pressable><Pressable onPress={() => { setAccountPassword(""); setStage("signin"); }} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>لدي حساب بالفعل</Text></Pressable></View></ScrollView>;
 }
 
 const styles = StyleSheet.create({
-  mapModeRow: { flexDirection: "row-reverse", gap: 8, marginHorizontal: 16, marginTop: 12 }, mapMode: { flex: 1, minHeight: 42, borderWidth: 1, borderColor: "#D1D1D1", borderRadius: 13, justifyContent: "center", alignItems: "center", backgroundColor: "#FFFFFF" }, mapModeActive: { backgroundColor: gray, borderColor: gray }, mapModeText: { color: gray, fontSize: 11, fontWeight: "900" }, mapModeTextActive: { color: "#FFFFFF" }, mapHint: { color: "#727272", fontSize: 11, lineHeight: 17, textAlign: "right" }, addressSearch: { marginHorizontal: 16, marginTop: 12, flexDirection: "row-reverse", gap: 8, alignItems: "center" }, addressSearchInput: { flex: 1, minHeight: 48, backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#D8D8D8", color: dark, paddingHorizontal: 13, fontWeight: "700", fontSize: 12 }, addressSearchButton: { minHeight: 48, minWidth: 62, backgroundColor: gray, borderRadius: 15, alignItems: "center", justifyContent: "center", paddingHorizontal: 11 }, addressSearchButtonText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" }, searchFilters: { flexDirection: "row-reverse", gap: 7, marginHorizontal: 16, marginTop: 8 }, searchFilter: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99, backgroundColor: "#E7E7E7" }, searchFilterActive: { backgroundColor: gray }, searchFilterText: { color: gray, fontSize: 11, fontWeight: "900" }, searchFilterTextActive: { color: "#FFFFFF" }, addressResults: { marginHorizontal: 16, marginTop: 7, gap: 6 }, addressResult: { backgroundColor: "#FFFFFF", padding: 12, borderRadius: 14, flexDirection: "row-reverse", alignItems: "center", gap: 9, borderWidth: 1, borderColor: "#E0E0E0" }, addressResultText: { flex: 1, color: dark, fontSize: 11, textAlign: "right", lineHeight: 16, fontWeight: "700" }, resultKind: { color: "#767676", fontSize: 9, fontWeight: "900", backgroundColor: "#EEEEEE", borderRadius: 7, paddingHorizontal: 6, paddingVertical: 4 }, addressResultAction: { color: "#2F7A62", fontSize: 10, fontWeight: "900" },
+  mapModeRow: { flexDirection: "row-reverse", gap: 8, marginHorizontal: 16, marginTop: 12 }, mapMode: { flex: 1, minHeight: 42, borderWidth: 1, borderColor: "#D1D1D1", borderRadius: 13, justifyContent: "center", alignItems: "center", backgroundColor: "#FFFFFF" }, mapModeActive: { backgroundColor: gray, borderColor: gray }, mapModeText: { color: gray, fontSize: 11, fontWeight: "900" }, mapModeTextActive: { color: "#FFFFFF" }, mapHint: { color: "#727272", fontSize: 11, lineHeight: 17, textAlign: "right" }, addressSearch: { marginHorizontal: 16, marginTop: 12, flexDirection: "row-reverse", gap: 8, alignItems: "center" }, addressSearchInput: { flex: 1, minHeight: 48, backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#D8D8D8", color: dark, paddingHorizontal: 13, fontWeight: "700", fontSize: 12 }, addressSearchButton: { minHeight: 48, minWidth: 62, backgroundColor: gray, borderRadius: 15, alignItems: "center", justifyContent: "center", paddingHorizontal: 11 }, addressSearchButtonText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" }, searchFilters: { flexDirection: "row-reverse", gap: 7, marginHorizontal: 16, marginTop: 8 }, searchFilter: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99, backgroundColor: "#E7E7E7" }, searchFilterActive: { backgroundColor: gray }, searchFilterText: { color: gray, fontSize: 11, fontWeight: "900" }, searchFilterTextActive: { color: "#FFFFFF" }, addressResults: { marginHorizontal: 16, marginTop: 7, gap: 6 }, addressResult: { backgroundColor: "#FFFFFF", padding: 12, borderRadius: 14, flexDirection: "row-reverse", alignItems: "center", gap: 9, borderWidth: 1, borderColor: "#E0E0E0" }, addressResultText: { flex: 1, color: dark, fontSize: 11, textAlign: "right", lineHeight: 16, fontWeight: "700" }, resultKind: { color: "#767676", fontSize: 9, fontWeight: "900", backgroundColor: "#EEEEEE", borderRadius: 7, paddingHorizontal: 6, paddingVertical: 4 }, addressResultAction: { color: "#2F7A62", fontSize: 10, fontWeight: "900" }, discountBox: { backgroundColor: "#F3F3F3", borderRadius: 16, padding: 12, gap: 8 }, discountTitle: { color: dark, fontSize: 12, fontWeight: "900", textAlign: "right" }, discountRow: { flexDirection: "row-reverse", gap: 8 }, discountInput: { flex: 1, minHeight: 44, borderRadius: 12, backgroundColor: "#FFFFFF", borderColor: "#D7D7D7", borderWidth: 1, paddingHorizontal: 11, color: dark, fontSize: 12, fontWeight: "800" }, discountButton: { minWidth: 65, minHeight: 44, borderRadius: 12, backgroundColor: gray, justifyContent: "center", alignItems: "center" }, discountButtonText: { color: "#FFFFFF", fontSize: 11, fontWeight: "900" }, discountHint: { color: "#737373", fontSize: 10, textAlign: "right" }, discountSaving: { color: "#2F7A62", fontSize: 10, fontWeight: "900", textAlign: "right", marginTop: 3 },
   root: { flex: 1, backgroundColor: "#F5F5F5" }, onboardingRoot: { flex: 1, backgroundColor: "#F5F5F5", justifyContent: "center", padding: 18 }, onboardingScroll: { flexGrow: 1, justifyContent: "center", padding: 18 }, onboardingCard: { width: "100%", maxWidth: 470, alignSelf: "center", backgroundColor: "#FFFFFF", borderRadius: 28, padding: 22, gap: 13, shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 16, elevation: 2 }, onboardingTitle: { color: dark, fontSize: 24, fontWeight: "900", textAlign: "right", marginTop: 4 }, onboardingCopy: { color: "#737373", fontSize: 13, lineHeight: 21, textAlign: "right" }, onboardingNote: { color: "#7A7A7A", fontSize: 10, lineHeight: 16, textAlign: "right", marginTop: 2 }, verificationGuide: { backgroundColor: "#F2F2F2", borderRadius: 16, padding: 13, gap: 5 }, verificationGuideTitle: { color: dark, fontSize: 12, fontWeight: "900", textAlign: "right", marginBottom: 2 }, verificationGuideText: { color: "#666666", fontSize: 11, lineHeight: 18, textAlign: "right" }, verificationTimer: { backgroundColor: "#E7F3EC", borderColor: "#B7DEC8", borderWidth: 1, borderRadius: 17, padding: 13, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, verificationTimerExpired: { backgroundColor: "#FBE9E8", borderColor: "#E6BBB7" }, verificationTimerLabel: { color: "#2F7A62", fontSize: 11, fontWeight: "900", textAlign: "right" }, verificationTimerValue: { color: "#276149", fontSize: 17, fontWeight: "900" }, verificationTimerValueExpired: { color: "#B42318" }, roleChoice: { backgroundColor: "#F2F2F2", padding: 16, borderRadius: 18, gap: 4 }, roleChoiceDark: { backgroundColor: "#292929" }, roleChoiceTitle: { color: dark, fontSize: 17, fontWeight: "900", textAlign: "right" }, roleChoiceTitleDark: { color: "#FFFFFF", fontSize: 17, fontWeight: "900", textAlign: "right" }, roleChoiceCopy: { color: "#707070", fontSize: 11, textAlign: "right" }, roleChoiceCopyDark: { color: "#D2D2D2", fontSize: 11, textAlign: "right" }, onboardingOtp: { minHeight: 60, backgroundColor: "#F5F5F5", borderWidth: 1, borderColor: "#D8D8D8", borderRadius: 18, paddingHorizontal: 14, color: dark, fontSize: 26, letterSpacing: 8, fontWeight: "900" }, vehicleChoices: { flexDirection: "row-reverse", gap: 9 }, vehicleChoice: { flex: 1, minHeight: 50, borderRadius: 14, borderWidth: 1, borderColor: "#D8D8D8", justifyContent: "center", alignItems: "center", backgroundColor: "#FAFAFA" }, vehicleChoiceSelected: { borderColor: gray, borderWidth: 2, backgroundColor: "#E9E9E9" }, vehicleChoiceText: { color: gray, fontSize: 11, fontWeight: "900" }, scroll: { paddingBottom: 30 }, fill: { flex: 1 }, flex: { flex: 1 }, pressed: { opacity: 0.78, transform: [{ scale: 0.986 }] }, space: { paddingHorizontal: 16, paddingTop: 16, gap: 14 }, roleSwitch: { flexDirection: "row-reverse", gap: 4, marginHorizontal: 16, marginTop: 8, marginBottom: 8, backgroundColor: "#E4E4E4", padding: 4, borderRadius: 14 }, role: { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: "center" }, roleSelected: { backgroundColor: "#FFF" }, roleText: { color: "#747474", fontSize: 13, fontWeight: "800" }, roleTextSelected: { color: dark },
-  accessBar: { marginHorizontal: 16, marginBottom: 2, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", gap: 10 }, accessCopy: { color: "#737373", fontSize: 10, fontWeight: "700", textAlign: "right", flex: 1 }, accessButton: { backgroundColor: "#FFFFFF", borderColor: "#D7D7D7", borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 }, accessButtonText: { color: "#4A4A4A", fontSize: 10, fontWeight: "900" }, modalBackdrop: { flex: 1, backgroundColor: "#00000066", justifyContent: "flex-end" }, authSheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, gap: 12 }, authTitle: { color: dark, fontSize: 22, fontWeight: "900", textAlign: "right" }, authCopy: { color: "#737373", fontSize: 12, lineHeight: 19, textAlign: "right", marginBottom: 4 }, authInput: { minHeight: 52, borderRadius: 15, backgroundColor: "#F5F5F5", borderColor: "#DDDDDD", borderWidth: 1, paddingHorizontal: 14, color: dark, fontSize: 14, fontWeight: "700" }, authAction: { minHeight: 53, borderRadius: 16, backgroundColor: gray, alignItems: "center", justifyContent: "center" }, authActionDisabled: { opacity: 0.65 }, modeSwitch: { paddingVertical: 8, alignItems: "center" }, modeSwitchText: { color: gray, fontSize: 12, fontWeight: "900" },
+  accessBar: { marginHorizontal: 16, marginBottom: 2, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", gap: 10 }, accessCopy: { color: "#737373", fontSize: 10, fontWeight: "700", textAlign: "right", flex: 1 }, accessButton: { backgroundColor: "#FFFFFF", borderColor: "#D7D7D7", borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 }, accessButtonText: { color: "#4A4A4A", fontSize: 10, fontWeight: "900" }, runtimeBanner: { backgroundColor: "#FFF2D8", borderColor: "#EAB15C", borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginHorizontal: 16, marginTop: 8 }, runtimeBannerText: { color: "#714B12", fontSize: 11, fontWeight: "800", lineHeight: 17, textAlign: "right" }, modalBackdrop: { flex: 1, backgroundColor: "#00000066", justifyContent: "flex-end" }, authSheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, gap: 12 }, authTitle: { color: dark, fontSize: 22, fontWeight: "900", textAlign: "right" }, authCopy: { color: "#737373", fontSize: 12, lineHeight: 19, textAlign: "right", marginBottom: 4 }, authInput: { minHeight: 52, borderRadius: 15, backgroundColor: "#F5F5F5", borderColor: "#DDDDDD", borderWidth: 1, paddingHorizontal: 14, color: dark, fontSize: 14, fontWeight: "700" }, authAction: { minHeight: 53, borderRadius: 16, backgroundColor: gray, alignItems: "center", justifyContent: "center" }, authActionDisabled: { opacity: 0.65 }, modeSwitch: { paddingVertical: 8, alignItems: "center" }, modeSwitchText: { color: gray, fontSize: 12, fontWeight: "900" },
   action: { minHeight: 53, borderRadius: 16, backgroundColor: gray, justifyContent: "center", alignItems: "center", paddingHorizontal: 14 }, actionDark: { backgroundColor: "#FFF" }, actionOutline: { backgroundColor: "transparent", borderWidth: 1, borderColor: "#C9C9C9" }, actionText: { color: "#FFF", fontSize: 14, fontWeight: "900", textAlign: "center" }, actionOutlineText: { color: gray }, tag: { backgroundColor: "#E9E9E9", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 99, alignSelf: "flex-start" }, tagStatus: { backgroundColor: "#DDF2E9" }, tagText: { color: "#555", fontSize: 10, fontWeight: "900" }, tagStatusText: { color: "#276149" },
   mark: { width: 56, height: 56, borderRadius: 18, overflow: "hidden", backgroundColor: "#FFF" }, markSmall: { width: 34, height: 34, borderRadius: 11 }, markImage: { width: "100%", height: "100%" }, hero: { marginHorizontal: 16, padding: 19, borderRadius: 24, backgroundColor: "#FFF", flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, heroTitle: { color: dark, fontSize: 24, fontWeight: "900", textAlign: "right" }, eyebrow: { color: "#747474", fontSize: 11, fontWeight: "900", textAlign: "right", marginBottom: 4 }, copy: { color: "#737373", textAlign: "right", fontSize: 12, lineHeight: 19, marginTop: 4 }, copyRight: { color: "#737373", textAlign: "right", fontSize: 12, lineHeight: 19 },
   map: { height: 220, borderRadius: 23, overflow: "hidden", backgroundColor: "#D6D8D3", marginHorizontal: 16, marginTop: 16, position: "relative" }, mapCompact: { height: 188 }, nativeMap: { flex: 1 }, mapRoad: { position: "absolute", height: 4, left: -30, right: -30, backgroundColor: "#FFF", opacity: 0.75 }, mapName: { position: "absolute", top: 18, left: 20, color: "#747474", fontSize: 18, fontWeight: "900" }, dot: { position: "absolute", width: 12, height: 12, borderRadius: 8, borderWidth: 2, borderColor: "#FFF", backgroundColor: "#888" }, dotTarget: { width: 20, height: 20, borderRadius: 10, right: "12%", top: "20%", backgroundColor: "#2F7A62" }, mapDriver: { position: "absolute", top: "37%", left: "54%", borderWidth: 3, borderColor: "#FFF", borderRadius: 14 }, mapBadge: { position: "absolute", bottom: 11, right: 11, backgroundColor: "#FFFFFFE8", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 }, mapBadgeText: { color: gray, fontSize: 11, fontWeight: "900" },
