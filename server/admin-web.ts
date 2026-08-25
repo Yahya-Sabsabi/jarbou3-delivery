@@ -209,6 +209,21 @@ async function listManagedAccounts() {
 }
 
 export function registerAdminWebRoutes(app: Express) {
+  app.get("/admin", async (_req, res, next) => {
+    try {
+      const { data, error } = await asService().from("admin_site_settings").select("password_hash").eq("singleton", true).single();
+      if (error) throw new Error(error.message);
+      if (data?.password_hash) {
+        next();
+        return;
+      }
+      res.setHeader("Referrer-Policy", "no-referrer");
+      res.setHeader("X-Frame-Options", "DENY");
+      res.status(200).type("html").send(safeSetupPageHtml());
+    } catch {
+      res.status(503).type("html").send("<!doctype html><html lang=\"ar\" dir=\"rtl\"><meta charset=\"utf-8\"><title>تعذر فتح الإدارة</title><body><p>تعذر فتح إعداد بوابة الإدارة. أعد المحاولة لاحقاً.</p></body></html>");
+    }
+  });
   app.use("/admin/api", (_req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
     next();
