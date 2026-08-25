@@ -6,7 +6,7 @@ import { createHash, createHmac, randomInt, timingSafeEqual } from "node:crypto"
 
 import { asService } from "./jarbou3-supabase";
 import { generateManualArchive, listManualArchives, prepareManualArchiveDownload, purgeManualArchive } from "./jarbou3-manual-archive";
-import { buildAdminNotifications, isSameOriginRequest, normalizeReportMonth, type AdminNotification } from "./admin-web-utils";
+import { buildAdminNotifications, normalizeReportMonth, type AdminNotification } from "./admin-web-utils";
 
 const SITE_COOKIE = "jarbou3_admin_access";
 const SITE_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -113,7 +113,15 @@ function canonicalSetupPageHtml() {
 }
 
 function rejectForeignOrigin(req: Request, res: Response) {
-  if (isSameOriginRequest(req.headers.origin, req.headers.host, getProtocol(req))) return false;
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  try {
+    // The public gateway can terminate HTTPS before forwarding to this server.
+    // Compare the browser origin with the target host rather than the internal protocol.
+    if (req.headers.host && new URL(origin).host === req.headers.host) return false;
+  } catch {
+    // Fall through to the rejection below for malformed Origin headers.
+  }
   res.status(403).json({ error: "REQUEST_ORIGIN_REJECTED" });
   return true;
 }

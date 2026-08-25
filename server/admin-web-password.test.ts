@@ -34,6 +34,16 @@ describe("بوابة كلمة مرور موقع الإدارة", () => {
     expect(html).not.toContain("جارٍ فتح التهيئة");
   });
 
+  it("يقبل طلب التهيئة القادم من نفس المضيف عندما ينهي البروكسي HTTPS خارج الخادم", async () => {
+    const deployedOrigin = baseUrl.replace("http:", "https:");
+    const setup = await fetch(`${baseUrl}/admin/api/setup`, {
+      method: "POST",
+      headers: { Origin: deployedOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "short", confirmation: "short" }),
+    });
+    expect(setup.status).toBe(400);
+  });
+
   it("يفتح جلسة موقّعة بواسطة كلمة المرور السرية ويقبلها في فحص الوصول", async () => {
     const login = await fetch(`${baseUrl}/admin/api/login`, {
       method: "POST",
