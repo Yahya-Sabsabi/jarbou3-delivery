@@ -102,6 +102,13 @@ async function startServer() {
   });
   registerAdminWebRoutes(app);
   app.use("/admin/vendor/leaflet", express.static(path.resolve(process.cwd(), "node_modules/leaflet/dist")));
+  app.use("/admin-setup", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "same-origin");
+    res.setHeader("X-Frame-Options", "DENY");
+    next();
+  });
+  app.use("/admin-setup", express.static(path.resolve(process.cwd(), "admin-site"), { index: "index.html" }));
   app.use("/admin", express.static(path.resolve(process.cwd(), "admin-site"), { index: "index.html" }));
 
   app.get("/api/health", (_req, res) => {
