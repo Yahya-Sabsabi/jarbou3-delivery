@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { type GestureResponderEvent, type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
+import { type GestureResponderEvent, Image, type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { HAMA_BOUNDS, type MapPoint } from "@/shared/jarbou3";
 
 export type HamaMapProps = { compact?: boolean; driver?: boolean; source?: MapPoint | null; destination?: MapPoint | null; driverLocation?: MapPoint | null; routePath?: MapPoint[]; actualPath?: MapPoint[]; selecting?: "source" | "destination"; onSelect?: (point: MapPoint) => void; onOutsideRange?: () => void; readOnly?: boolean };
@@ -13,7 +13,7 @@ function project(point: MapPoint) {
 
 function Marker({ point, label, kind }: { point: MapPoint; label: string; kind: "source" | "destination" | "driver" }) {
   const position = project(point);
-  return <View pointerEvents="none" style={[styles.marker, styles[`marker_${kind}`], { left: `${position.left}%`, bottom: `${position.bottom}%` }]}><Text style={styles.markerText}>{label}</Text></View>;
+  return <View pointerEvents="none" style={[styles.marker, styles[`marker_${kind}`], { left: `${position.left}%`, bottom: `${position.bottom}%` }]}>{kind === "driver" ? <Image source={require("@/assets/images/icon.png")} style={styles.mouseIcon} /> : <Text style={styles.markerText}>{label}</Text>}</View>;
 }
 
 function Path({ points, live }: { points: MapPoint[]; live: boolean }) {
@@ -68,6 +68,7 @@ const styles = StyleSheet.create({
   marker_source: { backgroundColor: "#536B78" },
   marker_destination: { backgroundColor: "#2F7A62" },
   marker_driver: { backgroundColor: "#252525", minWidth: 38, height: 38, borderRadius: 15, transform: [{ translateX: -19 }, { translateY: 19 }] },
+  mouseIcon: { width: 31, height: 31, borderRadius: 11 },
   markerText: { color: "#FFFFFF", fontWeight: "900", fontSize: 10 },
   badge: { position: "absolute", bottom: 11, right: 11, backgroundColor: "#FFFFFFE8", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
   badgeText: { color: "#4A4A4A", fontSize: 11, fontWeight: "900" },
