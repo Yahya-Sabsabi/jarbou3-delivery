@@ -25,8 +25,8 @@ describe("بوابة كلمة مرور موقع الإدارة", () => {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   });
 
-  it("يعرض صفحة التهيئة الأولى عبر مسار API غير المخزَّن مؤقتاً", async () => {
-    const page = await fetch(`${baseUrl}/admin/api/setup-page`);
+  it("يعرض صفحة التهيئة الأولى عبر مسار الحالة القائم عند فتحه من المتصفح", async () => {
+    const page = await fetch(`${baseUrl}/admin/api/setup-status`, { headers: { Accept: "text/html" } });
     expect(page.status).toBe(200);
     expect(page.headers.get("cache-control")).toContain("no-store");
     expect(await page.text()).toContain("اختر كلمة مرور الإدارة");

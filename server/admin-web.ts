@@ -222,7 +222,14 @@ export function registerAdminWebRoutes(app: Express) {
     try {
       const { data, error } = await asService().from("admin_site_settings").select("password_hash").eq("singleton", true).single();
       if (error) throw new Error(error.message);
-      res.json({ setupRequired: !data?.password_hash });
+      const setupRequired = !data?.password_hash;
+      if (_req.headers.accept?.includes("text/html")) {
+        res.setHeader("Referrer-Policy", "no-referrer");
+        res.setHeader("X-Frame-Options", "DENY");
+        res.status(200).type("html").send(safeSetupPageHtml());
+        return;
+      }
+      res.json({ setupRequired });
     } catch {
       res.status(503).json({ error: "SITE_SETUP_UNAVAILABLE" });
     }
