@@ -259,6 +259,7 @@ const discountSchema = z.object({ code: z.string().trim().toUpperCase().regex(/^
   if (value.endsAt && value.startsAt && new Date(value.endsAt).getTime() <= new Date(value.startsAt).getTime()) context.addIssue({ code: "custom", message: "INVALID_DISCOUNT_WINDOW" });
 });
 const archiveSchema = z.object({ archiveKind: z.enum(["weekly_documents", "monthly_text"]), periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
+const driverCompanyPaymentSchema = z.object({ amount: z.number().int().positive().max(100_000_000), paymentMethod: z.enum(["cash", "sham_cash"]), paymentReference: z.string().trim().max(120).nullable().optional(), note: z.string().trim().max(500).nullable().optional() });
 const releaseSchema = z.object({ minVersion: z.string().regex(/^\d+\.\d+\.\d+$/).nullable(), forceUpdate: z.boolean(), updateUrl: z.string().url().nullable() }).superRefine((value, context) => {
   if (value.forceUpdate && (!value.minVersion || !value.updateUrl)) context.addIssue({ code: "custom", message: "FORCED_RELEASE_REQUIRES_VERSION_AND_URL" });
 });
@@ -656,6 +657,42 @@ export function registerAdminWebRoutes(app: Express) {
       res.json({ updated: true });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "DISCOUNT_UPDATE_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/driver-company-balances", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      const { data, error } = await asService().rpc("list_driver_company_balances");
+      if (error) throw new Error(error.message);
+      res.json({ balances: data ?? [] });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: "DRIVER_COMPANY_BALANCES_UNAVAILABLE" });
+    }
+  });
+
+  app.post("/admin/api/driver-company-balances/:driverId/payments", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const driverId = z.string().uuid().safeParse(req.params.driverId);
+      const payment = driverCompanyPaymentSchema.safeParse(req.body);
+      if (!driverId.success || !payment.success) return res.status(400).json({ error: "INVALID_DRIVER_COMPANY_PAYMENT" });
+      const { data, error } = await asService().rpc("record_driver_company_payment", {
+        p_driver_id: driverId.data,
+        p_amount: payment.data.amount,
+        p_payment_method: payment.data.paymentMethod,
+        p_payment_reference: payment.data.paymentReference ?? null,
+        p_note: payment.data.note ?? null,
+      });
+      if (error) {
+        if (error.message.includes("PAYMENT_EXCEEDS_OUTSTANDING_BALANCE")) return res.status(409).json({ error: "PAYMENT_EXCEEDS_OUTSTANDING_BALANCE" });
+        if (error.message.includes("DRIVER_NOT_FOUND")) return res.status(404).json({ error: "DRIVER_NOT_FOUND" });
+        throw new Error(error.message);
+      }
+      res.json({ payment: data });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "DRIVER_COMPANY_PAYMENT_FAILED" });
     }
   });
 

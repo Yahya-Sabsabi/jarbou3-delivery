@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateTripFinance } from "./jarbou3-finance";
+import { calculateDriverCompanyBalance, calculateTripFinance } from "./jarbou3-finance";
 
 describe("حساب عمولة شركة جربوع", () => {
   it("يقتطع 3% من إجمالي رحلة مكتملة ويحدد صافي السفير", () => {
@@ -34,5 +34,22 @@ describe("حساب عمولة شركة جربوع", () => {
   it("يرفض أسعاراً غير صحيحة بدلاً من إنتاج تسوية مالية مضللة", () => {
     expect(() => calculateTripFinance(-1)).toThrow("INVALID_FINAL_PRICE");
     expect(() => calculateTripFinance(12.5)).toThrow("INVALID_FINAL_PRICE");
+  });
+
+  it("يتراكم رصيد الشركة من عمولات الرحلات ويصبح صفراً بعد دفع كامل الرصيد", () => {
+    expect(calculateDriverCompanyBalance([3_000, 2_550, 450], [6_000])).toEqual({
+      totalCommissionAmount: 6_000,
+      paidAmount: 6_000,
+      outstandingAmount: 0,
+    });
+  });
+
+  it("يبقي المتبقي ظاهراً عند تسوية جزئية ويرفض إدخال دفعة تتجاوز المستحق", () => {
+    expect(calculateDriverCompanyBalance([3_000, 2_550], [2_000])).toEqual({
+      totalCommissionAmount: 5_550,
+      paidAmount: 2_000,
+      outstandingAmount: 3_550,
+    });
+    expect(() => calculateDriverCompanyBalance([3_000], [3_001])).toThrow("PAYMENT_EXCEEDS_OUTSTANDING_BALANCE");
   });
 });

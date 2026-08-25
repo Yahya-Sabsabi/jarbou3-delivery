@@ -528,6 +528,15 @@ export const appRouter = router({
         return data;
       }),
 
+    ownCompanyBalance: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        await requireRole(input.accessToken, ["driver"]);
+        const { data, error } = await asUser(input.accessToken).rpc("get_own_company_balance").maybeSingle();
+        if (error) throw new Error(error.message);
+        return data;
+      }),
+
     currentCustomerTracking: publicProcedure
       .input(tokenInput)
       .query(async ({ input }) => {
