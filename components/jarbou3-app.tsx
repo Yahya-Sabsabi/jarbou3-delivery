@@ -15,7 +15,7 @@ import { configureJarbou3Realtime, subscribeToCustomerOrder, subscribeToOrderLiv
 import { registerJarbou3PushToken } from "@/lib/jarbou3-notifications";
 import { readRuntimeReadiness, requestRuntimeLocationPermission, type RuntimeReadiness } from "@/lib/jarbou3-runtime";
 import { isVersionBelow } from "@/lib/jarbou3-release";
-import { isJarbou3Phone, normalizeJarbou3Phone } from "@/shared/jarbou3-phone";
+import { isJarbou3Phone, normalizeJarbou3Otp, normalizeJarbou3Phone } from "@/shared/jarbou3-phone";
 import Constants from "expo-constants";
 
 type Role = "customer" | "driver";
@@ -514,9 +514,9 @@ export function Jarbou3App() {
 
   useEffect(() => {
     if (stage === "form" || stage === "waiting" || stage === "code" || stage === "password") {
-      jarbou3Session.saveOnboarding({ role, stage, name, phone, requestId, codeExpiresAt, retryAfter }).catch(() => undefined);
+      jarbou3Session.saveOnboarding({ role, stage, name, phone: normalizedPhone || phone, requestId, codeExpiresAt, retryAfter }).catch(() => undefined);
     }
-  }, [role, stage, name, phone, requestId, codeExpiresAt, retryAfter]);
+  }, [role, stage, name, phone, normalizedPhone, requestId, codeExpiresAt, retryAfter]);
 
   const remainingSeconds = codeExpiresAt ? Math.max(0, Math.ceil((new Date(codeExpiresAt).getTime() - codeClock) / 1_000)) : null;
   const retrySeconds = retryAfter ? Math.max(0, Math.ceil((new Date(retryAfter).getTime() - codeClock) / 1_000)) : 0;
@@ -545,7 +545,14 @@ export function Jarbou3App() {
     },
     onError: async (error) => {
       await onboardingStatus.refetch();
-      Alert.alert("تعذر التحقق", error.message === "ONBOARDING_CODE_LOCKED" ? "توقفت المحاولات. انتظر ثلاث دقائق قبل طلب رمز جديد." : "الرمز غير صحيح أو انتهت صلاحيته. بعد ثلاث محاولات خاطئة يُلغى الرمز تلقائياً.");
+      const copy = error.message === "ONBOARDING_CODE_LOCKED"
+        ? "توقفت المحاولات. انتظر ثلاث دقائق قبل طلب رمز جديد من الإدارة."
+        : error.message === "ONBOARDING_REQUEST_NOT_FOUND"
+          ? "لم نعثر على طلب التحقق المطابق لهذا الرقم. ارجع إلى بيانات التسجيل وتأكد من رقم WhatsApp."
+          : error.message === "INVALID_OR_EXPIRED_CODE"
+            ? "الرمز غير صحيح أو انتهت صلاحيته. بعد ثلاث محاولات خاطئة يُلغى الرمز تلقائياً."
+            : "تعذر التحقق الآن. تحقق من الاتصال ثم أعد المحاولة.";
+      Alert.alert("تعذر التحقق", copy);
     },
   });
   const completeOnboardingPassword = trpc.jarbou3.completeOnboardingPassword.useMutation({
@@ -633,8 +640,9 @@ export function Jarbou3App() {
   };
   const verifyCode = () => {
     if (codeExpired) return Alert.alert("انتهت صلاحية الرمز", "اطلب من المدير إنشاء رمز WhatsApp جديد ثم تحقق منه." );
-    if (!requestId || verificationCode.replace(/\D/g, "").length !== 6) return Alert.alert("الرمز غير مكتمل", "أدخل رمز التحقق المكوّن من ستة أرقام.");
-    verifyOnboarding.mutate({ requestId, phone: normalizedPhone, code: verificationCode.replace(/\D/g, "") });
+    const code = normalizeJarbou3Otp(verificationCode);
+    if (!requestId || !code) return Alert.alert("الرمز غير مكتمل", "أدخل رمز التحقق المكوّن من ستة أرقام.");
+    verifyOnboarding.mutate({ requestId, phone: normalizedPhone, code });
   };
   const saveOnboardingPassword = () => {
     if (accountPassword.length < 8 || accountPassword !== passwordConfirm) return Alert.alert("تحقق من كلمة المرور", "اكتب كلمة مرور من ثمانية أحرف على الأقل وأعد كتابتها مطابقة.");
@@ -647,9 +655,10 @@ export function Jarbou3App() {
     requestRecovery.mutate({ fullName: name.trim(), phone: normalizedPhone, requestedRole: role });
   };
   const submitRecoveryCode = () => {
-    if (!recoveryRequestId || recoveryCode.replace(/\D/g, "").length !== 6) return Alert.alert("الرمز غير مكتمل", "أدخل رمز التحقق المكوّن من ستة أرقام.");
+    const code = normalizeJarbou3Otp(recoveryCode);
+    if (!recoveryRequestId || !code) return Alert.alert("الرمز غير مكتمل", "أدخل رمز التحقق المكوّن من ستة أرقام.");
     if (codeExpired) return Alert.alert("انتهت صلاحية الرمز", "اطلب من الإدارة إرسال رمز جديد.");
-    verifyRecovery.mutate({ requestId: recoveryRequestId, phone: normalizedPhone, code: recoveryCode.replace(/\D/g, "") });
+    verifyRecovery.mutate({ requestId: recoveryRequestId, phone: normalizedPhone, code });
   };
   const saveRecoveredPassword = () => {
     if (!recoveryRequestId || !recoveryResetToken) return Alert.alert("انتهت الجلسة", "ابدأ طلب استرجاع كلمة المرور من جديد.");

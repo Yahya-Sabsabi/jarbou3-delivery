@@ -1,5 +1,6 @@
 import { COOKIE_NAME } from "../shared/const.js";
 import { HAMA_BOUNDS, distanceMeters, isInsideHama } from "../shared/jarbou3";
+import { isSameJarbou3Phone, normalizeJarbou3Otp, normalizeJarbou3Phone } from "../shared/jarbou3-phone";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -12,6 +13,7 @@ import { recordDriverLocation } from "./jarbou3-driver-location";
 const tokenInput = z.object({ accessToken: z.string().min(20) });
 const pointInput = z.object({ latitude: z.number(), longitude: z.number() });
 const imageInput = z.string().min(50).max(7_000_000);
+const otpCodeInput = z.string().transform((value) => normalizeJarbou3Otp(value)).refine((value) => value.length === 6, { message: "INVALID_OR_EXPIRED_CODE" });
 type HamaSearchFilter = "all" | "shops" | "streets";
 type HamaSearchResult = { label: string; latitude: number; longitude: number; kind: "shop" | "street" | "place" };
 const hamaSearchCache = new Map<string, HamaSearchResult[]>();
@@ -62,12 +64,6 @@ async function resolveActiveDiscount(code: string | undefined, preDiscountPrice:
   const rawAmount = data.discount_type === "percentage" ? Math.floor(preDiscountPrice * Number(data.discount_value) / 100) : Math.floor(Number(data.discount_value));
   const discountAmount = Math.max(0, Math.min(preDiscountPrice, rawAmount));
   return { discountCodeId: data.id, discountAmount, finalPrice: Math.max(0, preDiscountPrice - discountAmount) };
-}
-
-function normalizeJarbou3Phone(value: string) {
-  const digits = value.replace(/\D/g, "");
-  if (digits.length < 8 || digits.length > 16) throw new Error("INVALID_PHONE");
-  return `+${digits}`;
 }
 
 async function searchHamaAddresses(query: string, filter: HamaSearchFilter): Promise<HamaSearchResult[]> {
@@ -408,18 +404,20 @@ export const appRouter = router({
     onboardingStatus: publicProcedure
       .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/) }))
       .query(async ({ input }) => {
-        const { data, error } = await asService().from("account_verification_requests").select("status,code_expires_at,retry_after").eq("id", input.requestId).eq("phone", input.phone).maybeSingle();
-        if (error || !data) throw new Error("ONBOARDING_REQUEST_NOT_FOUND");
+        const { data, error } = await asService().from("account_verification_requests").select("phone,status,code_expires_at,retry_after").eq("id", input.requestId).maybeSingle();
+        if (error || !data || !isSameJarbou3Phone(input.phone, data.phone)) throw new Error("ONBOARDING_REQUEST_NOT_FOUND");
         return { status: data.status, codeExpiresAt: data.code_expires_at, retryAfter: data.retry_after };
       }),
 
     verifyOnboardingCode: publicProcedure
-      .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), code: z.string().regex(/^\d{6}$/) }))
+      .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), code: otpCodeInput }))
       .mutation(async ({ input, ctx }) => {
         assertOnboardingRateLimit(`verify:${ctx.req.ip ?? "unknown"}:${input.requestId}`);
         const service = asService();
-        const { data: request, error: requestError } = await service.from("account_verification_requests").select("id,full_name,phone,requested_role,status,verification_code_hash,code_expires_at,code_attempts,auth_user_id").eq("id", input.requestId).eq("phone", input.phone).maybeSingle();
-        if (requestError || !request || request.status !== "code_sent" || !request.verification_code_hash || !request.code_expires_at) throw new Error("INVALID_OR_EXPIRED_CODE");
+        const { data: request, error: requestError } = await service.from("account_verification_requests").select("id,full_name,phone,requested_role,status,verification_code_hash,code_expires_at,code_attempts,retry_after,auth_user_id").eq("id", input.requestId).maybeSingle();
+        if (requestError || !request || !isSameJarbou3Phone(input.phone, request.phone)) throw new Error("ONBOARDING_REQUEST_NOT_FOUND");
+        if (request.status === "locked" && request.retry_after && new Date(request.retry_after).getTime() > Date.now()) throw new Error("ONBOARDING_CODE_LOCKED");
+        if (request.status !== "code_sent" || !request.verification_code_hash || !request.code_expires_at) throw new Error("INVALID_OR_EXPIRED_CODE");
         if (new Date(request.code_expires_at).getTime() <= Date.now()) {
           await service.from("account_verification_requests").update({ status: "expired" }).eq("id", request.id);
           throw new Error("INVALID_OR_EXPIRED_CODE");
