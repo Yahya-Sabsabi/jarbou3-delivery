@@ -663,8 +663,16 @@ export function registerAdminWebRoutes(app: Express) {
       const { data: existingUser, error: existingUserError } = await service.from("users").select("id").eq("phone", phone).maybeSingle();
       if (existingUserError) throw new Error(existingUserError.message);
       if (existingUser) return res.status(409).json({ error: "PHONE_ALREADY_REGISTERED" });
-      const { data, error } = await service.from("driver_registration_invites").upsert({ full_name: parsed.data.fullName, phone, vehicle_type: parsed.data.vehicleType ?? null, note: parsed.data.note ?? null, is_active: true, updated_at: new Date().toISOString() }, { onConflict: "phone" }).select("id,full_name,phone,vehicle_type,note,is_active,claimed_at,created_at").single();
+      const { data, error } = await service.from("driver_registration_invites").upsert({ full_name: parsed.data.fullName, phone, vehicle_type: parsed.data.vehicleType ?? null, note: parsed.data.note ?? null, is_active: true, updated_at: new Date().toISOString() }, { onConflict: "phone" }).select("id,full_name,phone,vehicle_type,note,is_active,claimed_at,activation_request_id,created_at").single();
       if (error || !data) throw new Error(error?.message ?? "DRIVER_INVITE_CREATE_FAILED");
+      if (!data.activation_request_id) {
+        const { data: existingRequest, error: existingRequestError } = await service.from("account_verification_requests").select("id").eq("phone", data.phone).maybeSingle();
+        if (existingRequestError) throw new Error(existingRequestError.message);
+        const { data: activationRequest, error: activationError } = existingRequest ? { data: existingRequest, error: null } : await service.from("account_verification_requests").insert({ full_name: data.full_name, phone: data.phone, requested_role: "driver", vehicle_type: data.vehicle_type, preapproved_by_admin: true }).select("id").single();
+        if (activationError || !activationRequest) throw new Error(activationError?.message ?? "DRIVER_ACTIVATION_PREPARE_FAILED");
+        const { error: linkError } = await service.from("driver_registration_invites").update({ activation_request_id: activationRequest.id, updated_at: new Date().toISOString() }).eq("id", data.id);
+        if (linkError) throw new Error(linkError.message);
+      }
       res.status(201).json({ invite: data });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "DRIVER_INVITE_CREATE_FAILED" });

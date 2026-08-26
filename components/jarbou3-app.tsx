@@ -15,6 +15,7 @@ import { configureJarbou3Realtime, subscribeToCustomerOrder, subscribeToOrderLiv
 import { registerJarbou3PushToken } from "@/lib/jarbou3-notifications";
 import { readRuntimeReadiness, requestRuntimeLocationPermission, type RuntimeReadiness } from "@/lib/jarbou3-runtime";
 import { isVersionBelow } from "@/lib/jarbou3-release";
+import { isJarbou3Phone, normalizeJarbou3Phone } from "@/shared/jarbou3-phone";
 import Constants from "expo-constants";
 
 type Role = "customer" | "driver";
@@ -420,6 +421,7 @@ export function Jarbou3App() {
   const [recoveryResetToken, setRecoveryResetToken] = useState<string | null>(null);
   const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadiness | null>(null);
   const [activeTrip, setActiveTrip] = useState(false);
+  const normalizedPhone = normalizeJarbou3Phone(phone);
 
   useEffect(() => {
     jarbou3Session.getAccessToken().then(setSavedToken);
@@ -437,7 +439,8 @@ export function Jarbou3App() {
   const savedSession = trpc.jarbou3.sessionProfile.useQuery({ accessToken: savedToken ?? "pending-session-token-000" }, { enabled: Boolean(savedToken), retry: false });
   const releaseSettings = trpc.jarbou3.releaseSettings.useQuery(undefined, { enabled: Boolean(savedToken), refetchInterval: 30_000, retry: false });
   const currentVersion = Constants.expoConfig?.version ?? "1.0.0";
-  const onboardingStatus = trpc.jarbou3.onboardingStatus.useQuery({ requestId: requestId ?? "00000000-0000-0000-0000-000000000000", phone }, { enabled: Boolean(requestId) && Boolean(phone) && (stage === "waiting" || stage === "code"), refetchInterval: stage === "waiting" ? 4_000 : false, retry: false });
+  const onboardingStatus = trpc.jarbou3.onboardingStatus.useQuery({ requestId: requestId ?? "00000000-0000-0000-0000-000000000000", phone: normalizedPhone }, { enabled: Boolean(requestId) && Boolean(normalizedPhone) && (stage === "waiting" || stage === "code"), refetchInterval: stage === "waiting" ? 4_000 : false, retry: false });
+  const preapprovedDriver = trpc.jarbou3.lookupPreapprovedTeamDriver.useQuery({ phone: normalizedPhone || "+00000000", fullName: name.trim().length >= 2 ? name.trim() : "—" }, { enabled: stage === "form" && role === "driver" && Boolean(normalizedPhone) && name.trim().length >= 2, retry: false, staleTime: 15_000 });
   useEffect(() => {
     if (savedToken === undefined) return;
     if (!savedToken) { setStage("choose"); return; }
@@ -616,20 +619,22 @@ export function Jarbou3App() {
     onError: () => Alert.alert("تعذر حفظ كلمة المرور", "انتهت صلاحية جلسة الاسترجاع أو تعذر تغيير كلمة المرور."),
   });
   const submitForm = () => {
-    if (!/^\+?[0-9]{8,16}$/.test(phone) || name.trim().length < 2) {
+    if (!isJarbou3Phone(phone) || name.trim().length < 2) {
       Alert.alert("تحقق من البيانات", "أدخل اسماً من حرفين على الأقل ورقم WhatsApp بصيغة دولية صحيحة.");
       return;
     }
-    if (role === "driver" && (!onboardingPersonalPhoto || !onboardingIdentityPhoto)) {
+    const isMatchingTeamDriver = Boolean(preapprovedDriver.data?.found);
+    if (role === "driver" && !isMatchingTeamDriver && (!onboardingPersonalPhoto || !onboardingIdentityPhoto)) {
       Alert.alert("وثائق السفير مطلوبة", "التقط الصورة الشخصية وصورة الهوية قبل إرسال طلب المراجعة.");
       return;
     }
-    submitOnboarding.mutate({ fullName: name.trim(), phone, requestedRole: role, vehicleType: role === "driver" ? vehicleType : undefined, personalPhoto: role === "driver" ? onboardingPersonalPhoto ?? undefined : undefined, identityPhoto: role === "driver" ? onboardingIdentityPhoto ?? undefined : undefined });
+    setPhone(normalizedPhone);
+    submitOnboarding.mutate({ fullName: name.trim(), phone: normalizedPhone, requestedRole: role, vehicleType: role === "driver" ? vehicleType : undefined, personalPhoto: role === "driver" && !isMatchingTeamDriver ? onboardingPersonalPhoto ?? undefined : undefined, identityPhoto: role === "driver" && !isMatchingTeamDriver ? onboardingIdentityPhoto ?? undefined : undefined });
   };
   const verifyCode = () => {
     if (codeExpired) return Alert.alert("انتهت صلاحية الرمز", "اطلب من المدير إنشاء رمز WhatsApp جديد ثم تحقق منه." );
     if (!requestId || verificationCode.replace(/\D/g, "").length !== 6) return Alert.alert("الرمز غير مكتمل", "أدخل رمز التحقق المكوّن من ستة أرقام.");
-    verifyOnboarding.mutate({ requestId, phone, code: verificationCode.replace(/\D/g, "") });
+    verifyOnboarding.mutate({ requestId, phone: normalizedPhone, code: verificationCode.replace(/\D/g, "") });
   };
   const saveOnboardingPassword = () => {
     if (accountPassword.length < 8 || accountPassword !== passwordConfirm) return Alert.alert("تحقق من كلمة المرور", "اكتب كلمة مرور من ثمانية أحرف على الأقل وأعد كتابتها مطابقة.");
@@ -638,17 +643,18 @@ export function Jarbou3App() {
   };
   const submitRecoveryRequest = () => {
     if (!/^\+?[0-9]{8,16}$/.test(phone) || name.trim().length < 2) return Alert.alert("تحقق من البيانات", "أدخل الاسم الكامل ورقم WhatsApp الصحيحين.");
-    requestRecovery.mutate({ fullName: name.trim(), phone, requestedRole: role });
+    setPhone(normalizedPhone);
+    requestRecovery.mutate({ fullName: name.trim(), phone: normalizedPhone, requestedRole: role });
   };
   const submitRecoveryCode = () => {
     if (!recoveryRequestId || recoveryCode.replace(/\D/g, "").length !== 6) return Alert.alert("الرمز غير مكتمل", "أدخل رمز التحقق المكوّن من ستة أرقام.");
     if (codeExpired) return Alert.alert("انتهت صلاحية الرمز", "اطلب من الإدارة إرسال رمز جديد.");
-    verifyRecovery.mutate({ requestId: recoveryRequestId, phone, code: recoveryCode.replace(/\D/g, "") });
+    verifyRecovery.mutate({ requestId: recoveryRequestId, phone: normalizedPhone, code: recoveryCode.replace(/\D/g, "") });
   };
   const saveRecoveredPassword = () => {
     if (!recoveryRequestId || !recoveryResetToken) return Alert.alert("انتهت الجلسة", "ابدأ طلب استرجاع كلمة المرور من جديد.");
     if (accountPassword.length < 8 || accountPassword !== passwordConfirm) return Alert.alert("تحقق من كلمة المرور", "اكتب كلمة مرور من ثمانية أحرف على الأقل وأعد كتابتها مطابقة.");
-    completeRecovery.mutate({ requestId: recoveryRequestId, phone, resetToken: recoveryResetToken, password: accountPassword });
+    completeRecovery.mutate({ requestId: recoveryRequestId, phone: normalizedPhone, resetToken: recoveryResetToken, password: accountPassword });
   };
   const captureOnboardingDocument = async (kind: "personal" | "identity") => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -662,8 +668,9 @@ export function Jarbou3App() {
     if (kind === "personal") setOnboardingPersonalPhoto(uri); else setOnboardingIdentityPhoto(uri);
   };
   const submitSignIn = () => {
-    if (!/^\+?[0-9]{8,16}$/.test(phone) || accountPassword.length < 8) return Alert.alert("تحقق من البيانات", "أدخل رقم WhatsApp وكلمة المرور.");
-    signIn.mutate({ phone, password: accountPassword });
+    if (!isJarbou3Phone(phone) || accountPassword.length < 8) return Alert.alert("تحقق من البيانات", "أدخل رقم WhatsApp وكلمة المرور.");
+    setPhone(normalizedPhone);
+    signIn.mutate({ phone: normalizedPhone, password: accountPassword });
   };
   const logout = async () => { await Promise.all([jarbou3Session.clear(), jarbou3Session.clearOnboarding()]); setSavedToken(null); setRequestId(null); setVerificationCode(""); setCodeExpiresAt(null); setRetryAfter(null); setName(""); setPhone(""); setAccountPassword(""); setPasswordConfirm(""); setStage("choose"); };
   const refreshRuntimeReadiness = async () => {
@@ -687,7 +694,8 @@ export function Jarbou3App() {
   if (stage === "recoveryWaiting") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>طلب الاسترجاع قيد المراجعة</Text><Text style={styles.onboardingCopy}>{retrySeconds > 0 ? "أُلغي الرمز للحماية بعد ثلاث محاولات خاطئة. انتظر قبل طلب رمز جديد." : "بعد مطابقة بياناتك سترسل الإدارة رمزاً من ستة أرقام إلى WhatsApp."}</Text>{retrySeconds > 0 ? <View style={styles.verificationTimer}><Text style={styles.verificationTimerLabel}>إعادة المحاولة بعد</Text><Text style={styles.verificationTimerValue}>{`${Math.floor(retrySeconds / 60)}:${String(retrySeconds % 60).padStart(2, "0")}`}</Text></View> : <Tag status>بانتظار إرسال الرمز</Tag>}<Action title={recoveryStatus.isFetching ? "جارٍ التحقق…" : "تحقق من وصول الرمز"} onPress={() => recoveryStatus.refetch()} /><Pressable onPress={() => setStage("signin")} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>العودة لتسجيل الدخول</Text></Pressable></View></View>;
   if (stage === "recoveryCode") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>أدخل رمز الاسترجاع</Text><Text style={styles.onboardingCopy}>أدخل رمز WhatsApp ثم اختر كلمة مرور جديدة في الخطوة التالية.</Text><View style={[styles.verificationTimer, codeExpired && styles.verificationTimerExpired]}><Text style={styles.verificationTimerLabel}>{codeExpired ? "انتهت الصلاحية" : "صلاحية الرمز"}</Text><Text style={[styles.verificationTimerValue, codeExpired && styles.verificationTimerValueExpired]}>{codeTimerLabel}</Text></View><TextInput value={recoveryCode} onChangeText={(value) => setRecoveryCode(value.replace(/\D/g, ""))} autoFocus keyboardType="number-pad" maxLength={6} placeholder="••••••" placeholderTextColor="#A0A0A0" style={styles.onboardingOtp} textAlign="center" editable={!codeExpired} /><Pressable onPress={submitRecoveryCode} disabled={verifyRecovery.isPending || codeExpired} style={[styles.authAction, (verifyRecovery.isPending || codeExpired) && styles.authActionDisabled]}>{verifyRecovery.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>تحقق من الرمز</Text>}</Pressable></View></View>;
   if (stage === "recoveryPassword") return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>كلمة مرور جديدة</Text><Text style={styles.onboardingCopy}>سيُلغى استخدام كلمة المرور السابقة فور التأكيد.</Text><TextInput value={accountPassword} onChangeText={setAccountPassword} placeholder="كلمة المرور الجديدة" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><TextInput value={passwordConfirm} onChangeText={setPasswordConfirm} placeholder="أعد كتابة كلمة المرور" placeholderTextColor="#999" secureTextEntry style={styles.authInput} textAlign="right" /><Pressable onPress={saveRecoveredPassword} disabled={completeRecovery.isPending} style={[styles.authAction, completeRecovery.isPending && styles.authActionDisabled]}>{completeRecovery.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>تأكيد كلمة المرور الجديدة</Text>}</Pressable></View></View>;
-  return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Top title={role === "driver" ? "تسجيل سفير" : "تسجيل عميل"} back={() => setStage("choose")} /><Text style={styles.onboardingTitle}>{role === "driver" ? "بيانات السفير" : "بيانات العميل"}</Text><Text style={styles.onboardingCopy}>{role === "driver" ? "أدخل بياناتك ووثيقتيك لإرسال طلبك للمراجعة." : "أدخل بياناتك لإكمال التسجيل."}</Text><TextInput value={name} onChangeText={setName} placeholder="الاسم الكامل" placeholderTextColor="#999" style={styles.authInput} textAlign="right" /><Text style={styles.onboardingNote}>اكتب اسمك الحقيقي كما يظهر في الهوية، ويفضل أن يكون من كلمتين. قرار قبول التسجيل يبقى للإدارة.</Text><TextInput value={phone} onChangeText={setPhone} placeholder="رقم WhatsApp، مثال +9639…" placeholderTextColor="#999" keyboardType="phone-pad" style={styles.authInput} textAlign="right" />{role === "driver" ? <><View style={styles.vehicleChoices}>{([{ key: "motorcycle", label: "دراجة نارية" }, { key: "electric_scooter", label: "دراجة كهربائية" }] as const).map((vehicle) => <Pressable key={vehicle.key} onPress={() => setVehicleType(vehicle.key)} style={[styles.vehicleChoice, vehicleType === vehicle.key && styles.vehicleChoiceSelected]}><Text style={styles.vehicleChoiceText}>{vehicle.label}</Text></Pressable>)}</View><Upload title="الصورة الشخصية" detail={onboardingPersonalPhoto ? "تم التقاط الصورة" : "التقط صورة واضحة للوجه"} uri={onboardingPersonalPhoto} onPress={() => captureOnboardingDocument("personal")} /><Upload title="صورة الهوية" detail={onboardingIdentityPhoto ? "تم التقاط الصورة" : "التقط صورة الهوية بوضوح"} uri={onboardingIdentityPhoto} onPress={() => captureOnboardingDocument("identity")} /></> : null}<Pressable onPress={submitForm} disabled={submitOnboarding.isPending} style={[styles.authAction, submitOnboarding.isPending && styles.authActionDisabled]}>{submitOnboarding.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>إرسال للمراجعة</Text>}</Pressable><Pressable onPress={() => { setAccountPassword(""); setStage("signin"); }} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>لدي حساب بالفعل</Text></Pressable></View></ScrollView>;
+  const teamDriverReady = role === "driver" && Boolean(preapprovedDriver.data?.found);
+  return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Top title={role === "driver" ? "تسجيل سفير" : "تسجيل عميل"} back={() => setStage("choose")} /><Text style={styles.onboardingTitle}>{role === "driver" ? "بيانات السفير" : "بيانات العميل"}</Text><Text style={styles.onboardingCopy}>{teamDriverReady ? "تمت إضافتك مسبقاً إلى فريق جربوع. راجع اسمك ورقمك ثم فعّل الحساب؛ سترسل الإدارة رمز WhatsApp للتأكيد قبل اختيار كلمة المرور." : role === "driver" ? "أدخل بياناتك ووثيقتيك لإرسال طلبك للمراجعة." : "أدخل بياناتك لإكمال التسجيل."}</Text><TextInput value={name} onChangeText={setName} placeholder="الاسم الكامل" placeholderTextColor="#999" style={styles.authInput} textAlign="right" /><Text style={styles.onboardingNote}>اكتب اسمك الحقيقي كما يظهر في الهوية، ويفضل أن يكون من كلمتين. قرار قبول التسجيل يبقى للإدارة.</Text><TextInput value={phone} onChangeText={setPhone} placeholder="رقم WhatsApp، مثال +9639…" placeholderTextColor="#999" keyboardType="phone-pad" style={styles.authInput} textAlign="right" />{role === "driver" ? <><View style={styles.vehicleChoices}>{([{ key: "motorcycle", label: "دراجة نارية" }, { key: "electric_scooter", label: "دراجة كهربائية" }] as const).map((vehicle) => <Pressable key={vehicle.key} onPress={() => setVehicleType(vehicle.key)} style={[styles.vehicleChoice, vehicleType === vehicle.key && styles.vehicleChoiceSelected]}><Text style={styles.vehicleChoiceText}>{vehicle.label}</Text></Pressable>)}</View>{teamDriverReady ? <View style={styles.verificationGuide}><Text style={styles.verificationGuideTitle}>عضو فريق مُضاف مسبقاً</Text><Text style={styles.verificationGuideText}>لا تحتاج إلى رفع الوثائق مرة أخرى. أرسل طلب التفعيل، ثم أدخل رمز WhatsApp واختر كلمة مرورك.</Text></View> : <><Upload title="الصورة الشخصية" detail={onboardingPersonalPhoto ? "تم التقاط الصورة" : "التقط صورة واضحة للوجه"} uri={onboardingPersonalPhoto} onPress={() => captureOnboardingDocument("personal")} /><Upload title="صورة الهوية" detail={onboardingIdentityPhoto ? "تم التقاط الصورة" : "التقط صورة الهوية بوضوح"} uri={onboardingIdentityPhoto} onPress={() => captureOnboardingDocument("identity")} /></>}</> : null}<Pressable onPress={submitForm} disabled={submitOnboarding.isPending} style={[styles.authAction, submitOnboarding.isPending && styles.authActionDisabled]}>{submitOnboarding.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>{teamDriverReady ? "تفعيل حساب الفريق" : "إرسال للمراجعة"}</Text>}</Pressable><Pressable onPress={() => { setAccountPassword(""); setStage("signin"); }} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>لدي حساب بالفعل</Text></Pressable></View></ScrollView>;
 }
 
 const styles = StyleSheet.create({

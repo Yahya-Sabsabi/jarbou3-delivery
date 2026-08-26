@@ -330,15 +330,27 @@ export const appRouter = router({
         return { id: authUser.id, name: profile.name, role: profile.role, pendingPassword: Boolean(pendingRequest) };
       }),
 
+    lookupPreapprovedTeamDriver: publicProcedure
+      .input(z.object({ phone: z.string().trim().min(8).max(24), fullName: z.string().trim().min(2).max(100) }))
+      .query(async ({ input }) => {
+        const phone = normalizeJarbou3Phone(input.phone);
+        const { data, error } = await asService().from("driver_registration_invites").select("id,full_name,claimed_at,is_active").eq("phone", phone).eq("is_active", true).maybeSingle();
+        if (error) throw new Error(error.message);
+        return { found: Boolean(data && !data.claimed_at && data.full_name.trim() === input.fullName.trim()) };
+      }),
+
     submitOnboarding: publicProcedure
       .input(z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().trim().min(8).max(24), requestedRole: z.enum(["customer", "driver"]), vehicleType: z.enum(["motorcycle", "electric_scooter"]).optional(), personalPhoto: imageInput.optional(), identityPhoto: imageInput.optional() }))
       .mutation(async ({ input, ctx }) => {
         const phone = normalizeJarbou3Phone(input.phone);
         assertOnboardingRateLimit(`submit:${ctx.req.ip ?? "unknown"}:${phone}`);
         if (input.requestedRole === "driver" && !input.vehicleType) throw new Error("VEHICLE_TYPE_REQUIRED");
-        if (input.requestedRole === "driver" && (!input.personalPhoto || !input.identityPhoto)) throw new Error("DRIVER_DOCUMENTS_REQUIRED");
         if (input.requestedRole === "customer" && (input.personalPhoto || input.identityPhoto)) throw new Error("CUSTOMER_DOCUMENTS_NOT_ALLOWED");
         const service = asService();
+        const { data: teamInvite, error: teamInviteError } = input.requestedRole === "driver" ? await service.from("driver_registration_invites").select("id,full_name,is_active,claimed_at").eq("phone", phone).maybeSingle() : { data: null, error: null };
+        if (teamInviteError) throw new Error(teamInviteError.message);
+        const isPreapprovedTeamDriver = Boolean(teamInvite && teamInvite.is_active && !teamInvite.claimed_at && teamInvite.full_name.trim() === input.fullName.trim());
+        if (input.requestedRole === "driver" && !isPreapprovedTeamDriver && (!input.personalPhoto || !input.identityPhoto)) throw new Error("DRIVER_DOCUMENTS_REQUIRED");
         const { data: registeredUser, error: registeredUserError } = await service.from("users").select("id").eq("phone", phone).maybeSingle();
         if (registeredUserError) throw new Error(registeredUserError.message);
         if (registeredUser) throw new Error("PHONE_ALREADY_REGISTERED");
@@ -353,6 +365,10 @@ export const appRouter = router({
           return { requestId: reopened.id, status: reopened.status, requestedRole: reopened.requested_role, codeExpiresAt: reopened.code_expires_at, retryAfter: reopened.retry_after };
         }
         if (existing) {
+          if (isPreapprovedTeamDriver && teamInvite && !teamInvite.claimed_at) {
+            const { error: claimError } = await service.from("driver_registration_invites").update({ claimed_at: new Date().toISOString(), activation_request_id: existing.id, updated_at: new Date().toISOString() }).eq("id", teamInvite.id);
+            if (claimError) throw new Error(claimError.message);
+          }
           if (input.requestedRole === "driver" && input.personalPhoto && input.identityPhoto && (!existing.personal_photo_path || !existing.identity_photo_path)) {
             const personal = decodeSmallPrivateImage(input.personalPhoto);
             const identity = decodeSmallPrivateImage(input.identityPhoto);
@@ -369,9 +385,9 @@ export const appRouter = router({
           }
           return { requestId: existing.id, status: existing.status, requestedRole: existing.requested_role, codeExpiresAt: existing.code_expires_at, retryAfter: existing.retry_after };
         }
-        const { data, error } = await service.from("account_verification_requests").insert({ full_name: input.fullName, phone, requested_role: input.requestedRole, vehicle_type: input.requestedRole === "driver" ? input.vehicleType : null }).select("id,status,requested_role,code_expires_at,retry_after").single();
+        const { data, error } = await service.from("account_verification_requests").insert({ full_name: input.fullName, phone, requested_role: input.requestedRole, vehicle_type: input.requestedRole === "driver" ? input.vehicleType : null, preapproved_by_admin: isPreapprovedTeamDriver }).select("id,status,requested_role,code_expires_at,retry_after").single();
         if (error || !data) throw new Error(error?.message ?? "ONBOARDING_REQUEST_FAILED");
-        if (input.requestedRole === "driver") await service.from("driver_registration_invites").update({ claimed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("phone", phone).eq("is_active", true);
+        if (input.requestedRole === "driver" && isPreapprovedTeamDriver) await service.from("driver_registration_invites").update({ claimed_at: new Date().toISOString(), activation_request_id: data.id, updated_at: new Date().toISOString() }).eq("id", teamInvite!.id);
         if (input.requestedRole === "driver" && input.personalPhoto && input.identityPhoto) {
           const personal = decodeSmallPrivateImage(input.personalPhoto);
           const identity = decodeSmallPrivateImage(input.identityPhoto);
