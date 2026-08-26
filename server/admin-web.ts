@@ -260,6 +260,8 @@ const discountSchema = z.object({ code: z.string().trim().toUpperCase().regex(/^
 });
 const archiveSchema = z.object({ archiveKind: z.enum(["weekly_documents", "monthly_text"]), periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
 const driverCompanyPaymentSchema = z.object({ amount: z.number().int().positive().max(100_000_000), paymentMethod: z.literal("cash"), paymentReference: z.string().trim().max(120).nullable().optional(), note: z.string().trim().max(500).nullable().optional() });
+const driverInviteSchema = z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().trim().min(8).max(24), vehicleType: z.enum(["motorcycle", "electric_scooter"]).nullable().optional(), note: z.string().trim().max(500).nullable().optional() });
+const problemReportStatusSchema = z.object({ status: z.enum(["open", "reviewed", "resolved"]), adminNote: z.string().trim().max(1000).nullable().optional() });
 const releaseSchema = z.object({ minVersion: z.string().regex(/^\d+\.\d+\.\d+$/).nullable(), forceUpdate: z.boolean(), updateUrl: z.string().url().nullable() }).superRefine((value, context) => {
   if (value.forceUpdate && (!value.minVersion || !value.updateUrl)) context.addIssue({ code: "custom", message: "FORCED_RELEASE_REQUIRES_VERSION_AND_URL" });
 });
@@ -279,6 +281,44 @@ async function listManagedAccounts() {
     const driver = driverByUser.get(user.id);
     return { ...user, verificationStatus: driver?.status ?? onboarding?.status ?? null, personalPhotoPath: driver?.personal_photo_path ?? onboarding?.personal_photo_path ?? null, identityPhotoPath: driver?.id_photo_path ?? onboarding?.identity_photo_path ?? null };
   });
+}
+
+function normalizeJarbou3Phone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 8 || digits.length > 16) throw new Error("INVALID_PHONE");
+  return `+${digits}`;
+}
+
+async function listFleetMap() {
+  const service = asService();
+  const { data: driverRows, error: driverError } = await service.from("users").select("id,name,last_location_lat,last_location_lng,last_location_at").eq("role", "driver").eq("is_active", true).order("last_location_at", { ascending: false, nullsFirst: false }).limit(100);
+  if (driverError) throw new Error(driverError.message);
+  const drivers = driverRows ?? [];
+  const driverIds = drivers.map((driver) => driver.id);
+  if (!driverIds.length) return { generatedAt: new Date().toISOString(), drivers: [] };
+
+  const [ordersResult, metricsResult] = await Promise.all([
+    service.from("orders").select("id,driver_id,status,source_address,source_lat,source_lng,destination_address,destination_lat,destination_lng,estimated_price,final_price,accepted_at,updated_at").in("driver_id", driverIds).in("status", ["accepted", "arriving", "awaiting_otp"]).order("updated_at", { ascending: false }).limit(200),
+    service.from("order_trip_metrics").select("order_id,started_at,actual_distance_m,moving_seconds,last_recorded_at").in("driver_id", driverIds).limit(200),
+  ]);
+  if (ordersResult.error || metricsResult.error) throw new Error(ordersResult.error?.message ?? metricsResult.error?.message ?? "FLEET_MAP_UNAVAILABLE");
+  const activeOrderByDriver = new Map<string, any>();
+  for (const order of ordersResult.data ?? []) if (!activeOrderByDriver.has(order.driver_id)) activeOrderByDriver.set(order.driver_id, order);
+  const activeOrderIds = Array.from(activeOrderByDriver.values()).map((order) => order.id);
+  const { data: points, error: pointsError } = activeOrderIds.length ? await service.from("order_trip_points").select("order_id,latitude,longitude,recorded_at").in("order_id", activeOrderIds).order("recorded_at", { ascending: true }).limit(1_200) : { data: [], error: null };
+  if (pointsError) throw new Error(pointsError.message);
+  const metricsByOrder = new Map((metricsResult.data ?? []).map((metric) => [metric.order_id, metric]));
+  const pointsByOrder = new Map<string, Array<{ latitude: number; longitude: number; recordedAt: string }>>();
+  for (const point of points ?? []) {
+    const route = pointsByOrder.get(point.order_id) ?? [];
+    route.push({ latitude: Number(point.latitude), longitude: Number(point.longitude), recordedAt: point.recorded_at });
+    pointsByOrder.set(point.order_id, route);
+  }
+  return { generatedAt: new Date().toISOString(), drivers: drivers.map((driver) => {
+    const order = activeOrderByDriver.get(driver.id);
+    const metrics = order ? metricsByOrder.get(order.id) : null;
+    return { id: driver.id, name: driver.name, latitude: driver.last_location_lat == null ? null : Number(driver.last_location_lat), longitude: driver.last_location_lng == null ? null : Number(driver.last_location_lng), lastLocationAt: driver.last_location_at, activeOrder: order ? { id: order.id, status: order.status, sourceAddress: order.source_address, source: { latitude: Number(order.source_lat), longitude: Number(order.source_lng) }, destinationAddress: order.destination_address, destination: { latitude: Number(order.destination_lat), longitude: Number(order.destination_lng) }, estimatedPrice: Number(order.final_price ?? order.estimated_price ?? 0), acceptedAt: order.accepted_at, actualDistanceM: Number(metrics?.actual_distance_m ?? 0), movingSeconds: Number(metrics?.moving_seconds ?? 0), startedAt: metrics?.started_at ?? order.accepted_at, route: pointsByOrder.get(order.id) ?? [] } : null };
+  }) };
 }
 
 export function registerAdminWebRoutes(app: Express) {
@@ -568,6 +608,90 @@ export function registerAdminWebRoutes(app: Express) {
       res.json({ accounts: await listManagedAccounts() });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: "SITE_ACCOUNTS_UNAVAILABLE" });
+    }
+  });
+
+  app.get("/admin/api/accounts/search", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      const rawQuery = typeof req.query.q === "string" ? req.query.q : "";
+      const query = rawQuery.trim().replace(/[^\u0600-\u06FFa-zA-Z0-9+\s-]/g, "");
+      if (query.length < 2) return res.status(400).json({ error: "SEARCH_QUERY_TOO_SHORT" });
+      const { data, error } = await asService().from("users").select("id,name,phone,role,is_active,created_at").in("role", ["customer", "driver"]).or(`name.ilike.%${query}%,phone.ilike.%${query}%`).order("created_at", { ascending: false }).limit(30);
+      if (error) throw new Error(error.message);
+      res.json({ accounts: data ?? [] });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "ACCOUNT_SEARCH_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/fleet-map", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      res.json(await listFleetMap());
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "FLEET_MAP_UNAVAILABLE" });
+    }
+  });
+
+  app.get("/admin/api/driver-invites", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      const { data, error } = await asService().from("driver_registration_invites").select("id,full_name,phone,vehicle_type,note,is_active,claimed_at,created_at").order("created_at", { ascending: false }).limit(100);
+      if (error) throw new Error(error.message);
+      res.json({ invites: data ?? [] });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "DRIVER_INVITES_UNAVAILABLE" });
+    }
+  });
+
+  app.post("/admin/api/driver-invites", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const parsed = driverInviteSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "INVALID_DRIVER_INVITE" });
+      const phone = normalizeJarbou3Phone(parsed.data.phone);
+      const service = asService();
+      const { data: existingUser, error: existingUserError } = await service.from("users").select("id").eq("phone", phone).maybeSingle();
+      if (existingUserError) throw new Error(existingUserError.message);
+      if (existingUser) return res.status(409).json({ error: "PHONE_ALREADY_REGISTERED" });
+      const { data, error } = await service.from("driver_registration_invites").upsert({ full_name: parsed.data.fullName, phone, vehicle_type: parsed.data.vehicleType ?? null, note: parsed.data.note ?? null, is_active: true, updated_at: new Date().toISOString() }, { onConflict: "phone" }).select("id,full_name,phone,vehicle_type,note,is_active,claimed_at,created_at").single();
+      if (error || !data) throw new Error(error?.message ?? "DRIVER_INVITE_CREATE_FAILED");
+      res.status(201).json({ invite: data });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "DRIVER_INVITE_CREATE_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/problem-reports", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      const { data, error } = await asService().from("problem_reports").select("id,reporter_id,reporter_role,message,status,admin_note,reviewed_at,created_at").order("created_at", { ascending: false }).limit(200);
+      if (error) throw new Error(error.message);
+      const reporterIds = Array.from(new Set((data ?? []).map((report) => report.reporter_id)));
+      const { data: profiles, error: profilesError } = reporterIds.length ? await asService().from("users").select("id,name,phone").in("id", reporterIds).limit(200) : { data: [], error: null };
+      if (profilesError) throw new Error(profilesError.message);
+      const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+      res.json({ reports: (data ?? []).map((report) => ({ ...report, reporter: profileById.get(report.reporter_id) ?? null })) });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "PROBLEM_REPORTS_UNAVAILABLE" });
+    }
+  });
+
+  app.post("/admin/api/problem-reports/:reportId", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const reportId = z.string().uuid().safeParse(req.params.reportId);
+      const parsed = problemReportStatusSchema.safeParse(req.body);
+      if (!reportId.success || !parsed.success) return res.status(400).json({ error: "INVALID_PROBLEM_REPORT" });
+      const values = { status: parsed.data.status, admin_note: parsed.data.adminNote ?? null, reviewed_at: parsed.data.status === "open" ? null : new Date().toISOString(), updated_at: new Date().toISOString() };
+      const { data, error } = await asService().from("problem_reports").update(values).eq("id", reportId.data).select("id,status,admin_note,reviewed_at").maybeSingle();
+      if (error || !data) return res.status(404).json({ error: "PROBLEM_REPORT_NOT_FOUND" });
+      res.json({ report: data });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "PROBLEM_REPORT_UPDATE_FAILED" });
     }
   });
 

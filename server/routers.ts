@@ -64,6 +64,12 @@ async function resolveActiveDiscount(code: string | undefined, preDiscountPrice:
   return { discountCodeId: data.id, discountAmount, finalPrice: Math.max(0, preDiscountPrice - discountAmount) };
 }
 
+function normalizeJarbou3Phone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 8 || digits.length > 16) throw new Error("INVALID_PHONE");
+  return `+${digits}`;
+}
+
 async function searchHamaAddresses(query: string, filter: HamaSearchFilter): Promise<HamaSearchResult[]> {
   const normalized = `${filter}:${query.trim().toLowerCase()}`;
   const cached = hamaSearchCache.get(normalized);
@@ -211,10 +217,23 @@ export const appRouter = router({
         return { registered: true };
       }),
 
-    signUpCustomer: publicProcedure
-      .input(z.object({ name: z.string().trim().min(2).max(100), phone: z.string().regex(/^\+?[0-9]{8,16}$/), password: z.string().min(8).max(72) }))
+    submitProblemReport: publicProcedure
+      .input(tokenInput.extend({ message: z.string().trim().min(10).max(1500) }))
       .mutation(async ({ input }) => {
-        const { data, error } = await asPublic().auth.signUp({ phone: input.phone, password: input.password, options: { data: { name: input.name, phone: input.phone } } });
+        const { authUser, profile } = await requireRole(input.accessToken, ["customer", "driver"]);
+        const { data, error } = await asService().from("problem_reports").insert({ reporter_id: authUser.id, reporter_role: profile.role, message: input.message, status: "open" }).select("id,status,created_at").single();
+        if (error || !data) throw new Error(error?.message ?? "PROBLEM_REPORT_CREATE_FAILED");
+        return data;
+      }),
+
+    signUpCustomer: publicProcedure
+      .input(z.object({ name: z.string().trim().min(2).max(100), phone: z.string().trim().min(8).max(24), password: z.string().min(8).max(72) }))
+      .mutation(async ({ input }) => {
+        const phone = normalizeJarbou3Phone(input.phone);
+        const { data: existing, error: existingError } = await asService().from("users").select("id").eq("phone", phone).maybeSingle();
+        if (existingError) throw new Error(existingError.message);
+        if (existing) throw new Error("PHONE_ALREADY_REGISTERED");
+        const { data, error } = await asPublic().auth.signUp({ phone, password: input.password, options: { data: { name: input.name, phone } } });
         if (error) throw new Error(error.message);
         return { userId: data.user?.id ?? null, requiresPhoneConfirmation: !data.session };
       }),
@@ -312,14 +331,18 @@ export const appRouter = router({
       }),
 
     submitOnboarding: publicProcedure
-      .input(z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().regex(/^\+?[0-9]{8,16}$/), requestedRole: z.enum(["customer", "driver"]), vehicleType: z.enum(["motorcycle", "electric_scooter"]).optional(), personalPhoto: imageInput.optional(), identityPhoto: imageInput.optional() }))
+      .input(z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().trim().min(8).max(24), requestedRole: z.enum(["customer", "driver"]), vehicleType: z.enum(["motorcycle", "electric_scooter"]).optional(), personalPhoto: imageInput.optional(), identityPhoto: imageInput.optional() }))
       .mutation(async ({ input, ctx }) => {
-        assertOnboardingRateLimit(`submit:${ctx.req.ip ?? "unknown"}:${input.phone}`);
+        const phone = normalizeJarbou3Phone(input.phone);
+        assertOnboardingRateLimit(`submit:${ctx.req.ip ?? "unknown"}:${phone}`);
         if (input.requestedRole === "driver" && !input.vehicleType) throw new Error("VEHICLE_TYPE_REQUIRED");
         if (input.requestedRole === "driver" && (!input.personalPhoto || !input.identityPhoto)) throw new Error("DRIVER_DOCUMENTS_REQUIRED");
         if (input.requestedRole === "customer" && (input.personalPhoto || input.identityPhoto)) throw new Error("CUSTOMER_DOCUMENTS_NOT_ALLOWED");
         const service = asService();
-        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,status,requested_role,code_expires_at,retry_after,personal_photo_path,identity_photo_path").eq("phone", input.phone).maybeSingle();
+        const { data: registeredUser, error: registeredUserError } = await service.from("users").select("id").eq("phone", phone).maybeSingle();
+        if (registeredUserError) throw new Error(registeredUserError.message);
+        if (registeredUser) throw new Error("PHONE_ALREADY_REGISTERED");
+        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,status,requested_role,code_expires_at,retry_after,personal_photo_path,identity_photo_path").eq("phone", phone).maybeSingle();
         if (existingError) throw new Error(existingError.message);
         if (existing?.status === "verified") throw new Error("ACCOUNT_ALREADY_VERIFIED");
         if (existing?.status === "password_pending") throw new Error("PASSWORD_SETUP_PENDING");
@@ -345,8 +368,9 @@ export const appRouter = router({
           }
           return { requestId: existing.id, status: existing.status, requestedRole: existing.requested_role, codeExpiresAt: existing.code_expires_at, retryAfter: existing.retry_after };
         }
-        const { data, error } = await service.from("account_verification_requests").insert({ full_name: input.fullName, phone: input.phone, requested_role: input.requestedRole, vehicle_type: input.requestedRole === "driver" ? input.vehicleType : null }).select("id,status,requested_role,code_expires_at,retry_after").single();
+        const { data, error } = await service.from("account_verification_requests").insert({ full_name: input.fullName, phone, requested_role: input.requestedRole, vehicle_type: input.requestedRole === "driver" ? input.vehicleType : null }).select("id,status,requested_role,code_expires_at,retry_after").single();
         if (error || !data) throw new Error(error?.message ?? "ONBOARDING_REQUEST_FAILED");
+        if (input.requestedRole === "driver") await service.from("driver_registration_invites").update({ claimed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("phone", phone).eq("is_active", true);
         if (input.requestedRole === "driver" && input.personalPhoto && input.identityPhoto) {
           const personal = decodeSmallPrivateImage(input.personalPhoto);
           const identity = decodeSmallPrivateImage(input.identityPhoto);
