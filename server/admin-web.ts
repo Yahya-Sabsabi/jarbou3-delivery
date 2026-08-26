@@ -617,9 +617,16 @@ export function registerAdminWebRoutes(app: Express) {
       const rawQuery = typeof req.query.q === "string" ? req.query.q : "";
       const query = rawQuery.trim().replace(/[^\u0600-\u06FFa-zA-Z0-9+\s-]/g, "");
       if (query.length < 2) return res.status(400).json({ error: "SEARCH_QUERY_TOO_SHORT" });
-      const { data, error } = await asService().from("users").select("id,name,phone,role,is_active,created_at").in("role", ["customer", "driver"]).or(`name.ilike.%${query}%,phone.ilike.%${query}%`).order("created_at", { ascending: false }).limit(30);
-      if (error) throw new Error(error.message);
-      res.json({ accounts: data ?? [] });
+      const service = asService();
+      const [usersResult, invitesResult] = await Promise.all([
+        service.from("users").select("id,name,phone,role,is_active,created_at").in("role", ["customer", "driver"]).or(`name.ilike.%${query}%,phone.ilike.%${query}%`).order("created_at", { ascending: false }).limit(30),
+        service.from("driver_registration_invites").select("id,full_name,phone,is_active,claimed_at,created_at").or(`full_name.ilike.%${query}%,phone.ilike.%${query}%`).order("created_at", { ascending: false }).limit(30),
+      ]);
+      if (usersResult.error || invitesResult.error) throw new Error(usersResult.error?.message ?? invitesResult.error?.message ?? "ACCOUNT_SEARCH_FAILED");
+      const users = (usersResult.data ?? []).map((account) => ({ ...account, record_type: "account" }));
+      const existingPhones = new Set(users.map((account) => account.phone));
+      const pendingDrivers = (invitesResult.data ?? []).filter((invite) => !existingPhones.has(invite.phone)).map((invite) => ({ id: invite.id, name: invite.full_name, phone: invite.phone, role: "driver", is_active: invite.is_active, created_at: invite.created_at, record_type: "manual_driver", claimed_at: invite.claimed_at }));
+      res.json({ accounts: [...users, ...pendingDrivers] });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "ACCOUNT_SEARCH_FAILED" });
     }

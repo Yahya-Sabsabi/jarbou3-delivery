@@ -342,8 +342,9 @@ export const appRouter = router({
         const { data: registeredUser, error: registeredUserError } = await service.from("users").select("id").eq("phone", phone).maybeSingle();
         if (registeredUserError) throw new Error(registeredUserError.message);
         if (registeredUser) throw new Error("PHONE_ALREADY_REGISTERED");
-        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,status,requested_role,code_expires_at,retry_after,personal_photo_path,identity_photo_path").eq("phone", phone).maybeSingle();
+        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,full_name,status,requested_role,code_expires_at,retry_after,personal_photo_path,identity_photo_path").eq("phone", phone).maybeSingle();
         if (existingError) throw new Error(existingError.message);
+        if (existing && (existing.full_name.trim() !== input.fullName.trim() || existing.requested_role !== input.requestedRole)) throw new Error("PHONE_ALREADY_REGISTERED");
         if (existing?.status === "verified") throw new Error("ACCOUNT_ALREADY_VERIFIED");
         if (existing?.status === "password_pending") throw new Error("PASSWORD_SETUP_PENDING");
         if (existing?.status === "locked" && existing.retry_after && new Date(existing.retry_after).getTime() <= Date.now()) {
