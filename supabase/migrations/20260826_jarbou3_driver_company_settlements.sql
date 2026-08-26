@@ -4,7 +4,7 @@ create table public.driver_company_payments (
   id uuid primary key default gen_random_uuid(),
   driver_id uuid not null references public.users(id) on delete restrict,
   amount integer not null check (amount > 0),
-  payment_method text not null check (payment_method in ('cash', 'sham_cash')),
+  payment_method text not null check (payment_method = 'cash'),
   payment_reference text check (char_length(coalesce(payment_reference, '')) <= 120),
   note text check (char_length(coalesce(note, '')) <= 500),
   recorded_via text not null default 'admin_site' check (recorded_via = 'admin_site'),
@@ -138,7 +138,7 @@ begin
   if p_amount is null or p_amount <= 0 then
     raise exception 'INVALID_PAYMENT_AMOUNT';
   end if;
-  if p_payment_method not in ('cash', 'sham_cash') then
+  if p_payment_method <> 'cash' then
     raise exception 'INVALID_PAYMENT_METHOD';
   end if;
 

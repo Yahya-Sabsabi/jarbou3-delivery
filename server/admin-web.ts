@@ -259,7 +259,7 @@ const discountSchema = z.object({ code: z.string().trim().toUpperCase().regex(/^
   if (value.endsAt && value.startsAt && new Date(value.endsAt).getTime() <= new Date(value.startsAt).getTime()) context.addIssue({ code: "custom", message: "INVALID_DISCOUNT_WINDOW" });
 });
 const archiveSchema = z.object({ archiveKind: z.enum(["weekly_documents", "monthly_text"]), periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
-const driverCompanyPaymentSchema = z.object({ amount: z.number().int().positive().max(100_000_000), paymentMethod: z.enum(["cash", "sham_cash"]), paymentReference: z.string().trim().max(120).nullable().optional(), note: z.string().trim().max(500).nullable().optional() });
+const driverCompanyPaymentSchema = z.object({ amount: z.number().int().positive().max(100_000_000), paymentMethod: z.literal("cash"), paymentReference: z.string().trim().max(120).nullable().optional(), note: z.string().trim().max(500).nullable().optional() });
 const releaseSchema = z.object({ minVersion: z.string().regex(/^\d+\.\d+\.\d+$/).nullable(), forceUpdate: z.boolean(), updateUrl: z.string().url().nullable() }).superRefine((value, context) => {
   if (value.forceUpdate && (!value.minVersion || !value.updateUrl)) context.addIssue({ code: "custom", message: "FORCED_RELEASE_REQUIRES_VERSION_AND_URL" });
 });
