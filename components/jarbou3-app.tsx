@@ -584,6 +584,12 @@ export function Jarbou3App() {
           ? "لم نعثر على طلب التحقق المطابق لهذا الرقم. ارجع إلى بيانات التسجيل وتأكد من رقم WhatsApp."
           : error.message === "INVALID_OR_EXPIRED_CODE"
             ? "الرمز غير صحيح أو انتهت صلاحيته. بعد ثلاث محاولات خاطئة يُلغى الرمز تلقائياً."
+            : error.message === "AUTH_ACCOUNT_CREATE_FAILED" || error.message === "AUTH_ACCOUNT_UPDATE_FAILED"
+              ? "تم قبول الرمز، لكن تعذر تجهيز حساب الدخول. حاول مرة واحدة فقط، ثم أبلغ الإدارة بالرمز: AUTH_ACCOUNT_FAILED."
+              : error.message === "PROFILE_LOOKUP_FAILED" || error.message === "PROFILE_UPDATE_FAILED" || error.message === "VERIFICATION_UPDATE_FAILED"
+                ? "تم قبول الرمز، لكن تعذر حفظ مرحلة التسجيل. حاول مرة واحدة فقط، ثم أبلغ الإدارة بالرمز: PROFILE_SYNC_FAILED."
+                : error.message === "SESSION_CREATE_FAILED"
+                  ? "تم قبول الرمز، لكن تعذر إنشاء جلسة الدخول. حاول مرة واحدة فقط، ثم أبلغ الإدارة بالرمز: SESSION_CREATE_FAILED."
             : "تعذر التحقق الآن. تحقق من الاتصال ثم أعد المحاولة.";
       Alert.alert("تعذر التحقق", copy);
     },

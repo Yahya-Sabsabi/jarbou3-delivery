@@ -38,6 +38,12 @@ function assertOnboardingRateLimit(key: string) {
   current.count += 1;
 }
 
+function failOnboardingVerification(stage: "PROFILE_LOOKUP_FAILED" | "AUTH_ACCOUNT_UPDATE_FAILED" | "AUTH_ACCOUNT_CREATE_FAILED" | "PROFILE_UPDATE_FAILED" | "VERIFICATION_UPDATE_FAILED" | "SESSION_CREATE_FAILED"): never {
+  // لا نسجل رقماً أو رمزاً أو تجزئة؛ يكفي اسم المرحلة ليعرف الدعم أين توقف المسار.
+  console.error(`[Jarbou3] Onboarding verification failed at ${stage}`);
+  throw new Error(stage);
+}
+
 function generatedAuthPassword() {
   return randomBytes(32).toString("base64url");
 }
@@ -414,8 +420,7 @@ export const appRouter = router({
 
     verifyOnboardingCode: publicProcedure
       .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), code: otpCodeInput }))
-      .mutation(async ({ input, ctx }) => {
-        assertOnboardingRateLimit(`verify:${ctx.req.ip ?? "unknown"}:${input.requestId}`);
+      .mutation(async ({ input }) => {
         const service = asService();
         const { data: request, error: requestError } = await service.from("account_verification_requests").select("id,full_name,phone,requested_role,status,verification_code_hash,code_expires_at,code_attempts,retry_after,auth_user_id").eq("id", input.requestId).maybeSingle();
         if (requestError || !request || !isSameJarbou3Phone(input.phone, request.phone)) throw new Error("ONBOARDING_REQUEST_NOT_FOUND");
@@ -440,27 +445,27 @@ export const appRouter = router({
         const authPassword = generatedAuthPassword();
         if (!userId) {
           const { data: existingProfile, error: profileError } = await service.from("users").select("id,role").eq("phone", request.phone).maybeSingle();
-          if (profileError) throw new Error(profileError.message);
+          if (profileError) failOnboardingVerification("PROFILE_LOOKUP_FAILED");
           if (existingProfile?.role === "admin") throw new Error("ACCOUNT_CONFLICT");
           if (existingProfile) {
             userId = existingProfile.id;
             const { error: updateAuthError } = await service.auth.admin.updateUserById(userId, { password: authPassword, phone_confirm: true, user_metadata: { name: request.full_name, phone: request.phone } });
-            if (updateAuthError) throw new Error(updateAuthError.message);
+            if (updateAuthError) failOnboardingVerification("AUTH_ACCOUNT_UPDATE_FAILED");
           } else {
             const { data: created, error: createError } = await service.auth.admin.createUser({ phone: request.phone, password: authPassword, phone_confirm: true, user_metadata: { name: request.full_name, phone: request.phone } });
-            if (createError || !created.user) throw new Error(createError?.message ?? "AUTH_ACCOUNT_CREATE_FAILED");
+            if (createError || !created.user) failOnboardingVerification("AUTH_ACCOUNT_CREATE_FAILED");
             userId = created.user.id;
           }
         } else {
           const { error: updateAuthError } = await service.auth.admin.updateUserById(userId, { password: authPassword, phone_confirm: true, user_metadata: { name: request.full_name, phone: request.phone } });
-          if (updateAuthError) throw new Error(updateAuthError.message);
+          if (updateAuthError) failOnboardingVerification("AUTH_ACCOUNT_UPDATE_FAILED");
         }
         const { error: profileUpdateError } = await service.from("users").update({ name: request.full_name, phone: request.phone, role: request.requested_role, is_active: false }).eq("id", userId);
-        if (profileUpdateError) throw new Error(profileUpdateError.message);
+        if (profileUpdateError) failOnboardingVerification("PROFILE_UPDATE_FAILED");
         const { error: verificationUpdateError } = await service.from("account_verification_requests").update({ status: "password_pending", auth_user_id: userId, verification_code_hash: null, code_attempts: 0, retry_after: null }).eq("id", request.id);
-        if (verificationUpdateError) throw new Error(verificationUpdateError.message);
+        if (verificationUpdateError) failOnboardingVerification("VERIFICATION_UPDATE_FAILED");
         const { data: sessionResult, error: sessionError } = await asPublic().auth.signInWithPassword({ phone: request.phone, password: authPassword });
-        if (sessionError || !sessionResult.session || !sessionResult.user) throw new Error(sessionError?.message ?? "SESSION_CREATE_FAILED");
+        if (sessionError || !sessionResult.session || !sessionResult.user) failOnboardingVerification("SESSION_CREATE_FAILED");
         return { accessToken: sessionResult.session.access_token, refreshToken: sessionResult.session.refresh_token, user: { id: sessionResult.user.id, name: request.full_name, role: request.requested_role } };
       }),
 
