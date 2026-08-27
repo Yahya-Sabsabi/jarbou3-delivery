@@ -424,17 +424,30 @@ export function Jarbou3App() {
   const normalizedPhone = normalizeJarbou3Phone(phone);
 
   useEffect(() => {
-    jarbou3Session.getAccessToken().then(setSavedToken);
-    jarbou3Session.getOnboarding().then((saved) => {
-      if (!saved) return;
-      setRole(saved.role);
-      setName(saved.name);
-      setPhone(saved.phone);
-      setRequestId(saved.requestId);
-      setCodeExpiresAt(saved.codeExpiresAt);
-      setRetryAfter(saved.retryAfter ?? null);
-      setStage(saved.stage);
-    });
+    let active = true;
+    let settled = false;
+    const applyRestoredState = (token: string | null, saved: Awaited<ReturnType<typeof jarbou3Session.getOnboarding>>) => {
+      if (!active || settled) return;
+      settled = true;
+      if (saved) {
+        setRole(saved.role);
+        setName(saved.name);
+        setPhone(saved.phone);
+        setRequestId(saved.requestId);
+        setCodeExpiresAt(saved.codeExpiresAt);
+        setRetryAfter(saved.retryAfter ?? null);
+        setStage(saved.stage);
+      }
+      setSavedToken(token);
+    };
+
+    Promise.all([jarbou3Session.getAccessToken(), jarbou3Session.getOnboarding()])
+      .then(([token, saved]) => applyRestoredState(token, saved))
+      .catch(() => applyRestoredState(null, null));
+
+    // لا تسمح لتعطل SecureStore على جهاز Android بحبس المستخدم في شاشة سوداء.
+    const watchdog = setTimeout(() => applyRestoredState(null, null), 3_000);
+    return () => { active = false; clearTimeout(watchdog); };
   }, []);
   const savedSession = trpc.jarbou3.sessionProfile.useQuery({ accessToken: savedToken ?? "pending-session-token-000" }, { enabled: Boolean(savedToken), retry: false });
   const releaseSettings = trpc.jarbou3.releaseSettings.useQuery(undefined, { enabled: Boolean(savedToken), refetchInterval: 30_000, retry: false });
@@ -443,7 +456,10 @@ export function Jarbou3App() {
   const preapprovedDriver = trpc.jarbou3.lookupPreapprovedTeamDriver.useQuery({ phone: normalizedPhone || "+00000000", fullName: name.trim().length >= 2 ? name.trim() : "—" }, { enabled: stage === "form" && role === "driver" && Boolean(normalizedPhone) && name.trim().length >= 2, retry: false, staleTime: 15_000 });
   useEffect(() => {
     if (savedToken === undefined) return;
-    if (!savedToken) { setStage("choose"); return; }
+    if (!savedToken) {
+      setStage((current) => current === "loading" ? "choose" : current);
+      return;
+    }
     if (savedSession.data) {
       setRole(savedSession.data.role);
       setWorkspaceName(savedSession.data.name);
