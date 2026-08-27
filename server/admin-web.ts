@@ -240,7 +240,7 @@ async function listReports() {
 }
 
 async function listAccountVerifications() {
-  const { data, error } = await asService().from("account_verification_requests").select("id,full_name,phone,requested_role,vehicle_type,status,personal_photo_path,identity_photo_path,code_expires_at,created_at,updated_at").in("status", ["pending_admin", "code_sent", "locked"]).order("created_at", { ascending: true }).limit(40);
+  const { data, error } = await asService().from("account_verification_requests").select("id,full_name,phone,requested_role,vehicle_type,status,personal_photo_path,identity_photo_path,code_expires_at,created_at,updated_at").in("status", ["pending_admin", "code_sent", "locked", "expired"]).order("updated_at", { ascending: false }).limit(100);
   if (error) throw new Error(error.message);
   return data ?? [];
 }
@@ -546,6 +546,34 @@ export function registerAdminWebRoutes(app: Express) {
       res.json({ requestId: request.id, verificationCode: code, whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(text)}`, expiresAt: expiresAt.toISOString() });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "VERIFICATION_CODE_SEND_FAILED" });
+    }
+  });
+
+  app.delete("/admin/api/verifications/:requestId", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const requestId = z.string().uuid().safeParse(req.params.requestId);
+      if (!requestId.success) return res.status(400).json({ error: "INVALID_VERIFICATION_REQUEST" });
+      const service = asService();
+      const { data: request, error: requestError } = await service
+        .from("account_verification_requests")
+        .select("id,status,code_expires_at,personal_photo_path,identity_photo_path")
+        .eq("id", requestId.data)
+        .maybeSingle();
+      if (requestError || !request) return res.status(404).json({ error: "VERIFICATION_NOT_FOUND" });
+      const isExpired = request.status === "expired" || (request.code_expires_at && new Date(request.code_expires_at).getTime() <= Date.now());
+      if (!isExpired) return res.status(409).json({ error: "ONLY_EXPIRED_VERIFICATION_CAN_BE_DELETED" });
+      const documentPaths = [request.personal_photo_path, request.identity_photo_path].filter((value): value is string => Boolean(value));
+      if (documentPaths.length) {
+        const { error: storageError } = await service.storage.from("jarbou3-private").remove(documentPaths);
+        if (storageError) throw new Error(storageError.message);
+      }
+      const { error: deleteError } = await service.from("account_verification_requests").delete().eq("id", request.id);
+      if (deleteError) throw new Error(deleteError.message);
+      res.json({ deleted: true });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "VERIFICATION_DELETE_FAILED" });
     }
   });
 
