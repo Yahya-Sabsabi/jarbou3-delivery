@@ -10,7 +10,12 @@ export function normalizeJarbou3Digits(value: string): string {
 }
 
 export function normalizeJarbou3Phone(value: string): string {
-  const digits = normalizeJarbou3Digits(value);
+  let digits = normalizeJarbou3Digits(value);
+  // جربوع يعمل في سوريا: يقبل الإدخال المحلي 09xxxxxxxx أو 9xxxxxxxx
+  // ويحفظه دائماً بصيغة E.164 الصالحة لخدمة المصادقة وWhatsApp.
+  if (digits.startsWith("00963")) digits = digits.slice(2);
+  if (/^09\d{8}$/.test(digits)) digits = `963${digits.slice(1)}`;
+  if (/^9\d{8}$/.test(digits)) digits = `963${digits}`;
   if (digits.length < 8 || digits.length > 16) return "";
   return `+${digits}`;
 }

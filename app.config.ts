@@ -36,6 +36,8 @@ const env = {
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
+  // عنوان عام فقط، ويُضمّن في Android حتى لا يحاول التطبيق استدعاء /api/trpc محلياً.
+  apiBaseUrl: "https://jarbou-deliv-xoohmte2.manus.space",
 };
 
 const config: ExpoConfig = {
@@ -83,6 +85,9 @@ const config: ExpoConfig = {
     bundler: "metro",
     output: "static",
     favicon: "./assets/images/favicon.png",
+  },
+  extra: {
+    apiBaseUrl: env.apiBaseUrl,
   },
   plugins: [
     "expo-router",

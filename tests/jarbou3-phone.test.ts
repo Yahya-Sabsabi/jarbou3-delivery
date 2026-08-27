@@ -21,6 +21,11 @@ describe("توحيد رقم هاتف جربوع", () => {
     expect(normalizeJarbou3Phone("+٩٦٣ ٩٤٤ ١٢٣ ٤٥٦")).toBe("+963944123456");
   });
 
+  it("يحوّل الرقم السوري المحلي إلى صيغة دولية صالحة للمصادقة", () => {
+    expect(normalizeJarbou3Phone("0944 123 456")).toBe("+963944123456");
+    expect(normalizeJarbou3Phone("٩٤٤١٢٣٤٥٦")).toBe("+963944123456");
+  });
+
   it("يقبل رمز WhatsApp العربي المؤلف من ستة أرقام فقط", () => {
     expect(normalizeJarbou3Otp("١٢٣٤٥٦")).toBe("123456");
     expect(normalizeJarbou3Otp("۱۲۳۴۵۶")).toBe("123456");

@@ -235,9 +235,11 @@ export const appRouter = router({
       }),
 
     signIn: publicProcedure
-      .input(z.object({ phone: z.string().regex(/^\+?[0-9]{8,16}$/), password: z.string().min(8).max(72) }))
+      .input(z.object({ phone: z.string().trim().min(8).max(24), password: z.string().min(8).max(72) }))
       .mutation(async ({ input }) => {
-        const { data, error } = await asPublic().auth.signInWithPassword({ phone: input.phone, password: input.password });
+        const phone = normalizeJarbou3Phone(input.phone);
+        if (!phone) throw new Error("INVALID_PHONE");
+        const { data, error } = await asPublic().auth.signInWithPassword({ phone, password: input.password });
         if (error || !data.session) throw new Error(error?.message ?? "SIGN_IN_FAILED");
         const profile = await getUserProfile(data.user.id);
         return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: { id: data.user.id, name: profile.name, role: profile.role } };
@@ -339,6 +341,7 @@ export const appRouter = router({
       .input(z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().trim().min(8).max(24), requestedRole: z.enum(["customer", "driver"]), vehicleType: z.enum(["motorcycle", "electric_scooter"]).optional(), personalPhoto: imageInput.optional(), identityPhoto: imageInput.optional() }))
       .mutation(async ({ input, ctx }) => {
         const phone = normalizeJarbou3Phone(input.phone);
+        if (!phone) throw new Error("INVALID_PHONE");
         assertOnboardingRateLimit(`submit:${ctx.req.ip ?? "unknown"}:${phone}`);
         if (input.requestedRole === "driver" && !input.vehicleType) throw new Error("VEHICLE_TYPE_REQUIRED");
         if (input.requestedRole === "customer" && (input.personalPhoto || input.identityPhoto)) throw new Error("CUSTOMER_DOCUMENTS_NOT_ALLOWED");
