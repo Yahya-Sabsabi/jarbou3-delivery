@@ -326,6 +326,8 @@ export const appRouter = router({
         const profile = await getUserProfile(session.user.id);
         const { error: closeError } = await service.from("account_recovery_requests").update({ status: "completed", reset_token_hash: null, reset_token_expires_at: null }).eq("id", request.id);
         if (closeError) throw new Error("RECOVERY_COMPLETE_FAILED");
+        const { error: onboardingSyncError } = await service.from("account_verification_requests").update({ status: "verified" }).eq("auth_user_id", request.user_id).eq("status", "password_pending");
+        if (onboardingSyncError) console.warn("[Jarbou3] Recovery completed but pending onboarding status could not be synchronized");
         return { accessToken: session.session.access_token, refreshToken: session.session.refresh_token, user: { id: session.user.id, name: profile.name, role: profile.role } };
       }),
 

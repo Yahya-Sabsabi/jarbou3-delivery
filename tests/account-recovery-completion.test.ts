@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
   const updateUserById = vi.fn();
   const signInWithPassword = vi.fn();
   const updateRequest = vi.fn();
+  const updateOnboardingRequest = vi.fn();
   const getUserProfile = vi.fn();
 
   const service = {
@@ -28,12 +29,20 @@ const mocks = vi.hoisted(() => {
           },
         };
       }
+      if (table === "account_verification_requests") {
+        return {
+          update: (value: unknown) => {
+            updateOnboardingRequest(value);
+            return { eq: () => ({ eq: async () => ({ error: null }) }) };
+          },
+        };
+      }
       throw new Error(`Unexpected table: ${table}`);
     },
     auth: { admin: { updateUserById } },
   };
 
-  return { getUserProfile, request, service, signInWithPassword, updateRequest, updateUserById };
+  return { getUserProfile, request, service, signInWithPassword, updateOnboardingRequest, updateRequest, updateUserById };
 });
 
 vi.mock("bcryptjs", () => ({
@@ -65,6 +74,7 @@ describe("إكمال استرجاع كلمة المرور", () => {
       error: null,
     });
     mocks.updateRequest.mockReset();
+    mocks.updateOnboardingRequest.mockReset();
     mocks.getUserProfile.mockReset().mockResolvedValue({ name: "مستخدم اختبار", role: "customer" });
   });
 
@@ -83,6 +93,7 @@ describe("إكمال استرجاع كلمة المرور", () => {
     );
     expect(mocks.signInWithPassword).toHaveBeenCalledWith(expect.objectContaining({ email: expect.stringMatching(/^u-[a-f0-9]{64}@jarbou3\.local$/), password: "safe-password" }));
     expect(mocks.updateRequest).toHaveBeenCalledWith({ status: "completed", reset_token_hash: null, reset_token_expires_at: null });
+    expect(mocks.updateOnboardingRequest).toHaveBeenCalledWith({ status: "verified" });
     expect(mocks.signInWithPassword.mock.invocationCallOrder[0]).toBeLessThan(mocks.updateRequest.mock.invocationCallOrder[0]);
     expect(result.user).toEqual({ id: mocks.request.user_id, name: "مستخدم اختبار", role: "customer" });
   });
