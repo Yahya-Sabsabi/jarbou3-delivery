@@ -50,7 +50,6 @@ export function getApiBaseUrl(): string {
     embeddedApiBaseUrl,
     isWeb: ReactNative.Platform.OS === "web",
     currentOrigin: typeof window !== "undefined" ? window.location.origin : undefined,
-    isExpoGo: Constants.appOwnership === "expo",
     expoHostUri,
   });
 }

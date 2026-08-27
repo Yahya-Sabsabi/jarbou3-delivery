@@ -50,10 +50,17 @@ export function resolveJarbou3ApiBaseUrl({
     ? withoutTrailingSlash(embeddedApiBaseUrl)
     : "";
 
-  // Expo Go loads JavaScript from the current Metro session. Its matching API
-  // carries the latest development procedures, unlike the published API which
-  // intentionally changes only after deployment.
-  const expoPreviewApiUrl = isExpoGo ? previewApiFromExpoHost(expoHostUri) : "";
+  // Expo replaces EXPO_PUBLIC_* values while bundling. The development script
+  // supplies the matching 3000 preview origin, making this path independent of
+  // manifest shape and Expo Go runtime metadata.
+  if (!isWeb && /^https:\/\/3000-[a-z0-9-]+\.us\d+\.manus\.computer$/i.test(configuredApiUrl)) {
+    return configuredApiUrl;
+  }
+
+  // The presence of Metro's host URI is the reliable indicator of a preview
+  // session. Do not depend on an Expo ownership flag because it differs between
+  // Expo Go releases and can be absent from a development manifest.
+  const expoPreviewApiUrl = previewApiFromExpoHost(expoHostUri);
   if (expoPreviewApiUrl) return expoPreviewApiUrl;
 
   // Installed Android/iOS packages use the stable published API.
