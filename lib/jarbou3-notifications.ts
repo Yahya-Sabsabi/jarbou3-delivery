@@ -1,8 +1,23 @@
-import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
-if (Platform.OS !== "web") {
+const isExpoGo = Constants.appOwnership === "expo";
+const canUseNativePush = Platform.OS !== "web" && !isExpoGo;
+type NotificationsModule = typeof import("expo-notifications");
+
+function getNotificationsModule(): NotificationsModule | null {
+  if (!canUseNativePush) return null;
+  // This runtime import prevents Expo Go from initialising a Push module that
+  // is intentionally unavailable there, while installed Android builds keep it.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("expo-notifications") as NotificationsModule;
+}
+
+if (canUseNativePush) {
+  const Notifications = getNotificationsModule();
+  if (!Notifications) {
+    throw new Error("PUSH_NOTIFICATIONS_UNAVAILABLE");
+  }
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
@@ -14,7 +29,11 @@ if (Platform.OS !== "web") {
 }
 
 export async function registerJarbou3PushToken() {
-  if (Platform.OS === "web") return null;
+  // Expo Go no longer ships Android remote-push support. Production builds
+  // keep the registration path below; Expo Go simply skips it.
+  if (!canUseNativePush) return null;
+  const Notifications = getNotificationsModule();
+  if (!Notifications) return null;
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("jarbou3-orders", {
       name: "تحديثات طلبات جربوع",
