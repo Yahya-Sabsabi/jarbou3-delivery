@@ -48,7 +48,9 @@ const config: ExpoConfig = {
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
-  newArchEnabled: true,
+  // SDK 54 يسمح بالمعمارية القديمة؛ نستخدمها لضمان استقرار مكتبة الخرائط الأصلية
+  // داخل حزمة Android إلى أن تُستبدل بمكتبة New Architecture-first مستقرة.
+  newArchEnabled: false,
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,

@@ -7,7 +7,7 @@ import { ActivityIndicator, Alert, AppState, BackHandler, Linking, Modal, Platfo
 import { trpc } from "@/lib/trpc";
 import { jarbou3Session } from "@/lib/jarbou3-session";
 import { HAMA_CENTER, formatSyp, type MapPoint } from "@/shared/jarbou3";
-import { HamaMap } from "@/components/hama-map";
+import { HamaMap } from "@/components/hama-map-loader";
 import { getCurrentHamaLocation, watchHamaLocation } from "@/lib/jarbou3-location";
 import { flushJarbou3QueuedLocation, startJarbou3BackgroundTracking, stopJarbou3BackgroundTracking } from "@/lib/jarbou3-background-location";
 import { getOsrmRoute, type RouteEstimate } from "@/lib/osrm";
