@@ -29,6 +29,15 @@ export const API_BASE_URL = env.apiBaseUrl;
 const embeddedApiBaseUrl = typeof Constants.expoConfig?.extra?.apiBaseUrl === "string"
   ? Constants.expoConfig.extra.apiBaseUrl
   : "";
+const runtimeManifest = Constants as typeof Constants & {
+  manifest?: { hostUri?: unknown };
+  manifest2?: { extra?: { expoClient?: { hostUri?: unknown } } };
+};
+const expoHostUri = [
+  (Constants.expoConfig as { hostUri?: unknown } | null)?.hostUri,
+  runtimeManifest.manifest?.hostUri,
+  runtimeManifest.manifest2?.extra?.expoClient?.hostUri,
+].find((value): value is string => typeof value === "string") ?? "";
 
 /**
  * Get the API base URL, deriving from current hostname if not set.
@@ -41,6 +50,8 @@ export function getApiBaseUrl(): string {
     embeddedApiBaseUrl,
     isWeb: ReactNative.Platform.OS === "web",
     currentOrigin: typeof window !== "undefined" ? window.location.origin : undefined,
+    isExpoGo: Constants.appOwnership === "expo",
+    expoHostUri,
   });
 }
 

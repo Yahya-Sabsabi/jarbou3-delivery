@@ -10,6 +10,15 @@ describe("عنوان API لتطبيق جربوع", () => {
     })).toBe("https://jarbou-deliv-xoohmte2.manus.space");
   });
 
+  it("يستخدم API معاينة Metro المطابق عند التشغيل داخل Expo Go", () => {
+    expect(resolveJarbou3ApiBaseUrl({
+      embeddedApiBaseUrl: "https://jarbou-deliv-xoohmte2.manus.space",
+      isWeb: false,
+      isExpoGo: true,
+      expoHostUri: "8081-current-preview.us2.manus.computer",
+    })).toBe("https://3000-current-preview.us2.manus.computer");
+  });
+
   it("يربط معاينة الويب بخادم API المقابل لها", () => {
     expect(resolveJarbou3ApiBaseUrl({
       isWeb: true,
