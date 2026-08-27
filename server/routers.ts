@@ -2,7 +2,7 @@ import { COOKIE_NAME } from "../shared/const.js";
 import { HAMA_BOUNDS, distanceMeters, isInsideHama } from "../shared/jarbou3";
 import { isSameJarbou3Phone, normalizeJarbou3Otp, normalizeJarbou3Phone } from "../shared/jarbou3-phone";
 import bcrypt from "bcryptjs";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -46,6 +46,13 @@ function failOnboardingVerification(stage: "PROFILE_LOOKUP_FAILED" | "AUTH_ACCOU
 
 function generatedAuthPassword() {
   return randomBytes(32).toString("base64url");
+}
+
+function authEmailForPhone(phone: string) {
+  const normalizedPhone = normalizeJarbou3Phone(phone);
+  if (!normalizedPhone) throw new Error("INVALID_PHONE");
+  const digest = createHash("sha256").update(normalizedPhone).digest("hex");
+  return `u-${digest}@jarbou3.local`;
 }
 
 function retryAfterIso() {
@@ -235,7 +242,7 @@ export const appRouter = router({
         const { data: existing, error: existingError } = await asService().from("users").select("id").eq("phone", phone).maybeSingle();
         if (existingError) throw new Error(existingError.message);
         if (existing) throw new Error("PHONE_ALREADY_REGISTERED");
-        const { data, error } = await asPublic().auth.signUp({ phone, password: input.password, options: { data: { name: input.name, phone } } });
+        const { data, error } = await asPublic().auth.signUp({ email: authEmailForPhone(phone), password: input.password, options: { data: { name: input.name, phone } } });
         if (error) throw new Error(error.message);
         return { userId: data.user?.id ?? null, requiresPhoneConfirmation: !data.session };
       }),
@@ -245,10 +252,15 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const phone = normalizeJarbou3Phone(input.phone);
         if (!phone) throw new Error("INVALID_PHONE");
-        const { data, error } = await asPublic().auth.signInWithPassword({ phone, password: input.password });
+        const service = asService();
+        const { data: profile, error: profileError } = await service.from("users").select("id").eq("phone", phone).maybeSingle();
+        if (profileError || !profile) throw new Error("SIGN_IN_FAILED");
+        const { error: identityUpdateError } = await service.auth.admin.updateUserById(profile.id, { email: authEmailForPhone(phone), email_confirm: true });
+        if (identityUpdateError) throw new Error("SIGN_IN_IDENTITY_MIGRATION_FAILED");
+        const { data, error } = await asPublic().auth.signInWithPassword({ email: authEmailForPhone(phone), password: input.password });
         if (error || !data.session) throw new Error(error?.message ?? "SIGN_IN_FAILED");
-        const profile = await getUserProfile(data.user.id);
-        return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: { id: data.user.id, name: profile.name, role: profile.role } };
+        const activeProfile = await getUserProfile(data.user.id);
+        return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: { id: data.user.id, name: activeProfile.name, role: activeProfile.role } };
       }),
 
     requestAccountRecovery: publicProcedure
@@ -278,8 +290,7 @@ export const appRouter = router({
 
     verifyRecoveryCode: publicProcedure
       .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), code: z.string().regex(/^\d{6}$/) }))
-      .mutation(async ({ input, ctx }) => {
-        assertOnboardingRateLimit(`recovery-verify:${ctx.req.ip ?? "unknown"}:${input.requestId}`);
+      .mutation(async ({ input }) => {
         const service = asService();
         const { data: request, error } = await service.from("account_recovery_requests").select("id,user_id,status,verification_code_hash,code_expires_at,code_attempts,retry_after").eq("id", input.requestId).eq("phone", input.phone).maybeSingle();
         if (error || !request || request.status !== "code_sent" || !request.verification_code_hash || !request.code_expires_at) throw new Error("INVALID_OR_EXPIRED_CODE");
@@ -307,13 +318,14 @@ export const appRouter = router({
         const { data: request, error } = await service.from("account_recovery_requests").select("id,user_id,status,reset_token_hash,reset_token_expires_at").eq("id", input.requestId).eq("phone", input.phone).maybeSingle();
         if (error || !request || request.status !== "verified" || !request.user_id || !request.reset_token_hash || !request.reset_token_expires_at || new Date(request.reset_token_expires_at).getTime() <= Date.now()) throw new Error("RECOVERY_NOT_VERIFIED");
         if (!await bcrypt.compare(input.resetToken, request.reset_token_hash)) throw new Error("RECOVERY_NOT_VERIFIED");
-        const { error: updateAuthError } = await service.auth.admin.updateUserById(request.user_id, { password: input.password, phone_confirm: true });
-        if (updateAuthError) throw new Error(updateAuthError.message);
-        const { error: closeError } = await service.from("account_recovery_requests").update({ status: "completed", reset_token_hash: null, reset_token_expires_at: null }).eq("id", request.id);
-        if (closeError) throw new Error(closeError.message);
-        const { data: session, error: signInError } = await asPublic().auth.signInWithPassword({ phone: input.phone, password: input.password });
-        if (signInError || !session.session || !session.user) throw new Error(signInError?.message ?? "SIGN_IN_FAILED");
+        const authEmail = authEmailForPhone(input.phone);
+        const { error: updateAuthError } = await service.auth.admin.updateUserById(request.user_id, { email: authEmail, email_confirm: true, password: input.password });
+        if (updateAuthError) throw new Error("RECOVERY_PASSWORD_UPDATE_FAILED");
+        const { data: session, error: signInError } = await asPublic().auth.signInWithPassword({ email: authEmail, password: input.password });
+        if (signInError || !session.session || !session.user) throw new Error("RECOVERY_SESSION_CREATE_FAILED");
         const profile = await getUserProfile(session.user.id);
+        const { error: closeError } = await service.from("account_recovery_requests").update({ status: "completed", reset_token_hash: null, reset_token_expires_at: null }).eq("id", request.id);
+        if (closeError) throw new Error("RECOVERY_COMPLETE_FAILED");
         return { accessToken: session.session.access_token, refreshToken: session.session.refresh_token, user: { id: session.user.id, name: profile.name, role: profile.role } };
       }),
 
@@ -443,28 +455,29 @@ export const appRouter = router({
         }
         let userId = request.auth_user_id;
         const authPassword = generatedAuthPassword();
+        const authEmail = authEmailForPhone(request.phone);
         if (!userId) {
           const { data: existingProfile, error: profileError } = await service.from("users").select("id,role").eq("phone", request.phone).maybeSingle();
           if (profileError) failOnboardingVerification("PROFILE_LOOKUP_FAILED");
           if (existingProfile?.role === "admin") throw new Error("ACCOUNT_CONFLICT");
           if (existingProfile) {
             userId = existingProfile.id;
-            const { error: updateAuthError } = await service.auth.admin.updateUserById(userId, { password: authPassword, phone_confirm: true, user_metadata: { name: request.full_name, phone: request.phone } });
+            const { error: updateAuthError } = await service.auth.admin.updateUserById(userId, { email: authEmail, email_confirm: true, password: authPassword, user_metadata: { name: request.full_name, phone: request.phone } });
             if (updateAuthError) failOnboardingVerification("AUTH_ACCOUNT_UPDATE_FAILED");
           } else {
-            const { data: created, error: createError } = await service.auth.admin.createUser({ phone: request.phone, password: authPassword, phone_confirm: true, user_metadata: { name: request.full_name, phone: request.phone } });
+            const { data: created, error: createError } = await service.auth.admin.createUser({ email: authEmail, email_confirm: true, password: authPassword, user_metadata: { name: request.full_name, phone: request.phone } });
             if (createError || !created.user) failOnboardingVerification("AUTH_ACCOUNT_CREATE_FAILED");
             userId = created.user.id;
           }
         } else {
-          const { error: updateAuthError } = await service.auth.admin.updateUserById(userId, { password: authPassword, phone_confirm: true, user_metadata: { name: request.full_name, phone: request.phone } });
+          const { error: updateAuthError } = await service.auth.admin.updateUserById(userId, { email: authEmail, email_confirm: true, password: authPassword, user_metadata: { name: request.full_name, phone: request.phone } });
           if (updateAuthError) failOnboardingVerification("AUTH_ACCOUNT_UPDATE_FAILED");
         }
         const { error: profileUpdateError } = await service.from("users").update({ name: request.full_name, phone: request.phone, role: request.requested_role, is_active: false }).eq("id", userId);
         if (profileUpdateError) failOnboardingVerification("PROFILE_UPDATE_FAILED");
         const { error: verificationUpdateError } = await service.from("account_verification_requests").update({ status: "password_pending", auth_user_id: userId, verification_code_hash: null, code_attempts: 0, retry_after: null }).eq("id", request.id);
         if (verificationUpdateError) failOnboardingVerification("VERIFICATION_UPDATE_FAILED");
-        const { data: sessionResult, error: sessionError } = await asPublic().auth.signInWithPassword({ phone: request.phone, password: authPassword });
+        const { data: sessionResult, error: sessionError } = await asPublic().auth.signInWithPassword({ email: authEmail, password: authPassword });
         if (sessionError || !sessionResult.session || !sessionResult.user) failOnboardingVerification("SESSION_CREATE_FAILED");
         return { accessToken: sessionResult.session.access_token, refreshToken: sessionResult.session.refresh_token, user: { id: sessionResult.user.id, name: request.full_name, role: request.requested_role } };
       }),
@@ -480,7 +493,7 @@ export const appRouter = router({
           .eq("status", "password_pending")
           .maybeSingle();
         if (error || !request) throw new Error("PASSWORD_SETUP_NOT_AVAILABLE");
-        const { error: passwordError } = await service.auth.admin.updateUserById(authUser.id, { password: input.password, phone_confirm: true });
+        const { error: passwordError } = await service.auth.admin.updateUserById(authUser.id, { password: input.password, email_confirm: true });
         if (passwordError) throw new Error(passwordError.message);
         const { error: profileError } = await service.from("users").update({ is_active: true, role: request.requested_role, name: request.full_name }).eq("id", authUser.id);
         if (profileError) throw new Error(profileError.message);

@@ -614,7 +614,7 @@ export function Jarbou3App() {
       setWorkspaceName(result.user.name);
       setStage("workspace");
     },
-    onError: (error) => Alert.alert("تعذر الدخول", error.message === "INVALID_PHONE" ? "أدخل رقم WhatsApp صحيحاً، مثل 09xxxxxxxx أو +9639xxxxxxxx." : "تحقق من الرقم وكلمة المرور ثم أعد المحاولة."),
+    onError: (error) => Alert.alert("تعذر الدخول", error.message === "INVALID_PHONE" ? "أدخل رقم WhatsApp صحيحاً، مثل 09xxxxxxxx أو +9639xxxxxxxx." : error.message === "SIGN_IN_IDENTITY_MIGRATION_FAILED" ? "تعذر تجهيز هوية الدخول لهذا الحساب. حاول مرة واحدة فقط ثم أبلغ الإدارة بالرمز: SIGN_IN_IDENTITY_MIGRATION_FAILED." : "تحقق من الرقم وكلمة المرور ثم أعد المحاولة."),
   });
   const requestRecovery = trpc.jarbou3.requestAccountRecovery.useMutation({
     onSuccess: (result) => {
@@ -662,7 +662,16 @@ export function Jarbou3App() {
       setStage("workspace");
       Alert.alert("تمت إعادة التعيين", "تم إلغاء كلمة المرور السابقة وتسجيل دخولك بأمان.");
     },
-    onError: () => Alert.alert("تعذر حفظ كلمة المرور", "انتهت صلاحية جلسة الاسترجاع أو تعذر تغيير كلمة المرور."),
+    onError: (error) => {
+      const copy = error.message === "RECOVERY_NOT_VERIFIED"
+        ? "انتهت جلسة الاسترجاع. اطلب رمز استرجاع جديداً من الإدارة."
+        : error.message === "RECOVERY_PASSWORD_UPDATE_FAILED"
+          ? "تعذر حفظ كلمة المرور في حساب الدخول. حاول مرة واحدة فقط ثم أبلغ الإدارة بالرمز: RECOVERY_PASSWORD_UPDATE_FAILED."
+          : error.message === "RECOVERY_SESSION_CREATE_FAILED"
+            ? "حُفظت كلمة المرور، لكن تعذر فتح جلسة الدخول. اضغط «لدي حساب بالفعل» وسجّل الدخول بكلمة المرور الجديدة."
+            : "تعذر إكمال عملية الاسترجاع. حاول مرة واحدة فقط ثم أبلغ الإدارة بالرمز: RECOVERY_COMPLETE_FAILED.";
+      Alert.alert("تعذر حفظ كلمة المرور", copy);
+    },
   });
   const submitForm = () => {
     if (!isJarbou3Phone(phone) || name.trim().length < 2) {

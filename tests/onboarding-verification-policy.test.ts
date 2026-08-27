@@ -16,4 +16,16 @@ describe("سياسة التحقق برمز التسجيل", () => {
     expect(procedure).toContain('failOnboardingVerification("AUTH_ACCOUNT_CREATE_FAILED")');
     expect(procedure).toContain('failOnboardingVerification("SESSION_CREATE_FAILED")');
   });
+
+  it("يستخدم البريد الداخلي لتسجيل الدخول بدلاً من موفر أرقام الهاتف", () => {
+    const source = readFileSync(resolve(process.cwd(), "server/routers.ts"), "utf8");
+
+    expect(source).toContain("function authEmailForPhone(phone: string)");
+    expect(source).toContain("service.auth.admin.updateUserById(profile.id, { email: authEmailForPhone(phone), email_confirm: true })");
+    expect(source).toContain("signInWithPassword({ email: authEmailForPhone(phone), password: input.password })");
+    expect(source).not.toContain("signInWithPassword({ phone:");
+    const recoveryStart = source.indexOf("verifyRecoveryCode: publicProcedure");
+    const recoveryEnd = source.indexOf("completeAccountRecovery: publicProcedure", recoveryStart);
+    expect(source.slice(recoveryStart, recoveryEnd)).not.toContain("assertOnboardingRateLimit(");
+  });
 });

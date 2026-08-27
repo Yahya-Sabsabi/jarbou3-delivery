@@ -77,7 +77,9 @@ describe("التحقق المضبوط برمز تسجيل صحيح", () => {
     });
 
     expect(mocks.createUser).toHaveBeenCalledTimes(1);
+    expect(mocks.createUser.mock.calls[0][0]).toMatchObject({ email: expect.stringMatching(/^u-[a-f0-9]{64}@jarbou3\.local$/) });
     expect(mocks.signInWithPassword).toHaveBeenCalledTimes(1);
+    expect(mocks.signInWithPassword.mock.calls[0][0]).toMatchObject({ email: expect.stringMatching(/^u-[a-f0-9]{64}@jarbou3\.local$/) });
     expect(result.user).toEqual({ id: mocks.createdUserId, name: mocks.request.full_name, role: "customer" });
   });
 });
