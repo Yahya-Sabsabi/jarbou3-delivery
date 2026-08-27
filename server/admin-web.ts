@@ -541,7 +541,9 @@ export function registerAdminWebRoutes(app: Express) {
       const phone = request.phone.replace(/[^0-9]/g, "");
       const roleLabel = request.requested_role === "driver" ? "سفير" : "عميل";
       const text = `مرحباً ${request.full_name}، رمز تحقق جربوع لحساب ${roleLabel}: ${code}. الرمز صالح لمدة 10 دقائق. لا تشاركه مع أي شخص.`;
-      res.json({ requestId: request.id, whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(text)}`, expiresAt: expiresAt.toISOString() });
+      // يُعاد الرمز إلى جلسة المدير الحالية فقط ليتمكن من نسخه حرفياً. قاعدة
+      // البيانات تحتفظ بالتجزئة فقط ولا يُسجل الرمز في أي سجل أو جدول.
+      res.json({ requestId: request.id, verificationCode: code, whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(text)}`, expiresAt: expiresAt.toISOString() });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "VERIFICATION_CODE_SEND_FAILED" });
     }
@@ -595,8 +597,8 @@ export function registerAdminWebRoutes(app: Express) {
       const { error: updateError } = await service.from("account_recovery_requests").update({ status: "code_sent", verification_code_hash: await bcrypt.hash(code, 12), code_expires_at: expiresAt.toISOString(), code_attempts: 0, retry_after: null, code_sent_at: now.toISOString() }).eq("id", request.id);
       if (updateError) throw new Error(updateError.message);
       const phone = request.phone.replace(/[^0-9]/g, "");
-      const text = `مرحباً ${request.full_name}، رمز جربوع لإعادة تعيين كلمة المرور: ${code}. الرمز صالح لمدة 10 دقائق. لا تشاركه مع أي شخص.`;
-      res.json({ requestId: request.id, whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(text)}`, expiresAt: expiresAt.toISOString() });
+      const text = `مرحباً ${request.full_name}، رمز استرجاع كلمة مرور جربوع: ${code}. الرمز صالح لمدة 10 دقائق. لا تشاركه مع أي شخص.`;
+      res.json({ requestId: request.id, verificationCode: code, whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(text)}`, expiresAt: expiresAt.toISOString() });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "RECOVERY_CODE_SEND_FAILED" });
     }
