@@ -102,7 +102,12 @@ async function startServer() {
   });
   registerAdminWebRoutes(app);
   app.use("/admin/vendor/leaflet", express.static(path.resolve(process.cwd(), "node_modules/leaflet/dist")));
-  app.use("/admin", express.static(path.resolve(process.cwd(), "admin-site"), { index: "index.html" }));
+  app.use("/admin", express.static(path.resolve(process.cwd(), "admin-site"), {
+    index: "index.html",
+    setHeaders: (res) => {
+      res.setHeader("Cache-Control", "no-store, max-age=0, must-revalidate");
+    },
+  }));
 
   app.get("/api/health", (_req, res) => {
     res.setHeader("Cache-Control", "no-store");

@@ -54,6 +54,15 @@ describe("بوابة كلمة مرور موقع الإدارة", () => {
     expect(accessCheck.status).toBe(401);
   });
 
+  it("يرفض تغيير كلمة المرور من دون جلسة إدارة موقعة", async () => {
+    const change = await fetch(`${baseUrl}/admin/api/password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "new-admin-password-123", confirmation: "new-admin-password-123" }),
+    });
+    expect(change.status).toBe(401);
+  });
+
   it("يرفض كلمة المرور الخاطئة ولا يمنح جلسة", async () => {
     const login = await fetch(`${baseUrl}/admin/api/login`, {
       method: "POST",

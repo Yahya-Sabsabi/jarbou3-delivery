@@ -379,6 +379,23 @@ export function registerAdminWebRoutes(app: Express) {
       res.status(503).json({ error: "SITE_SETUP_UNAVAILABLE" });
     }
   });
+  app.post("/admin/api/password", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    const parsed = siteSetupSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "INVALID_NEW_SITE_PASSWORD" });
+    try {
+      requireSiteSession(req);
+      const now = new Date().toISOString();
+      const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+      const { error } = await asService().from("admin_site_settings").update({ password_hash: passwordHash, password_set_at: now, updated_at: now }).eq("singleton", true);
+      if (error) throw new Error(error.message);
+      loginAttempts.clear();
+      res.cookie(SITE_COOKIE, createSiteSession(), cookieOptions(req));
+      res.json({ changed: true });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "SITE_PASSWORD_CHANGE_FAILED" });
+    }
+  });
   app.post("/admin/api/login", async (req, res) => {
     if (rejectForeignOrigin(req, res)) return;
     const key = requestKey(req);
