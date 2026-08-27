@@ -17,7 +17,17 @@ export function resolveJarbou3ApiBaseUrl({
   isWeb: boolean;
   currentOrigin?: string;
 }): string {
-  if (configuredApiBaseUrl?.trim()) return withoutTrailingSlash(configuredApiBaseUrl);
+  const configuredApiUrl = configuredApiBaseUrl?.trim()
+    ? withoutTrailingSlash(configuredApiBaseUrl)
+    : "";
+  const embeddedApiUrl = embeddedApiBaseUrl?.trim()
+    ? withoutTrailingSlash(embeddedApiBaseUrl)
+    : "";
+
+  // Expo Go inherits EXPO_PUBLIC_API_BASE_URL from the managed preview. That
+  // address is session-bound and can expire, whereas the embedded URL is the
+  // published API intended for every Android/iOS installation.
+  if (!isWeb && embeddedApiUrl) return embeddedApiUrl;
 
   if (isWeb && currentOrigin) {
     try {
@@ -31,5 +41,5 @@ export function resolveJarbou3ApiBaseUrl({
     }
   }
 
-  return embeddedApiBaseUrl?.trim() ? withoutTrailingSlash(embeddedApiBaseUrl) : "";
+  return configuredApiUrl || embeddedApiUrl;
 }

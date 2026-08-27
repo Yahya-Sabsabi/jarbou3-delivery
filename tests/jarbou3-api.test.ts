@@ -17,11 +17,20 @@ describe("عنوان API لتطبيق جربوع", () => {
     })).toBe("https://3000-sandbox.example.manus.com");
   });
 
-  it("يحترم عنوان API المعرف صراحةً", () => {
+  it("لا يسمح لعنوان المعاينة المؤقت بتجاوز API المنشور في Android", () => {
+    expect(resolveJarbou3ApiBaseUrl({
+      configuredApiBaseUrl: "https://3000-expired-preview.example.manus.com/",
+      embeddedApiBaseUrl: "https://jarbou-deliv-xoohmte2.manus.space",
+      isWeb: false,
+    })).toBe("https://jarbou-deliv-xoohmte2.manus.space");
+  });
+
+  it("يحترم عنوان API المعرف صراحةً في الويب خارج معاينة 8081", () => {
     expect(resolveJarbou3ApiBaseUrl({
       configuredApiBaseUrl: "https://api.example.test/",
       embeddedApiBaseUrl: "https://fallback.example.test",
-      isWeb: false,
+      isWeb: true,
+      currentOrigin: "https://app.example.test",
     })).toBe("https://api.example.test");
   });
 });
