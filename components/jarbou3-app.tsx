@@ -79,8 +79,8 @@ function RoleSwitch({ role, onSelect }: { role: Role; onSelect: (role: Role) => 
 
 function Customer({ name, onTripActivity }: { name: string; onTripActivity: (active: boolean) => void }) {
   const [page, setPage] = useState<CustomerPage>("home");
-  const [source, setSource] = useState<MapPoint | null>({ latitude: 35.1319, longitude: 36.7547 });
-  const [destination, setDestination] = useState<MapPoint | null>({ latitude: 35.1511, longitude: 36.7304 });
+  const [source, setSource] = useState<MapPoint | null>(null);
+  const [destination, setDestination] = useState<MapPoint | null>(null);
   const [selecting, setSelecting] = useState<"source" | "destination">("source");
   const [route, setRoute] = useState<RouteEstimate | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -91,6 +91,7 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
   const [addressQuery, setAddressQuery] = useState("");
   const [addressResults, setAddressResults] = useState<HamaAddressResult[]>([]);
   const [searchingAddress, setSearchingAddress] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [pickupEtaSeconds, setPickupEtaSeconds] = useState<number | null>(null);
   const [acceptedNotice, setAcceptedNotice] = useState(false);
   const [previousDriverId, setPreviousDriverId] = useState<string | null>(null);
@@ -151,6 +152,25 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
     getOsrmRoute(source, destination).then((next) => { if (active) setRoute(next); }).catch(() => { if (active) setRoute(null); }).finally(() => { if (active) setRouteLoading(false); });
     return () => { active = false; };
   }, [source, destination]);
+  useEffect(() => {
+    const query = addressQuery.trim();
+    if (page !== "order" || query.length < 2) {
+      setAddressResults([]);
+      setSearchingAddress(false);
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(() => {
+      addressSearch.refetch().then((result) => {
+        if (active) setAddressResults((result.data ?? []) as HamaAddressResult[]);
+      }).catch(() => {
+        if (active) setAddressResults([]);
+      }).finally(() => {
+        if (active) setSearchingAddress(false);
+      });
+    }, 350);
+    return () => { active = false; clearTimeout(timer); };
+  }, [addressQuery, searchFilter, page]);
 
   useEffect(() => {
     if (page !== "track" || !currentTracking.data?.id) return;
@@ -218,7 +238,32 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
     const label = favoriteLabel.trim() || (selecting === "source" ? "استلام محفوظ" : "وجهة محفوظة");
     saveFavorite.mutate({ accessToken, label, address, point });
   };
-  const useMyLocation = async () => { try { const point = await getCurrentHamaLocation(); setMapPoint(point); } catch (error) { Alert.alert("تعذر استخدام الموقع", error instanceof Error && error.message === "OUTSIDE_HAMA_SERVICE_RADIUS" ? "موقعك خارج نطاق خدمة حماة البالغ ٧ كم." : "اسمح بالوصول إلى الموقع ثم حاول مجدداً."); } };
+  const useMyLocation = async () => {
+    setLocating(true);
+    try {
+      const point = await getCurrentHamaLocation();
+      if (!source || selecting === "source") {
+        setSource(point);
+        setSelecting("destination");
+        Alert.alert("تم تحديد الاستلام", "ثُبّت دبوس الاستلام من موقعك. اختر الآن الوجهة أو ابحث عنها.");
+      } else {
+        setDestination(point);
+        Alert.alert("تم تحديد الوجهة", "ثُبّت دبوس الوجهة من موقعك الحالي.");
+      }
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "LOCATION_UNAVAILABLE";
+      const copy = code === "OUTSIDE_HAMA_SERVICE_RADIUS"
+        ? "موقعك خارج نطاق خدمة حماة البالغ ٧ كم. اختر عنواناً داخل النطاق."
+        : code === "LOCATION_SERVICES_DISABLED"
+          ? "فعّل GPS من إعدادات الهاتف ثم اضغط الزر مرة أخرى."
+          : code === "LOCATION_PERMISSION_DENIED"
+            ? "اسمح للتطبيق بالوصول إلى الموقع أثناء الاستخدام ثم أعد المحاولة."
+            : "تعذر تثبيت الموقع بدقة كافية. انتظر لحظات في مكان مفتوح ثم أعد المحاولة.";
+      Alert.alert("تعذر استخدام الموقع", copy);
+    } finally {
+      setLocating(false);
+    }
+  };
   const submitOrder = async () => {
     if (!source || !destination || !route) return Alert.alert("اختر النقطتين", "ضع دبوس الاستلام ودبوس التسليم داخل دائرة حماة أولاً.");
     const accessToken = await jarbou3Session.getAccessToken();
@@ -246,16 +291,16 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
         <Pressable onPress={() => setSelecting("destination")} style={[styles.mapMode, selecting === "destination" && styles.mapModeActive]}><Text style={[styles.mapModeText, selecting === "destination" && styles.mapModeTextActive]}>٢. دبوس الوجهة</Text></Pressable>
       </View>
       <View style={styles.addressSearch}>
-        <TextInput value={addressQuery} onChangeText={setAddressQuery} onSubmitEditing={searchAddress} returnKeyType="search" placeholder="ابحث عن حي أو شارع أو متجر داخل حماة" placeholderTextColor="#8D8D8D" style={styles.addressSearchInput} textAlign="right" />
+        <TextInput value={addressQuery} onChangeText={(value) => { setAddressQuery(value); setAddressResults([]); setSearchingAddress(value.trim().length >= 2); }} onSubmitEditing={searchAddress} returnKeyType="search" placeholder="اكتب بداية اسم حي أو شارع أو متجر" placeholderTextColor="#8D8D8D" style={styles.addressSearchInput} textAlign="right" />
         <Pressable onPress={searchAddress} style={styles.addressSearchButton}><Text style={styles.addressSearchButtonText}>{searchingAddress ? "…" : "بحث"}</Text></Pressable>
       </View>
       <View style={styles.searchFilters}>{([{ key: "all", label: "الكل" }, { key: "shops", label: "متاجر" }, { key: "streets", label: "شوارع" }] as const).map((filter) => <Pressable key={filter.key} onPress={() => { setSearchFilter(filter.key); setAddressResults([]); }} style={[styles.searchFilter, searchFilter === filter.key && styles.searchFilterActive]}><Text style={[styles.searchFilterText, searchFilter === filter.key && styles.searchFilterTextActive]}>{filter.label}</Text></Pressable>)}</View>
-      {addressResults.length ? <View style={styles.addressResults}>{addressResults.map((result) => <Pressable key={`${result.latitude}-${result.longitude}`} onPress={() => chooseAddress(result)} style={styles.addressResult}><Text numberOfLines={2} style={styles.addressResultText}>{result.label}</Text><Text style={styles.resultKind}>{result.kind === "shop" ? "متجر" : result.kind === "street" ? "شارع" : "مكان"}</Text><Text style={styles.addressResultAction}>وضع الدبوس</Text></Pressable>)}</View> : null}
+      {addressResults.length ? <View style={styles.addressResults}>{addressResults.map((result) => <Pressable key={`${result.latitude}-${result.longitude}`} onPress={() => chooseAddress(result)} style={styles.addressResult}><Text numberOfLines={2} style={styles.addressResultText}>{result.label}</Text><Text style={styles.resultKind}>{result.kind === "shop" ? "متجر" : result.kind === "street" ? "شارع" : "مكان"}</Text><Text style={styles.addressResultAction}>وضع الدبوس</Text></Pressable>)}</View> : addressQuery.trim().length >= 2 && !searchingAddress ? <Text style={styles.searchEmpty}>لا توجد اقتراحات مطابقة داخل حماة. جرّب كلمة أقصر أو اسم الحي.</Text> : null}
       <HamaMap source={source} destination={destination} routePath={route?.path} selecting={selecting} onSelect={setMapPoint} onOutsideRange={() => Alert.alert("خارج نطاق الخدمة", "اختر نقطة داخل دائرة حماة المسموح بها، حتى ٧ كم من مركز المدينة.")} />
       <View style={styles.card}>
         <Heading eyebrow="تحديد حر داخل حماة" title="ابحث أو اضغط الخريطة لوضع الدبوس" />
-        <Text style={styles.mapHint}>البحث يدوي ويعيد نتائج داخل حماة فقط. الخط الرمادي هو مسار الرحلة المقترح والدائرة الرمادية هي نطاق الخدمة.</Text>
-        <Action title="استخدم موقعي الحالي" kind="outline" onPress={useMyLocation} />
+        <Text style={styles.mapHint}>تظهر اقتراحات البحث تلقائياً أثناء الكتابة. بعد اختيار الاستلام، اختر الوجهة من الخريطة أو الاقتراحات.</Text>
+        <Action title={locating ? "جارٍ تحديد موقعك…" : "استخدم موقعي الحالي للاستلام"} kind="outline" onPress={useMyLocation} />
         <View style={styles.favoriteSection}>
           <Text style={styles.favoriteTitle}>عناويني المفضلة</Text>
           {accessToken ? <><View style={styles.favoriteRow}>{(favoriteAddresses.data ?? []).length ? favoriteAddresses.data?.map((favorite) => <Pressable key={favorite.id} onPress={() => chooseFavorite(favorite)} style={styles.favoriteChip}><Text numberOfLines={1} style={styles.favoriteChipText}>{favorite.label}</Text><Pressable onPress={() => deleteFavorite.mutate({ accessToken, favoriteId: favorite.id })} hitSlop={8}><Text style={styles.favoriteDelete}>×</Text></Pressable></Pressable>) : <Text style={styles.favoriteEmpty}>احفظ الدبوس الحالي ليظهر هنا.</Text>}</View><View style={styles.saveFavoriteRow}><TextInput value={favoriteLabel} onChangeText={setFavoriteLabel} placeholder="اسم اختياري، مثل المنزل" placeholderTextColor="#909090" style={styles.favoriteInput} textAlign="right" /><Pressable onPress={saveCurrentFavorite} style={styles.saveFavoriteButton}><Text style={styles.saveFavoriteButtonText}>{saveFavorite.isPending ? "…" : "حفظ"}</Text></Pressable></View></> : <Text style={styles.favoriteEmpty}>سجّل الدخول لحفظ العناوين واستعمالها في الطلبات القادمة.</Text>}
@@ -604,7 +649,7 @@ export function Jarbou3App() {
       setRole(result.user.role);
       setAccountPassword("");
       setPasswordConfirm("");
-      await jarbou3Session.clearOnboarding();
+      await Promise.all([jarbou3Session.clearOnboarding(), jarbou3Session.clearActiveTrip()]);
       setStage("workspace");
       Alert.alert("تم إنشاء الحساب", `أهلاً ${result.user.name}`);
     },
@@ -612,7 +657,7 @@ export function Jarbou3App() {
   });
   const signIn = trpc.jarbou3.signIn.useMutation({
     onSuccess: async (result) => {
-      await jarbou3Session.save(result.accessToken, result.refreshToken);
+      await Promise.all([jarbou3Session.save(result.accessToken, result.refreshToken), jarbou3Session.clearActiveTrip()]);
       setSavedToken(result.accessToken);
       setRole(result.user.role);
       setWorkspaceName(result.user.name);
@@ -656,7 +701,7 @@ export function Jarbou3App() {
   });
   const completeRecovery = trpc.jarbou3.completeAccountRecovery.useMutation({
     onSuccess: async (result) => {
-      await jarbou3Session.save(result.accessToken, result.refreshToken);
+      await Promise.all([jarbou3Session.save(result.accessToken, result.refreshToken), jarbou3Session.clearActiveTrip()]);
       setSavedToken(result.accessToken);
       setRole(result.user.role);
       setWorkspaceName(result.user.name);
@@ -760,7 +805,7 @@ export function Jarbou3App() {
 }
 
 const styles = StyleSheet.create({
-  mapModeRow: { flexDirection: "row-reverse", gap: 8, marginHorizontal: 16, marginTop: 12 }, mapMode: { flex: 1, minHeight: 42, borderWidth: 1, borderColor: "#D1D1D1", borderRadius: 13, justifyContent: "center", alignItems: "center", backgroundColor: "#FFFFFF" }, mapModeActive: { backgroundColor: gray, borderColor: gray }, mapModeText: { color: gray, fontSize: 11, fontWeight: "900" }, mapModeTextActive: { color: "#FFFFFF" }, mapHint: { color: "#727272", fontSize: 11, lineHeight: 17, textAlign: "right" }, addressSearch: { marginHorizontal: 16, marginTop: 12, flexDirection: "row-reverse", gap: 8, alignItems: "center" }, addressSearchInput: { flex: 1, minHeight: 48, backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#D8D8D8", color: dark, paddingHorizontal: 13, fontWeight: "700", fontSize: 12 }, addressSearchButton: { minHeight: 48, minWidth: 62, backgroundColor: gray, borderRadius: 15, alignItems: "center", justifyContent: "center", paddingHorizontal: 11 }, addressSearchButtonText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" }, searchFilters: { flexDirection: "row-reverse", gap: 7, marginHorizontal: 16, marginTop: 8 }, searchFilter: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99, backgroundColor: "#E7E7E7" }, searchFilterActive: { backgroundColor: gray }, searchFilterText: { color: gray, fontSize: 11, fontWeight: "900" }, searchFilterTextActive: { color: "#FFFFFF" }, addressResults: { marginHorizontal: 16, marginTop: 7, gap: 6 }, addressResult: { backgroundColor: "#FFFFFF", padding: 12, borderRadius: 14, flexDirection: "row-reverse", alignItems: "center", gap: 9, borderWidth: 1, borderColor: "#E0E0E0" }, addressResultText: { flex: 1, color: dark, fontSize: 11, textAlign: "right", lineHeight: 16, fontWeight: "700" }, resultKind: { color: "#767676", fontSize: 9, fontWeight: "900", backgroundColor: "#EEEEEE", borderRadius: 7, paddingHorizontal: 6, paddingVertical: 4 }, addressResultAction: { color: "#2F7A62", fontSize: 10, fontWeight: "900" }, discountBox: { backgroundColor: "#F3F3F3", borderRadius: 16, padding: 12, gap: 8 }, discountTitle: { color: dark, fontSize: 12, fontWeight: "900", textAlign: "right" }, discountRow: { flexDirection: "row-reverse", gap: 8 }, discountInput: { flex: 1, minHeight: 44, borderRadius: 12, backgroundColor: "#FFFFFF", borderColor: "#D7D7D7", borderWidth: 1, paddingHorizontal: 11, color: dark, fontSize: 12, fontWeight: "800" }, discountButton: { minWidth: 65, minHeight: 44, borderRadius: 12, backgroundColor: gray, justifyContent: "center", alignItems: "center" }, discountButtonText: { color: "#FFFFFF", fontSize: 11, fontWeight: "900" }, discountHint: { color: "#737373", fontSize: 10, textAlign: "right" }, discountSaving: { color: "#2F7A62", fontSize: 10, fontWeight: "900", textAlign: "right", marginTop: 3 },
+  mapModeRow: { flexDirection: "row-reverse", gap: 8, marginHorizontal: 16, marginTop: 12 }, mapMode: { flex: 1, minHeight: 42, borderWidth: 1, borderColor: "#D1D1D1", borderRadius: 13, justifyContent: "center", alignItems: "center", backgroundColor: "#FFFFFF" }, mapModeActive: { backgroundColor: gray, borderColor: gray }, mapModeText: { color: gray, fontSize: 11, fontWeight: "900" }, mapModeTextActive: { color: "#FFFFFF" }, mapHint: { color: "#727272", fontSize: 11, lineHeight: 17, textAlign: "right" }, addressSearch: { marginHorizontal: 16, marginTop: 12, flexDirection: "row-reverse", gap: 8, alignItems: "center" }, addressSearchInput: { flex: 1, minHeight: 48, backgroundColor: "#FFFFFF", borderRadius: 15, borderWidth: 1, borderColor: "#D8D8D8", color: dark, paddingHorizontal: 13, fontWeight: "700", fontSize: 12 }, addressSearchButton: { minHeight: 48, minWidth: 62, backgroundColor: gray, borderRadius: 15, alignItems: "center", justifyContent: "center", paddingHorizontal: 11 }, addressSearchButtonText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" }, searchFilters: { flexDirection: "row-reverse", gap: 7, marginHorizontal: 16, marginTop: 8 }, searchFilter: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99, backgroundColor: "#E7E7E7" }, searchFilterActive: { backgroundColor: gray }, searchFilterText: { color: gray, fontSize: 11, fontWeight: "900" }, searchFilterTextActive: { color: "#FFFFFF" }, addressResults: { marginHorizontal: 16, marginTop: 7, gap: 6 }, searchEmpty: { marginHorizontal: 16, marginTop: 8, color: "#737373", fontSize: 11, lineHeight: 17, textAlign: "right" }, addressResult: { backgroundColor: "#FFFFFF", padding: 12, borderRadius: 14, flexDirection: "row-reverse", alignItems: "center", gap: 9, borderWidth: 1, borderColor: "#E0E0E0" }, addressResultText: { flex: 1, color: dark, fontSize: 11, textAlign: "right", lineHeight: 16, fontWeight: "700" }, resultKind: { color: "#767676", fontSize: 9, fontWeight: "900", backgroundColor: "#EEEEEE", borderRadius: 7, paddingHorizontal: 6, paddingVertical: 4 }, addressResultAction: { color: "#2F7A62", fontSize: 10, fontWeight: "900" }, discountBox: { backgroundColor: "#F3F3F3", borderRadius: 16, padding: 12, gap: 8 }, discountTitle: { color: dark, fontSize: 12, fontWeight: "900", textAlign: "right" }, discountRow: { flexDirection: "row-reverse", gap: 8 }, discountInput: { flex: 1, minHeight: 44, borderRadius: 12, backgroundColor: "#FFFFFF", borderColor: "#D7D7D7", borderWidth: 1, paddingHorizontal: 11, color: dark, fontSize: 12, fontWeight: "800" }, discountButton: { minWidth: 65, minHeight: 44, borderRadius: 12, backgroundColor: gray, justifyContent: "center", alignItems: "center" }, discountButtonText: { color: "#FFFFFF", fontSize: 11, fontWeight: "900" }, discountHint: { color: "#737373", fontSize: 10, textAlign: "right" }, discountSaving: { color: "#2F7A62", fontSize: 10, fontWeight: "900", textAlign: "right", marginTop: 3 },
   root: { flex: 1, backgroundColor: "#F5F5F5" }, onboardingRoot: { flex: 1, backgroundColor: "#F5F5F5", justifyContent: "center", padding: 18 }, onboardingScroll: { flexGrow: 1, justifyContent: "center", padding: 18 }, onboardingCard: { width: "100%", maxWidth: 470, alignSelf: "center", backgroundColor: "#FFFFFF", borderRadius: 28, padding: 22, gap: 13, shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 16, elevation: 2 }, onboardingTitle: { color: dark, fontSize: 24, fontWeight: "900", textAlign: "right", marginTop: 4 }, onboardingCopy: { color: "#737373", fontSize: 13, lineHeight: 21, textAlign: "right" }, onboardingNote: { color: "#7A7A7A", fontSize: 10, lineHeight: 16, textAlign: "right", marginTop: 2 }, verificationGuide: { backgroundColor: "#F2F2F2", borderRadius: 16, padding: 13, gap: 5 }, verificationGuideTitle: { color: dark, fontSize: 12, fontWeight: "900", textAlign: "right", marginBottom: 2 }, verificationGuideText: { color: "#666666", fontSize: 11, lineHeight: 18, textAlign: "right" }, verificationTimer: { backgroundColor: "#E7F3EC", borderColor: "#B7DEC8", borderWidth: 1, borderRadius: 17, padding: 13, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, verificationTimerExpired: { backgroundColor: "#FBE9E8", borderColor: "#E6BBB7" }, verificationTimerLabel: { color: "#2F7A62", fontSize: 11, fontWeight: "900", textAlign: "right" }, verificationTimerValue: { color: "#276149", fontSize: 17, fontWeight: "900" }, verificationTimerValueExpired: { color: "#B42318" }, roleChoice: { backgroundColor: "#F2F2F2", padding: 16, borderRadius: 18, gap: 4 }, roleChoiceDark: { backgroundColor: "#292929" }, roleChoiceTitle: { color: dark, fontSize: 17, fontWeight: "900", textAlign: "right" }, roleChoiceTitleDark: { color: "#FFFFFF", fontSize: 17, fontWeight: "900", textAlign: "right" }, roleChoiceCopy: { color: "#707070", fontSize: 11, textAlign: "right" }, roleChoiceCopyDark: { color: "#D2D2D2", fontSize: 11, textAlign: "right" }, onboardingOtp: { minHeight: 60, backgroundColor: "#F5F5F5", borderWidth: 1, borderColor: "#D8D8D8", borderRadius: 18, paddingHorizontal: 14, color: dark, fontSize: 26, letterSpacing: 8, fontWeight: "900" }, vehicleChoices: { flexDirection: "row-reverse", gap: 9 }, vehicleChoice: { flex: 1, minHeight: 50, borderRadius: 14, borderWidth: 1, borderColor: "#D8D8D8", justifyContent: "center", alignItems: "center", backgroundColor: "#FAFAFA" }, vehicleChoiceSelected: { borderColor: gray, borderWidth: 2, backgroundColor: "#E9E9E9" }, vehicleChoiceText: { color: gray, fontSize: 11, fontWeight: "900" }, scroll: { paddingBottom: 30 }, fill: { flex: 1 }, flex: { flex: 1 }, pressed: { opacity: 0.78, transform: [{ scale: 0.986 }] }, space: { paddingHorizontal: 16, paddingTop: 16, gap: 14 }, roleSwitch: { flexDirection: "row-reverse", gap: 4, marginHorizontal: 16, marginTop: 8, marginBottom: 8, backgroundColor: "#E4E4E4", padding: 4, borderRadius: 14 }, role: { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: "center" }, roleSelected: { backgroundColor: "#FFF" }, roleText: { color: "#747474", fontSize: 13, fontWeight: "800" }, roleTextSelected: { color: dark },
   accessBar: { marginHorizontal: 16, marginBottom: 2, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", gap: 10 }, accessCopy: { color: "#737373", fontSize: 10, fontWeight: "700", textAlign: "right", flex: 1 }, accessButton: { backgroundColor: "#FFFFFF", borderColor: "#D7D7D7", borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 }, accessButtonText: { color: "#4A4A4A", fontSize: 10, fontWeight: "900" }, reportIssueButton: { backgroundColor: "#FFF4E6", borderColor: "#E7B97C", borderWidth: 1, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 7 }, reportIssueText: { color: "#854E0E", fontSize: 10, fontWeight: "900" }, runtimeBanner: { backgroundColor: "#FFF2D8", borderColor: "#EAB15C", borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginHorizontal: 16, marginTop: 8 }, runtimeBannerText: { color: "#714B12", fontSize: 11, fontWeight: "800", lineHeight: 17, textAlign: "right" }, modalBackdrop: { flex: 1, backgroundColor: "#00000066", justifyContent: "flex-end" }, authSheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, gap: 12 }, problemSheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, gap: 12 }, problemTitle: { color: dark, fontSize: 20, fontWeight: "900", textAlign: "right" }, problemCopy: { color: "#737373", fontSize: 12, lineHeight: 19, textAlign: "right" }, problemInput: { minHeight: 130, borderRadius: 16, backgroundColor: "#F5F5F5", borderColor: "#DDDDDD", borderWidth: 1, padding: 14, color: dark, fontSize: 13, fontWeight: "700" }, authTitle: { color: dark, fontSize: 22, fontWeight: "900", textAlign: "right" }, authCopy: { color: "#737373", fontSize: 12, lineHeight: 19, textAlign: "right", marginBottom: 4 }, authInput: { minHeight: 52, borderRadius: 15, backgroundColor: "#F5F5F5", borderColor: "#DDDDDD", borderWidth: 1, paddingHorizontal: 14, color: dark, fontSize: 14, fontWeight: "700" }, authAction: { minHeight: 53, borderRadius: 16, backgroundColor: gray, alignItems: "center", justifyContent: "center" }, authActionDisabled: { opacity: 0.65 }, modeSwitch: { paddingVertical: 8, alignItems: "center" }, modeSwitchText: { color: gray, fontSize: 12, fontWeight: "900" },
   action: { minHeight: 53, borderRadius: 16, backgroundColor: gray, justifyContent: "center", alignItems: "center", paddingHorizontal: 14 }, actionDark: { backgroundColor: "#FFF" }, actionOutline: { backgroundColor: "transparent", borderWidth: 1, borderColor: "#C9C9C9" }, actionText: { color: "#FFF", fontSize: 14, fontWeight: "900", textAlign: "center" }, actionOutlineText: { color: gray }, tag: { backgroundColor: "#E9E9E9", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 99, alignSelf: "flex-start" }, tagStatus: { backgroundColor: "#DDF2E9" }, tagText: { color: "#555", fontSize: 10, fontWeight: "900" }, tagStatusText: { color: "#276149" },

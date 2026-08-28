@@ -9,11 +9,12 @@ export async function getCurrentHamaLocation(): Promise<MapPoint> {
   const permission = await Location.requestForegroundPermissionsAsync();
   if (permission.status !== "granted") throw new Error("LOCATION_PERMISSION_DENIED");
   if (!(await Location.hasServicesEnabledAsync())) throw new Error("LOCATION_SERVICES_DISABLED");
-  const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+  const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 30_000, requiredAccuracy: 150 });
+  const position = lastKnown ?? await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
   const point = { latitude: position.coords.latitude, longitude: position.coords.longitude };
   const quality = validateHamaGpsSample({ ...point, accuracy: position.coords.accuracy, mocked: position.mocked, timestamp: position.timestamp, speed: position.coords.speed });
   if (quality === "outside_hama") throw new Error("OUTSIDE_HAMA_SERVICE_RADIUS");
-  if (quality !== "good") throw new Error("LOCATION_QUALITY_TOO_LOW");
+  if (quality === "mocked" || quality === "unrealistic_jump" || (quality === "poor_accuracy" && (position.coords.accuracy == null || position.coords.accuracy > 150))) throw new Error("LOCATION_QUALITY_TOO_LOW");
   return point;
 }
 
