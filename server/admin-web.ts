@@ -16,7 +16,6 @@ const LOGIN_MAX_ATTEMPTS = 5;
 const loginAttempts = new Map<string, { count: number; startedAt: number }>();
 const VERIFICATION_CODE_MS = 10 * 60 * 1000;
 const ADMIN_PUBLIC_ORIGIN = "https://jarbou-deliv-xoohmte2.manus.space";
-const ACTIVE_ORDER_STATUSES = ["requested", "accepted", "arriving", "awaiting_otp"] as const;
 
 type SiteSession = { issuedAt: number; expiresAt: number };
 
@@ -797,19 +796,20 @@ export function registerAdminWebRoutes(app: Express) {
       const { data: account, error: accountError } = await service.from("users").select("id,phone,role").eq("id", userId.data).in("role", ["customer", "driver"]).is("deleted_at", null).maybeSingle();
       if (accountError) throw new Error(accountError.message);
       if (!account) return res.status(404).json({ error: "ACCOUNT_NOT_FOUND" });
-      const { data: activeOrder, error: activeOrderError } = await service.from("orders").select("id").or(`customer_id.eq.${account.id},driver_id.eq.${account.id}`).in("status", [...ACTIVE_ORDER_STATUSES]).limit(1).maybeSingle();
-      if (activeOrderError) throw new Error(activeOrderError.message);
-      if (activeOrder) return res.status(409).json({ error: "ACCOUNT_HAS_ACTIVE_ORDER" });
-
-      const [driverDocumentsResult, onboardingDocumentsResult] = await Promise.all([
+      const [ordersResult, driverDocumentsResult, onboardingDocumentsResult] = await Promise.all([
+        service.from("orders").select("id").or(`customer_id.eq.${account.id},driver_id.eq.${account.id}`).limit(500),
         service.from("drivers_verification").select("personal_photo_path,id_photo_path").eq("user_id", account.id).maybeSingle(),
         service.from("account_verification_requests").select("personal_photo_path,identity_photo_path").eq("auth_user_id", account.id).limit(50),
       ]);
-      if (driverDocumentsResult.error || onboardingDocumentsResult.error) throw new Error(driverDocumentsResult.error?.message ?? onboardingDocumentsResult.error?.message ?? "ACCOUNT_DOCUMENTS_UNAVAILABLE");
+      if (ordersResult.error || driverDocumentsResult.error || onboardingDocumentsResult.error) throw new Error(ordersResult.error?.message ?? driverDocumentsResult.error?.message ?? onboardingDocumentsResult.error?.message ?? "ACCOUNT_DELETE_DATA_UNAVAILABLE");
+      const orderIds = (ordersResult.data ?? []).map((order) => order.id);
+      const { data: orderPhotos, error: orderPhotosError } = orderIds.length ? await service.from("order_photos").select("photo_path").in("order_id", orderIds).limit(1000) : { data: [], error: null };
+      if (orderPhotosError) throw new Error(orderPhotosError.message);
       const documentPaths = [
         driverDocumentsResult.data?.personal_photo_path,
         driverDocumentsResult.data?.id_photo_path,
         ...(onboardingDocumentsResult.data ?? []).flatMap((row) => [row.personal_photo_path, row.identity_photo_path]),
+        ...(orderPhotos ?? []).map((row) => row.photo_path),
       ].filter((value): value is string => Boolean(value));
       if (documentPaths.length) {
         const { error: storageError } = await service.storage.from("jarbou3-private").remove([...new Set(documentPaths)]);
@@ -832,6 +832,7 @@ export function registerAdminWebRoutes(app: Express) {
         service.from("driver_registration_invites").delete().eq("phone", account.phone),
         service.from("account_recovery_requests").delete().eq("user_id", account.id),
         service.from("account_verification_requests").delete().eq("auth_user_id", account.id),
+        orderIds.length ? service.from("orders").delete().in("id", orderIds) : Promise.resolve({ error: null }),
       ]);
       const cleanupError = cleanupResults.find((result) => result.error)?.error;
       if (cleanupError) throw new Error(cleanupError.message);
@@ -842,6 +843,28 @@ export function registerAdminWebRoutes(app: Express) {
       res.json({ deleted: true });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "ACCOUNT_DELETE_FAILED" });
+    }
+  });
+
+  app.post("/admin/api/accounts/:userId/driver-verification", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const userId = z.string().uuid().safeParse(req.params.userId);
+      const body = z.object({ decision: z.enum(["approved", "rejected"]) }).safeParse(req.body);
+      if (!userId.success || !body.success) return res.status(400).json({ error: "INVALID_DRIVER_REVIEW" });
+      const service = asService();
+      const { data: verification, error: verificationError } = await service.from("drivers_verification").select("user_id").eq("user_id", userId.data).maybeSingle();
+      if (verificationError) throw new Error(verificationError.message);
+      if (!verification) return res.status(404).json({ error: "DRIVER_DOCUMENTS_NOT_FOUND" });
+      const reviewedAt = new Date().toISOString();
+      const { error: reviewError } = await service.from("drivers_verification").update({ status: body.data.decision, activated_at: body.data.decision === "approved" ? reviewedAt : null, reviewed_at: reviewedAt }).eq("user_id", userId.data);
+      if (reviewError) throw new Error(reviewError.message);
+      const { error: userError } = await service.from("users").update({ is_active: body.data.decision === "approved" }).eq("id", userId.data).eq("role", "driver");
+      if (userError) throw new Error(userError.message);
+      res.json({ reviewed: true, status: body.data.decision });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "DRIVER_REVIEW_FAILED" });
     }
   });
 

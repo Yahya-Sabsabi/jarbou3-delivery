@@ -300,7 +300,9 @@ function Driver({ name, onTripActivity }: { name: string; onTripActivity: (activ
     onSuccess: () => { setPage("home"); Alert.alert("تم إرسال الوثائق", "تم إرسال الصورة الشخصية وصورة الهوية للمراجعة."); },
     onError: (error) => Alert.alert("تعذر إرسال الوثائق", error.message),
   });
-  const availableOrders = trpc.jarbou3.availableDriverOrders.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: Boolean(accessToken) && page === "home", refetchInterval: 4_000 });
+  const driverVerification = trpc.jarbou3.driverVerificationStatus.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: Boolean(accessToken), refetchInterval: 8_000 });
+  const driverIsApproved = driverVerification.data?.status === "approved";
+  const availableOrders = trpc.jarbou3.availableDriverOrders.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: Boolean(accessToken) && page === "home" && driverIsApproved, refetchInterval: 4_000 });
   const activeTripMetrics = trpc.jarbou3.activeDriverTripMetrics.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: Boolean(accessToken) && page === "drive", refetchInterval: 8_000 });
   const companyBalance = trpc.jarbou3.ownCompanyBalance.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: Boolean(accessToken), refetchInterval: 20_000 });
   const acceptOrder = trpc.jarbou3.acceptOrder.useMutation({ onSuccess: async (_result, variables) => { const order = (availableOrders.data as DriverOrderPreview[] | undefined)?.find((item) => item.id === variables.orderId) ?? null; setTripMetrics(null); setActiveOrder(order); if (order) await jarbou3Session.saveActiveTrip({ role: "driver", orderId: order.id, sourceAddress: order.source_address, sourceLat: Number(order.source_lat), sourceLng: Number(order.source_lng), destinationAddress: order.destination_address, destinationLat: Number(order.destination_lat), destinationLng: Number(order.destination_lng), distanceM: order.distance_m, savedAt: new Date().toISOString() }); onTripActivity(true); setPage("drive"); }, onError: (error) => Alert.alert("تعذر قبول الطلب", error.message) });
@@ -356,23 +358,24 @@ function Driver({ name, onTripActivity }: { name: string; onTripActivity: (activ
     return () => subscription.remove();
   }, [page]);
   useEffect(() => {
-    if (page !== "drive" || !accessToken) return;
+    if ((page !== "home" && page !== "drive") || !accessToken || !driverIsApproved) return;
     let active = true;
     let remove: (() => void) | undefined;
     let backgroundStarted = false;
     flushJarbou3QueuedLocation().catch(() => undefined);
-    startJarbou3BackgroundTracking().then((status) => {
+    if (page === "drive") startJarbou3BackgroundTracking().then((status) => {
       if (!active) return;
       backgroundStarted = status === "started";
       setGpsQuality(status === "started" ? "تتبع الرحلة بالخلفية نشط" : status === "unavailable" ? "تتبع الخلفية يحتاج بناء تطبيق على جهاز فعلي" : status === "background_denied" ? "اسمح بتتبع الموقع دائماً أثناء الرحلة" : status === "services_disabled" ? "فعّل خدمات GPS لاستمرار التتبع" : "يلزم السماح بالموقع لبدء التتبع");
     }).catch(() => { if (active) setGpsQuality("تعذر بدء التتبع الخلفي؛ سيستمر التحديث أثناء فتح التطبيق"); });
+    else setGpsQuality("جارٍ تحديث موقعك لتصل العروض الأقرب إليك");
     watchHamaLocation((point) => {
       if (!active) return;
       setLivePoint(point);
       if (!backgroundStarted) updateLocation.mutate({ accessToken, location: point });
     }, (quality) => setGpsQuality(quality === "good" ? "GPS عالي الدقة متصل" : quality === "poor_accuracy" ? "إشارة GPS ضعيفة؛ لا نرسل قراءة غير دقيقة" : quality === "mocked" ? "تم رفض موقع غير موثوق" : quality === "unrealistic_jump" ? "تم رفض قفزة موقع غير واقعية" : "الموقع خارج نطاق حماة")).then((subscription) => { remove = () => subscription.remove(); }).catch(() => Alert.alert("تعذر مشاركة الموقع", "فعّل خدمات الموقع واسمح بالتحديد أثناء استخدام التطبيق لمتابعة الرحلة داخل حماة."));
-    return () => { active = false; remove?.(); stopJarbou3BackgroundTracking().catch(() => undefined); };
-  }, [page, accessToken]);
+    return () => { active = false; remove?.(); if (page === "drive") stopJarbou3BackgroundTracking().catch(() => undefined); };
+  }, [page, accessToken, driverIsApproved]);
 
   if (page === "verify") return <ScrollView contentContainerStyle={styles.scroll}><Top title="وثائق السفير" back={() => setPage("home")} /><View style={styles.space}><Tag>خطوة مطلوبة</Tag><Heading title="أرفق صورتين قبل الإرسال" /><Text style={styles.copyRight}>تُراجع الصورة الشخصية وصورة الهوية من الإدارة فقط، ولا تُعرض للعملاء أو السفراء الآخرين.</Text><Upload title="الصورة الشخصية" detail={personal ? "تم التقاط الصورة" : "التقط صورة واضحة للوجه"} uri={personal} onPress={() => camera("personal")} /><Upload title="صورة الهوية" detail={identity ? "تم التقاط الصورة" : "التقط صورة الهوية بوضوح"} uri={identity} onPress={() => camera("identity")} /><Action title={submitVerification.isPending ? "جارٍ الإرسال…" : "إرسال للمراجعة"} onPress={() => !personal || !identity || !accessToken ? Alert.alert("تحتاج صورتين", "أرفق الصورة الشخصية وصورة الهوية قبل الإرسال.") : submitVerification.mutate({ accessToken, personalPhoto: personal, identityPhoto: identity })} /></View></ScrollView>;
 
@@ -388,6 +391,7 @@ function Driver({ name, onTripActivity }: { name: string; onTripActivity: (activ
   const totalCompanyCommission = Math.max(0, Number(settlementBalance?.total_commission_amount ?? 0));
   const paidCompanyCommission = Math.max(0, Number(settlementBalance?.paid_amount ?? 0));
   const outstandingCompanyCommission = Math.max(0, Number(settlementBalance?.outstanding_amount ?? 0));
+  if (!driverIsApproved) return <ScrollView contentContainerStyle={styles.scroll}><View style={styles.driverHero}><View><Text style={styles.driverEyebrow}>وضع السفير</Text><Text style={styles.driverHeroTitle}>أهلاً، {name || "سفير جربوع"}</Text><Text style={styles.driverHeroCopy}>تبدأ عروض الطلبات فور اعتماد الإدارة لوثائقك.</Text></View><Tag status={false}>{driverVerification.isLoading ? "جارٍ التحقق" : "بانتظار الاعتماد"}</Tag></View><View style={styles.space}><HamaMap compact driverLocation={livePoint} readOnly /><View style={styles.empty}><Text style={styles.emptyText}>{driverVerification.data?.status === "missing" ? "أرسل الصورة الشخصية وصورة الهوية للمراجعة أولاً." : "وثائقك محفوظة بانتظار اعتماد الإدارة. لا تطلب رمزاً جديداً."}</Text></View><Action title="الوثائق" kind="outline" onPress={() => setPage("verify")} /></View></ScrollView>;
   const pickupDistanceKm = Number(nextOrder?.distance_to_pickup_m ?? 0) / 1000;
   const offerSecondsLeft = nextOrder?.offer_expires_at ? Math.max(0, Math.ceil((new Date(nextOrder.offer_expires_at).getTime() - offerClock) / 1000)) : 0;
   const offerProgress = Math.max(0, Math.min(100, (offerSecondsLeft / 20) * 100));

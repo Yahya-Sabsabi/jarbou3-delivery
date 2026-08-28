@@ -88,7 +88,7 @@ async function searchHamaAddresses(query: string, filter: HamaSearchFilter): Pro
   lastHamaSearchAt = Date.now();
   const url = new URL("https://nominatim.openstreetmap.org/search");
   const params = new URLSearchParams({
-    q: `${query}, حماة، سوريا`, format: "jsonv2", limit: "5", countrycodes: "sy", accept_language: "ar",
+    q: `${query}, Hama, Syria`, format: "jsonv2", limit: "8", countrycodes: "sy", accept_language: "ar,en",
     viewbox: `${HAMA_BOUNDS.minLongitude},${HAMA_BOUNDS.maxLatitude},${HAMA_BOUNDS.maxLongitude},${HAMA_BOUNDS.minLatitude}`, bounded: "1",
   });
   if (filter === "shops") params.set("layer", "poi");
@@ -490,13 +490,18 @@ export const appRouter = router({
         const authUser = await getAuthenticatedUser(input.accessToken);
         const service = asService();
         const { data: request, error } = await service.from("account_verification_requests")
-          .select("id,full_name,requested_role")
+          .select("id,full_name,requested_role,personal_photo_path,identity_photo_path")
           .eq("auth_user_id", authUser.id)
           .eq("status", "password_pending")
           .maybeSingle();
         if (error || !request) throw new Error("PASSWORD_SETUP_NOT_AVAILABLE");
         const { error: passwordError } = await service.auth.admin.updateUserById(authUser.id, { password: input.password, email_confirm: true });
         if (passwordError) throw new Error(passwordError.message);
+        if (request.requested_role === "driver") {
+          if (!request.personal_photo_path || !request.identity_photo_path) throw new Error("DRIVER_DOCUMENTS_REQUIRED");
+          const { error: driverVerificationError } = await service.from("drivers_verification").upsert({ user_id: authUser.id, personal_photo_path: request.personal_photo_path, id_photo_path: request.identity_photo_path, status: "pending", activation_code_hash: null, activated_at: null }, { onConflict: "user_id" });
+          if (driverVerificationError) throw new Error("DRIVER_VERIFICATION_PREPARE_FAILED");
+        }
         const { error: profileError } = await service.from("users").update({ is_active: true, role: request.requested_role, name: request.full_name }).eq("id", authUser.id);
         if (profileError) throw new Error(profileError.message);
         const { error: requestError } = await service.from("account_verification_requests").update({ status: "verified" }).eq("id", request.id);
@@ -575,10 +580,23 @@ export const appRouter = router({
         return data ?? [];
       }),
 
+    driverVerificationStatus: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["driver"]);
+        const { data, error } = await asService().from("drivers_verification").select("status,updated_at").eq("user_id", authUser.id).maybeSingle();
+        if (error) throw new Error(error.message);
+        return { status: data?.status ?? "missing", updatedAt: data?.updated_at ?? null };
+      }),
+
     updateDriverLocation: publicProcedure
       .input(tokenInput.extend({ location: pointInput.extend({ accuracy: z.number().min(0).max(80).nullable().optional() }) }))
       .mutation(async ({ input }) => {
-        return recordDriverLocation(input.accessToken, input.location);
+        const locationUpdate = await recordDriverLocation(input.accessToken, input.location);
+        const { data: waitingOrder, error: waitingOrderError } = await asService().from("orders").select("id").eq("status", "requested").is("driver_id", null).order("created_at", { ascending: true }).limit(1).maybeSingle();
+        if (waitingOrderError) throw new Error(waitingOrderError.message);
+        const offer = waitingOrder ? await assignNextDriverOffer(waitingOrder.id) : null;
+        return { ...locationUpdate, offerDispatched: Boolean(offer?.driver_id) };
       }),
 
     activeDriverTripMetrics: publicProcedure

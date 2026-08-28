@@ -1,4 +1,4 @@
-import MapView, { Circle, Marker, Polyline, UrlTile } from "react-native-maps";
+import MapView, { Circle, Marker, Polyline } from "react-native-maps";
 import { Image } from "expo-image";
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
@@ -29,8 +29,7 @@ export function HamaMap({ compact = false, source, destination, driverLocation, 
   const displayedPath = actualPath && actualPath.length > 1 ? actualPath : routePath;
   return (
     <View style={[styles.map, compact && styles.mapCompact]}>
-      <MapView mapType="none" style={styles.nativeMap} initialRegion={{ ...HAMA_CENTER, latitudeDelta: 0.14, longitudeDelta: 0.14 }} onPress={(event) => { const point = event.nativeEvent.coordinate; if (readOnly || !selecting) return; if (isInsideHama(point.latitude, point.longitude)) onSelect?.(point); else onOutsideRange?.(); }}>
-        <UrlTile urlTemplate="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={18} flipY={false} zIndex={0} />
+      <MapView mapType="standard" loadingEnabled style={styles.nativeMap} initialRegion={{ ...HAMA_CENTER, latitudeDelta: 0.14, longitudeDelta: 0.14 }} onPress={(event) => { const point = event.nativeEvent.coordinate; if (readOnly || !selecting) return; if (isInsideHama(point.latitude, point.longitude)) onSelect?.(point); else onOutsideRange?.(); }}>
         <Circle center={HAMA_CENTER} radius={HAMA_SERVICE_RADIUS_METERS} strokeColor="#757575" fillColor="#75757514" strokeWidth={1.5} />
         {displayedPath && displayedPath.length > 1 ? <Polyline coordinates={displayedPath} strokeColor={actualPath && actualPath.length > 1 ? "#24755E" : "#4A4A4A"} strokeWidth={actualPath && actualPath.length > 1 ? 5 : 4} lineDashPattern={actualPath && actualPath.length > 1 ? undefined : [1]} /> : null}
         {source ? <Jarbou3Marker point={source} label="ا" color="#4A4A4A" title="موقع الاستلام" /> : null}
