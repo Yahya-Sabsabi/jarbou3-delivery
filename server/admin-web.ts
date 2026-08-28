@@ -16,6 +16,7 @@ const LOGIN_MAX_ATTEMPTS = 5;
 const loginAttempts = new Map<string, { count: number; startedAt: number }>();
 const VERIFICATION_CODE_MS = 10 * 60 * 1000;
 const ADMIN_PUBLIC_ORIGIN = "https://jarbou-deliv-xoohmte2.manus.space";
+const ACTIVE_ORDER_STATUSES = ["requested", "accepted", "arriving", "awaiting_otp"] as const;
 
 type SiteSession = { issuedAt: number; expiresAt: number };
 
@@ -269,7 +270,7 @@ const releaseSchema = z.object({ minVersion: z.string().regex(/^\d+\.\d+\.\d+$/)
 async function listManagedAccounts() {
   const service = asService();
   const [usersResult, onboardingResult, driverVerificationResult] = await Promise.all([
-    service.from("users").select("id,name,phone,role,is_active,created_at").in("role", ["customer", "driver"]).order("created_at", { ascending: false }).limit(250),
+    service.from("users").select("id,name,phone,role,is_active,created_at").in("role", ["customer", "driver"]).is("deleted_at", null).order("created_at", { ascending: false }).limit(250),
     service.from("account_verification_requests").select("auth_user_id,phone,personal_photo_path,identity_photo_path,status,created_at").not("auth_user_id", "is", null).order("created_at", { ascending: false }).limit(300),
     service.from("drivers_verification").select("user_id,personal_photo_path,id_photo_path,status,updated_at").limit(300),
   ]);
@@ -666,7 +667,7 @@ export function registerAdminWebRoutes(app: Express) {
       if (query.length < 2) return res.status(400).json({ error: "SEARCH_QUERY_TOO_SHORT" });
       const service = asService();
       const [usersResult, invitesResult] = await Promise.all([
-        service.from("users").select("id,name,phone,role,is_active,created_at").in("role", ["customer", "driver"]).or(`name.ilike.%${query}%,phone.ilike.%${query}%`).order("created_at", { ascending: false }).limit(30),
+        service.from("users").select("id,name,phone,role,is_active,created_at").in("role", ["customer", "driver"]).is("deleted_at", null).or(`name.ilike.%${query}%,phone.ilike.%${query}%`).order("created_at", { ascending: false }).limit(30),
         service.from("driver_registration_invites").select("id,full_name,phone,is_active,claimed_at,created_at").or(`full_name.ilike.%${query}%,phone.ilike.%${query}%`).order("created_at", { ascending: false }).limit(30),
       ]);
       if (usersResult.error || invitesResult.error) throw new Error(usersResult.error?.message ?? invitesResult.error?.message ?? "ACCOUNT_SEARCH_FAILED");
@@ -782,6 +783,65 @@ export function registerAdminWebRoutes(app: Express) {
       res.json({ reactivated: true });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "ACCOUNT_REACTIVATION_FAILED" });
+    }
+  });
+
+  app.delete("/admin/api/accounts/:userId", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const userId = z.string().uuid().safeParse(req.params.userId);
+      const body = z.object({ confirmation: z.literal("DELETE_ACCOUNT") }).safeParse(req.body);
+      if (!userId.success || !body.success) return res.status(400).json({ error: "ACCOUNT_DELETE_CONFIRMATION_REQUIRED" });
+      const service = asService();
+      const { data: account, error: accountError } = await service.from("users").select("id,phone,role").eq("id", userId.data).in("role", ["customer", "driver"]).is("deleted_at", null).maybeSingle();
+      if (accountError) throw new Error(accountError.message);
+      if (!account) return res.status(404).json({ error: "ACCOUNT_NOT_FOUND" });
+      const { data: activeOrder, error: activeOrderError } = await service.from("orders").select("id").or(`customer_id.eq.${account.id},driver_id.eq.${account.id}`).in("status", [...ACTIVE_ORDER_STATUSES]).limit(1).maybeSingle();
+      if (activeOrderError) throw new Error(activeOrderError.message);
+      if (activeOrder) return res.status(409).json({ error: "ACCOUNT_HAS_ACTIVE_ORDER" });
+
+      const [driverDocumentsResult, onboardingDocumentsResult] = await Promise.all([
+        service.from("drivers_verification").select("personal_photo_path,id_photo_path").eq("user_id", account.id).maybeSingle(),
+        service.from("account_verification_requests").select("personal_photo_path,identity_photo_path").eq("auth_user_id", account.id).limit(50),
+      ]);
+      if (driverDocumentsResult.error || onboardingDocumentsResult.error) throw new Error(driverDocumentsResult.error?.message ?? onboardingDocumentsResult.error?.message ?? "ACCOUNT_DOCUMENTS_UNAVAILABLE");
+      const documentPaths = [
+        driverDocumentsResult.data?.personal_photo_path,
+        driverDocumentsResult.data?.id_photo_path,
+        ...(onboardingDocumentsResult.data ?? []).flatMap((row) => [row.personal_photo_path, row.identity_photo_path]),
+      ].filter((value): value is string => Boolean(value));
+      if (documentPaths.length) {
+        const { error: storageError } = await service.storage.from("jarbou3-private").remove([...new Set(documentPaths)]);
+        if (storageError) throw new Error(storageError.message);
+      }
+
+      const identityHash = createHash("sha256").update(account.id).digest("hex");
+      const { error: authIdentityError } = await service.auth.admin.updateUserById(account.id, {
+        email: `deleted-${identityHash.slice(0, 32)}@deleted.jarbou3.invalid`,
+        email_confirm: true,
+        password: createHash("sha256").update(`${identityHash}:${Date.now()}`).digest("base64url"),
+        user_metadata: { name: "حساب محذوف" },
+      });
+      if (authIdentityError) throw new Error("ACCOUNT_AUTH_DELETE_FAILED");
+      const cleanupResults = await Promise.all([
+        service.from("push_tokens").delete().eq("user_id", account.id),
+        service.from("favorite_addresses").delete().eq("customer_id", account.id),
+        service.from("problem_reports").delete().eq("reporter_id", account.id),
+        service.from("drivers_verification").delete().eq("user_id", account.id),
+        service.from("driver_registration_invites").delete().eq("phone", account.phone),
+        service.from("account_recovery_requests").delete().eq("user_id", account.id),
+        service.from("account_verification_requests").delete().eq("auth_user_id", account.id),
+      ]);
+      const cleanupError = cleanupResults.find((result) => result.error)?.error;
+      if (cleanupError) throw new Error(cleanupError.message);
+      const { error: userUpdateError } = await service.from("users").update({ name: "حساب محذوف", phone: null, is_active: false, deleted_at: new Date().toISOString(), last_location_lat: null, last_location_lng: null, last_location_at: null }).eq("id", account.id);
+      if (userUpdateError) throw new Error(userUpdateError.message);
+      const { error: authDeleteError } = await service.auth.admin.deleteUser(account.id);
+      if (authDeleteError) console.warn("[Jarbou3] Deleted account profile but could not remove the detached auth record");
+      res.json({ deleted: true });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "ACCOUNT_DELETE_FAILED" });
     }
   });
 

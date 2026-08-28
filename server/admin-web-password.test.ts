@@ -63,6 +63,15 @@ describe("بوابة كلمة مرور موقع الإدارة", () => {
     expect(change.status).toBe(401);
   });
 
+  it("يرفض حذف حساب من دون جلسة إدارة موقعة", async () => {
+    const deletion = await fetch(`${baseUrl}/admin/api/accounts/11111111-1111-4111-8111-111111111111`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmation: "DELETE_ACCOUNT" }),
+    });
+    expect(deletion.status).toBe(401);
+  });
+
   it("يرفض كلمة المرور الخاطئة ولا يمنح جلسة", async () => {
     const login = await fetch(`${baseUrl}/admin/api/login`, {
       method: "POST",
