@@ -67,13 +67,20 @@ function decodeSmallPrivateImage(value: string) {
   return image;
 }
 
-async function resolveActiveDiscount(code: string | undefined, preDiscountPrice: number) {
+export function discountIsAvailableForCustomer(recipientCustomerIds: string[], customerId: string | null | undefined) {
+  return recipientCustomerIds.length === 0 || Boolean(customerId && recipientCustomerIds.includes(customerId));
+}
+
+async function resolveActiveDiscount(code: string | undefined, preDiscountPrice: number, customerId?: string | null) {
   if (!code?.trim()) return { discountCodeId: null, discountAmount: 0, finalPrice: preDiscountPrice };
   const normalized = code.trim().toUpperCase();
   const { data, error } = await asService().from("discount_codes").select("id,discount_type,discount_value,starts_at,ends_at,is_active").eq("code", normalized).maybeSingle();
   if (error) throw new Error(error.message);
   const now = Date.now();
   if (!data || !data.is_active || (data.starts_at && new Date(data.starts_at).getTime() > now) || (data.ends_at && new Date(data.ends_at).getTime() <= now)) throw new Error("DISCOUNT_CODE_INVALID");
+  const recipients = await asService().from("discount_code_recipients").select("customer_id").eq("discount_code_id", data.id).limit(250);
+  if (recipients.error) throw new Error(recipients.error.message);
+  if (!discountIsAvailableForCustomer((recipients.data ?? []).map((row) => row.customer_id), customerId)) throw new Error("DISCOUNT_NOT_AVAILABLE");
   const rawAmount = data.discount_type === "percentage" ? Math.floor(preDiscountPrice * Number(data.discount_value) / 100) : Math.floor(Number(data.discount_value));
   const discountAmount = Math.max(0, Math.min(preDiscountPrice, rawAmount));
   return { discountCodeId: data.id, discountAmount, finalPrice: Math.max(0, preDiscountPrice - discountAmount) };
@@ -182,8 +189,11 @@ export const appRouter = router({
     }),
 
     previewDiscount: publicProcedure
-      .input(z.object({ code: z.string().trim().min(3).max(32), preDiscountPrice: z.number().int().nonnegative() }))
-      .query(async ({ input }) => resolveActiveDiscount(input.code, input.preDiscountPrice)),
+      .input(z.object({ code: z.string().trim().min(3).max(32), preDiscountPrice: z.number().int().nonnegative(), accessToken: z.string().trim().min(1).max(4096).optional() }))
+      .query(async ({ input }) => {
+        const customerId = input.accessToken ? (await requireRole(input.accessToken, ["customer"])).authUser.id : null;
+        return resolveActiveDiscount(input.code, input.preDiscountPrice, customerId);
+      }),
 
     searchHamaAddresses: publicProcedure
       .input(z.object({ query: z.string().trim().min(2).max(80), filter: z.enum(["all", "shops", "streets"]).default("all") }))
@@ -538,7 +548,7 @@ export const appRouter = router({
         assertHamaPoint(input.source.latitude, input.source.longitude);
         assertHamaPoint(input.destination.latitude, input.destination.longitude);
         if (!isInsideHama(input.destination.latitude, input.destination.longitude)) throw new Error("OUTSIDE_HAMA");
-        const discount = await resolveActiveDiscount(input.discountCode, input.estimatedPrice);
+        const discount = await resolveActiveDiscount(input.discountCode, input.estimatedPrice, authUser.id);
         const { hash } = await createOtpHash();
         const { data, error } = await asUser(input.accessToken).from("orders").insert({ customer_id: authUser.id, source_address: input.sourceAddress, source_lat: input.source.latitude, source_lng: input.source.longitude, destination_address: input.destinationAddress, destination_lat: input.destination.latitude, destination_lng: input.destination.longitude, estimated_price: input.estimatedPrice, pre_discount_price: input.estimatedPrice, discount_amount: discount.discountAmount, discount_code_id: discount.discountCodeId, final_price: discount.finalPrice, payment_method: input.paymentMethod, distance_m: input.distanceM, status: "requested", delivery_otp_hash: hash }).select("id,status,created_at,final_price,discount_amount").single();
         if (error) throw new Error(error.message);

@@ -104,11 +104,11 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
     await jarbou3Session.saveActiveTrip({ role: "customer", orderId: order.id, sourceAddress: "نقطة الاستلام المحددة على الخريطة، حماة", sourceLat: source?.latitude ?? 0, sourceLng: source?.longitude ?? 0, destinationAddress: "وجهة التسليم المحددة على الخريطة، حماة", destinationLat: destination?.latitude ?? 0, destinationLng: destination?.longitude ?? 0, distanceM: route?.distanceM ?? 0, savedAt: new Date().toISOString() });
     onTripActivity(true);
     setPage("track");
-  }, onError: (error) => Alert.alert("تعذر إنشاء الطلب", error.message) });
+  }, onError: (error) => Alert.alert("تعذر إنشاء الطلب", error.message === "DISCOUNT_NOT_AVAILABLE" ? "هذا الرمز مخصص لحساب آخر ولا يمكن استخدامه لهذا العميل." : error.message) });
   const currentTracking = trpc.jarbou3.currentCustomerTracking.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: page === "track" && Boolean(accessToken), refetchInterval: 5_000 });
   const customerTripPath = trpc.jarbou3.currentCustomerTripPath.useQuery({ accessToken: accessToken ?? "pending-session-token-000", orderId: currentTracking.data?.id ?? "00000000-0000-0000-0000-000000000000" }, { enabled: page === "track" && Boolean(accessToken) && Boolean(currentTracking.data?.id), refetchInterval: 5_000 });
   const addressSearch = trpc.jarbou3.searchHamaAddresses.useQuery({ query: addressQuery.trim().length >= 2 ? addressQuery.trim() : "حماة", filter: searchFilter }, { enabled: false });
-  const discountPreview = trpc.jarbou3.previewDiscount.useQuery({ code: discountCode.trim() || "---", preDiscountPrice: route?.price ?? 0 }, { enabled: false, retry: false });
+  const discountPreview = trpc.jarbou3.previewDiscount.useQuery({ code: discountCode.trim() || "---", preDiscountPrice: route?.price ?? 0, accessToken: accessToken ?? undefined }, { enabled: false, retry: false });
   const favoriteAddresses = trpc.jarbou3.listFavoriteAddresses.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: Boolean(accessToken) });
   const saveFavorite = trpc.jarbou3.saveFavoriteAddress.useMutation({ onSuccess: () => { favoriteAddresses.refetch(); setFavoriteLabel(""); Alert.alert("تم الحفظ", "أصبح العنوان ضمن عناوينك المفضلة."); }, onError: (error) => Alert.alert("تعذر الحفظ", error.message) });
   const deleteFavorite = trpc.jarbou3.deleteFavoriteAddress.useMutation({ onSuccess: () => favoriteAddresses.refetch() });
@@ -277,9 +277,9 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
       if (!result.data) throw new Error("DISCOUNT_CODE_INVALID");
       setAppliedDiscount(result.data);
       Alert.alert("تم تطبيق الخصم", `يوفّر لك الخصم ${formatSyp(result.data.discountAmount)} على هذا الطلب.`);
-    } catch {
+    } catch (error) {
       setAppliedDiscount(null);
-      Alert.alert("الرمز غير صالح", "تحقق من الرمز أو من تاريخ صلاحيته.");
+      Alert.alert("الرمز غير صالح", error instanceof Error && error.message === "DISCOUNT_NOT_AVAILABLE" ? "هذا الرمز مخصص لعملاء آخرين." : "تحقق من الرمز أو من تاريخ صلاحيته.");
     }
   };
 
