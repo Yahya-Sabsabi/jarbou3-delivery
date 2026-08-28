@@ -1,24 +1,44 @@
 let liveDriverMap = null;
+let overviewMarkerLayers = null;
 
-function installDriverMap(drivers) {
+function installDriverMap(payload) {
   const target = document.querySelector(".map-panel");
   if (!target) return;
-  if (!window.L) { window.setTimeout(() => installDriverMap(drivers), 120); return; }
-  if (liveDriverMap) liveDriverMap.remove();
-  target.innerHTML = "";
-  const map = window.L.map(target).setView([35.1319, 36.7547], 12);
-  window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
-  const points = (drivers || []).map((driver) => ({ ...driver, latitude: Number(driver.last_location_lat), longitude: Number(driver.last_location_lng) })).filter((driver) => Number.isFinite(driver.latitude) && Number.isFinite(driver.longitude));
-  points.forEach((driver) => {
-    const initial = String(driver.name || "س").slice(0, 1);
-    const marker = window.L.marker([driver.latitude, driver.longitude], { icon: window.L.divIcon({ className: "driver-map-marker", html: `<span class="driver-marker-dot">${initial}</span>`, iconSize: [34, 34], iconAnchor: [17, 17] }) }).addTo(map);
-    marker.bindPopup(`<div class="driver-map-popup"><strong>${String(driver.name || "سائق جربوع")}</strong><span>${driver.last_location_at ? `آخر تحديث: ${new Date(driver.last_location_at).toLocaleString("ar-SY")}` : "لا يوجد وقت تحديث"}</span></div>`);
+  if (!window.L) { window.setTimeout(() => installDriverMap(payload), 120); return; }
+  const sourceDrivers = Array.isArray(payload) ? payload : payload?.drivers || [];
+  const sourceCustomers = Array.isArray(payload) ? [] : payload?.customers || [];
+  const drivers = sourceDrivers.map((driver) => ({ ...driver, latitude: Number(driver.latitude ?? driver.last_location_lat), longitude: Number(driver.longitude ?? driver.last_location_lng) })).filter((driver) => Number.isFinite(driver.latitude) && Number.isFinite(driver.longitude));
+  const customers = sourceCustomers.map((customer) => ({ ...customer, latitude: Number(customer.latitude ?? customer.last_location_lat), longitude: Number(customer.longitude ?? customer.last_location_lng) })).filter((customer) => Number.isFinite(customer.latitude) && Number.isFinite(customer.longitude));
+  const existingContainer = liveDriverMap?.getContainer?.();
+  if (!liveDriverMap || existingContainer !== target) {
+    if (liveDriverMap) liveDriverMap.remove();
+    target.innerHTML = "";
+    liveDriverMap = window.L.map(target, { zoomControl: true }).setView([35.1319, 36.7547], 12);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(liveDriverMap);
+    overviewMarkerLayers = window.L.layerGroup().addTo(liveDriverMap);
+  } else {
+    liveDriverMap.invalidateSize();
+    overviewMarkerLayers?.clearLayers();
+    target.querySelector(".map-empty")?.remove();
+  }
+  const map = liveDriverMap;
+  drivers.forEach((driver) => {
+    const initial = fleetEscape(String(driver.name || "س").slice(0, 1));
+    const marker = window.L.marker([driver.latitude, driver.longitude], { icon: window.L.divIcon({ className: "driver-map-marker", html: `<span class="driver-marker-dot">${initial}</span>`, iconSize: [34, 34], iconAnchor: [17, 17] }) }).addTo(overviewMarkerLayers);
+    marker.bindPopup(`<div class="driver-map-popup"><strong>${fleetEscape(driver.name || "سفير جربوع")}</strong><span>سفير</span><span>${driver.last_location_at ? `آخر تحديث: ${new Date(driver.last_location_at).toLocaleString("ar-SY")}` : "لا يوجد وقت تحديث"}</span></div>`);
   });
-  if (points.length === 1) map.setView([points[0].latitude, points[0].longitude], 14);
-  if (points.length > 1) map.fitBounds(points.map((point) => [point.latitude, point.longitude]), { padding: [30, 30], maxZoom: 14 });
-  if (!points.length) target.insertAdjacentHTML("beforeend", "<p class=\"map-empty\">لا توجد مواقع سائقين محدثة بعد.</p>");
-  liveDriverMap = map;
+  customers.forEach((customer) => {
+    const marker = window.L.marker([customer.latitude, customer.longitude], { icon: window.L.divIcon({ className: "customer-map-marker", html: "<span class=\"customer-marker-dot\"><b>ع</b></span>", iconSize: [30, 30], iconAnchor: [15, 15] }) }).addTo(overviewMarkerLayers);
+    marker.bindPopup(`<div class="driver-map-popup"><strong>${fleetEscape(customer.name || "عميل")}</strong><span>عميل</span><span>${customer.last_location_at ? `آخر تحديث: ${new Date(customer.last_location_at).toLocaleString("ar-SY")}` : "لا يوجد وقت تحديث"}</span></div>`);
+  });
+  const visiblePoints = [...drivers, ...customers];
+  if (visiblePoints.length === 1) map.setView([visiblePoints[0].latitude, visiblePoints[0].longitude], 14);
+  if (visiblePoints.length > 1) map.fitBounds(visiblePoints.map((point) => [point.latitude, point.longitude]), { padding: [30, 30], maxZoom: 14 });
+  if (!visiblePoints.length) target.insertAdjacentHTML("beforeend", "<p class=\"map-empty\">الخريطة تعمل، ولا توجد مواقع GPS حديثة مسجلة بعد.</p>");
+  window.setTimeout(() => map.invalidateSize(), 0);
 }
+
+window.refreshOverviewMap = installDriverMap;
 
 let fleetOperationsMap = null;
 let fleetRouteLayers = null;
@@ -121,7 +141,7 @@ window.refreshFleetOperationsMap = async function refreshFleetOperationsMap() {
 const originalRenderOverview = renderOverview;
 renderOverview = function () {
   originalRenderOverview();
-  installDriverMap(state.dashboard?.drivers || []);
+  installDriverMap(state.dashboard || {});
 };
 
 document.querySelector("#login-form").addEventListener("submit", async (event) => {
