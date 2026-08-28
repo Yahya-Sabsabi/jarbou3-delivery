@@ -206,16 +206,17 @@ async function readDashboard() {
   const service = asService();
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
-  const [todayOrdersResult, activeDriversResult, pendingDriversResult, openShiftsResult, latestOrdersResult, notifications] = await Promise.all([
+  const [todayOrdersResult, activeDriversResult, activeCustomersResult, pendingDriversResult, openShiftsResult, latestOrdersResult, notifications] = await Promise.all([
     service.from("orders").select("id,status,estimated_price,final_price,company_commission_amount,driver_net_amount,commission_calculated_at,created_at,updated_at,driver_id,source_address,destination_address").gte("created_at", startOfDay.toISOString()).order("updated_at", { ascending: false }),
     service.from("users").select("id,name,last_location_lat,last_location_lng,last_location_at").eq("role", "driver").eq("is_active", true).limit(12),
+    service.from("users").select("id,name,last_location_lat,last_location_lng,last_location_at").eq("role", "customer").eq("is_active", true).is("deleted_at", null).limit(50),
     service.from("drivers_verification").select("id").eq("status", "pending"),
     service.from("driver_shifts").select("id").eq("is_closed", false),
     service.from("orders").select("id,status,estimated_price,final_price,company_commission_amount,driver_net_amount,commission_calculated_at,created_at,updated_at,driver_id,source_address,destination_address").order("updated_at", { ascending: false }).limit(8),
     readNotifications(),
   ]);
 
-  const errors = [todayOrdersResult.error, activeDriversResult.error, pendingDriversResult.error, openShiftsResult.error, latestOrdersResult.error].filter(Boolean);
+  const errors = [todayOrdersResult.error, activeDriversResult.error, activeCustomersResult.error, pendingDriversResult.error, openShiftsResult.error, latestOrdersResult.error].filter(Boolean);
   if (errors.length) throw new Error(errors[0]?.message ?? "ADMIN_DATA_UNAVAILABLE");
   const todayOrders = todayOrdersResult.data ?? [];
   const finance = summarizeCompletedOrders(todayOrders as FinancialOrder[]);
@@ -229,6 +230,7 @@ async function readDashboard() {
     },
     orders: latestOrdersResult.data ?? [],
     drivers: activeDriversResult.data ?? [],
+    customers: activeCustomersResult.data ?? [],
     notifications,
   };
 }
@@ -292,11 +294,14 @@ function normalizeJarbou3Phone(value: string) {
 
 async function listFleetMap() {
   const service = asService();
-  const { data: driverRows, error: driverError } = await service.from("users").select("id,name,last_location_lat,last_location_lng,last_location_at").eq("role", "driver").eq("is_active", true).order("last_location_at", { ascending: false, nullsFirst: false }).limit(100);
-  if (driverError) throw new Error(driverError.message);
+  const [{ data: driverRows, error: driverError }, { data: customerRows, error: customerError }] = await Promise.all([
+    service.from("users").select("id,name,last_location_lat,last_location_lng,last_location_at").eq("role", "driver").eq("is_active", true).order("last_location_at", { ascending: false, nullsFirst: false }).limit(100),
+    service.from("users").select("id,name,last_location_lat,last_location_lng,last_location_at").eq("role", "customer").eq("is_active", true).is("deleted_at", null).order("last_location_at", { ascending: false, nullsFirst: false }).limit(250),
+  ]);
+  if (driverError || customerError) throw new Error(driverError?.message ?? customerError?.message ?? "FLEET_MAP_UNAVAILABLE");
   const drivers = driverRows ?? [];
   const driverIds = drivers.map((driver) => driver.id);
-  if (!driverIds.length) return { generatedAt: new Date().toISOString(), drivers: [] };
+  if (!driverIds.length) return { generatedAt: new Date().toISOString(), drivers: [], customers: customerRows ?? [] };
 
   const [ordersResult, metricsResult] = await Promise.all([
     service.from("orders").select("id,driver_id,status,source_address,source_lat,source_lng,destination_address,destination_lat,destination_lng,estimated_price,final_price,accepted_at,updated_at").in("driver_id", driverIds).in("status", ["accepted", "arriving", "awaiting_otp"]).order("updated_at", { ascending: false }).limit(200),
@@ -319,7 +324,7 @@ async function listFleetMap() {
     const order = activeOrderByDriver.get(driver.id);
     const metrics = order ? metricsByOrder.get(order.id) : null;
     return { id: driver.id, name: driver.name, latitude: driver.last_location_lat == null ? null : Number(driver.last_location_lat), longitude: driver.last_location_lng == null ? null : Number(driver.last_location_lng), lastLocationAt: driver.last_location_at, activeOrder: order ? { id: order.id, status: order.status, sourceAddress: order.source_address, source: { latitude: Number(order.source_lat), longitude: Number(order.source_lng) }, destinationAddress: order.destination_address, destination: { latitude: Number(order.destination_lat), longitude: Number(order.destination_lng) }, estimatedPrice: Number(order.final_price ?? order.estimated_price ?? 0), acceptedAt: order.accepted_at, actualDistanceM: Number(metrics?.actual_distance_m ?? 0), movingSeconds: Number(metrics?.moving_seconds ?? 0), startedAt: metrics?.started_at ?? order.accepted_at, route: pointsByOrder.get(order.id) ?? [] } : null };
-  }) };
+  }) , customers: (customerRows ?? []).map((customer) => ({ id: customer.id, name: customer.name, latitude: customer.last_location_lat == null ? null : Number(customer.last_location_lat), longitude: customer.last_location_lng == null ? null : Number(customer.last_location_lng), lastLocationAt: customer.last_location_at })) };
 }
 
 export function registerAdminWebRoutes(app: Express) {

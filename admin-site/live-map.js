@@ -2,7 +2,8 @@ let liveDriverMap = null;
 
 function installDriverMap(drivers) {
   const target = document.querySelector(".map-panel");
-  if (!target || !window.L) return;
+  if (!target) return;
+  if (!window.L) { window.setTimeout(() => installDriverMap(drivers), 120); return; }
   if (liveDriverMap) liveDriverMap.remove();
   target.innerHTML = "";
   const map = window.L.map(target).setView([35.1319, 36.7547], 12);
@@ -28,15 +29,22 @@ function fleetMinutes(order) { if (!order?.startedAt) return "لم يبدأ عد
 
 window.installFleetOperationsMap = function installFleetOperationsMap(payload) {
   const target = document.querySelector("#fleet-map");
-  if (!target || !window.L) return;
+  if (!target) return;
+  if (!window.L) { window.setTimeout(() => window.installFleetOperationsMap(payload), 120); return; }
   if (fleetOperationsMap) fleetOperationsMap.remove();
   target.innerHTML = "";
   const map = window.L.map(target, { zoomControl:true }).setView([35.1319, 36.7547], 12);
   window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19, attribution:"© OpenStreetMap" }).addTo(map);
   fleetOperationsMap = map;
   fleetRouteLayers = window.L.layerGroup().addTo(map);
-  const drivers = (payload?.drivers || []).filter((driver) => Number.isFinite(Number(driver.latitude)) && Number.isFinite(Number(driver.longitude)));
+  const mapFilter = document.querySelector("#fleet-map-filter")?.value || "all";
+  const driverPoints = (payload?.drivers || []).filter((driver) => Number.isFinite(Number(driver.latitude)) && Number.isFinite(Number(driver.longitude)));
+  const customerPoints = (payload?.customers || []).filter((customer) => Number.isFinite(Number(customer.latitude)) && Number.isFinite(Number(customer.longitude)));
+  const drivers = mapFilter === "customers" ? [] : driverPoints;
+  const customers = mapFilter === "drivers" ? [] : customerPoints;
   const markerById = new Map();
+  const filterControl = document.querySelector("#fleet-map-filter");
+  if (filterControl && !filterControl.dataset.bound) { filterControl.dataset.bound = "true"; filterControl.addEventListener("change", () => window.installFleetOperationsMap(payload)); }
 
   function clearRoute() { fleetRouteLayers.clearLayers(); }
   function showRoute(driver) {
@@ -62,10 +70,15 @@ window.installFleetOperationsMap = function installFleetOperationsMap(payload) {
     marker.on("click", () => showRoute(driver));
     markerById.set(String(driver.id), marker);
   });
+  customers.forEach((customer) => {
+    const marker = window.L.marker([Number(customer.latitude), Number(customer.longitude)], { icon: window.L.divIcon({ className:"customer-map-marker", html:"<span class=\"customer-marker-dot\">ع</span>", iconSize:[30,30], iconAnchor:[15,15] }) }).addTo(map);
+    marker.bindPopup(`<div class="map-driver-popup"><strong>${fleetEscape(customer.name || "عميل")}</strong><span>عميل</span>${customer.lastLocationAt ? `<span>آخر تحديث: ${new Date(customer.lastLocationAt).toLocaleString("ar-SY")}</span>` : ""}</div>`);
+  });
   document.querySelectorAll("[data-fleet-driver]").forEach((item) => item.addEventListener("click", () => { const marker = markerById.get(item.dataset.fleetDriver); if (!marker) return; map.setView(marker.getLatLng(), Math.max(map.getZoom(), 15)); marker.openPopup(); marker.fire("click"); }));
-  if (drivers.length === 1) { map.setView([Number(drivers[0].latitude), Number(drivers[0].longitude)], 14); }
-  if (drivers.length > 1) map.fitBounds(drivers.map((driver) => [Number(driver.latitude), Number(driver.longitude)]), { padding:[32,32], maxZoom:14 });
-  if (!drivers.length) target.insertAdjacentHTML("beforeend", "<p class=\"map-empty\">لا توجد مواقع GPS حديثة للسفراء بعد.</p>");
+  const visiblePoints = [...drivers, ...customers];
+  if (visiblePoints.length === 1) map.setView([Number(visiblePoints[0].latitude), Number(visiblePoints[0].longitude)], 14);
+  if (visiblePoints.length > 1) map.fitBounds(visiblePoints.map((point) => [Number(point.latitude), Number(point.longitude)]), { padding:[32,32], maxZoom:14 });
+  if (!visiblePoints.length) target.insertAdjacentHTML("beforeend", "<p class=\"map-empty\">لا توجد مواقع GPS حديثة ضمن التصفية الحالية.</p>");
 };
 
 const originalRenderOverview = renderOverview;
