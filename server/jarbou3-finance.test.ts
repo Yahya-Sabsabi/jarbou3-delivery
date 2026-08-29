@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import { calculateDriverCompanyBalance, calculateTripFinance } from "./jarbou3-finance";
 
 describe("حساب عمولة شركة جربوع", () => {
-  it("يقتطع 3% من إجمالي رحلة مكتملة ويحدد صافي السفير", () => {
+  it("يقتطع 10% من إجمالي رحلة مكتملة ويحدد صافي السفير", () => {
     expect(calculateTripFinance(100_000)).toEqual({
       grossAmount: 100_000,
-      companyCommissionAmount: 3_000,
-      driverNetAmount: 97_000,
+      companyCommissionAmount: 10_000,
+      driverNetAmount: 90_000,
     });
   });
 
@@ -18,16 +18,16 @@ describe("حساب عمولة شركة جربوع", () => {
 
     expect(calculateTripFinance(finalPrice)).toEqual({
       grossAmount: 85_000,
-      companyCommissionAmount: 2_550,
-      driverNetAmount: 82_450,
+      companyCommissionAmount: 8_500,
+      driverNetAmount: 76_500,
     });
   });
 
   it("يقرب كسور الليرة إلى الأسفل ويحافظ على تطابق الإجمالي", () => {
     const result = calculateTripFinance(999);
 
-    expect(result.companyCommissionAmount).toBe(29);
-    expect(result.driverNetAmount).toBe(970);
+    expect(result.companyCommissionAmount).toBe(99);
+    expect(result.driverNetAmount).toBe(900);
     expect(result.companyCommissionAmount + result.driverNetAmount).toBe(result.grossAmount);
   });
 
@@ -37,19 +37,19 @@ describe("حساب عمولة شركة جربوع", () => {
   });
 
   it("يتراكم رصيد الشركة من عمولات الرحلات ويصبح صفراً بعد دفع كامل الرصيد", () => {
-    expect(calculateDriverCompanyBalance([3_000, 2_550, 450], [6_000])).toEqual({
-      totalCommissionAmount: 6_000,
-      paidAmount: 6_000,
+    expect(calculateDriverCompanyBalance([10_000, 8_500, 450], [18_950])).toEqual({
+      totalCommissionAmount: 18_950,
+      paidAmount: 18_950,
       outstandingAmount: 0,
     });
   });
 
   it("يبقي المتبقي ظاهراً عند تسوية جزئية ويرفض إدخال دفعة تتجاوز المستحق", () => {
-    expect(calculateDriverCompanyBalance([3_000, 2_550], [2_000])).toEqual({
-      totalCommissionAmount: 5_550,
+    expect(calculateDriverCompanyBalance([10_000, 8_500], [2_000])).toEqual({
+      totalCommissionAmount: 18_500,
       paidAmount: 2_000,
-      outstandingAmount: 3_550,
+      outstandingAmount: 16_500,
     });
-    expect(() => calculateDriverCompanyBalance([3_000], [3_001])).toThrow("PAYMENT_EXCEEDS_OUTSTANDING_BALANCE");
+    expect(() => calculateDriverCompanyBalance([10_000], [10_001])).toThrow("PAYMENT_EXCEEDS_OUTSTANDING_BALANCE");
   });
 });

@@ -1,4 +1,4 @@
-export const COMPANY_COMMISSION_PERCENT = 3;
+export const COMPANY_COMMISSION_PERCENT = 10;
 
 export type TripFinance = {
   grossAmount: number;

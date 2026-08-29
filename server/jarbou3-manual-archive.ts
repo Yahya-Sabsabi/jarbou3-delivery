@@ -127,7 +127,7 @@ async function buildMonthlyTextPdf(periodStart: string, periodEnd: string) {
       ? { companyCommissionAmount: Number(order.company_commission_amount ?? 0), driverNetAmount: Number(order.driver_net_amount ?? 0) }
       : calculateTripFinance(grossAmount);
     document.text(`Estimated: ${order.estimated_price ?? 0} | Final: ${grossAmount} | Discount: ${order.discount_amount ?? 0}`);
-    if (order.status === "delivered") document.text(`Company 3%: ${snapshot.companyCommissionAmount} | Driver net: ${snapshot.driverNetAmount}`);
+    if (order.status === "delivered") document.text(`Company 10%: ${snapshot.companyCommissionAmount} | Driver net: ${snapshot.driverNetAmount}`);
     document.moveDown(0.45);
   }
   document.addPage();
