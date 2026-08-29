@@ -90,6 +90,9 @@ const config: ExpoConfig = {
   },
   extra: {
     apiBaseUrl: env.apiBaseUrl,
+    eas: {
+      projectId: "c377d81d-b28d-491e-83c5-f9f64fe9a2c3",
+    },
   },
   plugins: [
     "expo-router",
