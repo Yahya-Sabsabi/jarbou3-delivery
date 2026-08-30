@@ -9,9 +9,10 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { asPublic, asService, asUser, assertHamaPoint, createOtpHash, decodeDataUrl, getAuthenticatedUser, getUserProfile } from "./jarbou3-supabase";
 import { recordDriverLocation } from "./jarbou3-driver-location";
+import { JARBOU3_PRIVACY_POLICY_VERSION } from "../shared/jarbou3-privacy";
 
 const tokenInput = z.object({ accessToken: z.string().min(20) });
-const pointInput = z.object({ latitude: z.number(), longitude: z.number() });
+const pointInput = z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180) });
 const imageInput = z.string().min(50).max(7_000_000);
 const otpCodeInput = z.string().transform((value) => normalizeJarbou3Otp(value)).refine((value) => value.length === 6, { message: "INVALID_OR_EXPIRED_CODE" });
 type HamaSearchFilter = "all" | "shops" | "streets";
@@ -339,6 +340,37 @@ export const appRouter = router({
         const { error: onboardingSyncError } = await service.from("account_verification_requests").update({ status: "verified" }).eq("auth_user_id", request.user_id).eq("status", "password_pending");
         if (onboardingSyncError) console.warn("[Jarbou3] Recovery completed but pending onboarding status could not be synchronized");
         return { accessToken: session.session.access_token, refreshToken: session.session.refresh_token, user: { id: session.user.id, name: profile.name, role: profile.role } };
+      }),
+
+    privacyConsentStatus: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["customer", "driver"]);
+        const { data, error } = await asUser(input.accessToken)
+          .from("privacy_consents")
+          .select("policy_version,accepted_at,updated_at")
+          .eq("user_id", authUser.id)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        return {
+          accepted: data?.policy_version === JARBOU3_PRIVACY_POLICY_VERSION,
+          policyVersion: data?.policy_version ?? null,
+          acceptedAt: data?.accepted_at ?? null,
+        };
+      }),
+
+    acceptPrivacyConsent: publicProcedure
+      .input(tokenInput.extend({ policyVersion: z.string().trim().min(1).max(40) }))
+      .mutation(async ({ input }) => {
+        if (input.policyVersion !== JARBOU3_PRIVACY_POLICY_VERSION) throw new Error("PRIVACY_POLICY_VERSION_INVALID");
+        const { authUser } = await requireRole(input.accessToken, ["customer", "driver"]);
+        const { data, error } = await asUser(input.accessToken)
+          .from("privacy_consents")
+          .upsert({ user_id: authUser.id, policy_version: JARBOU3_PRIVACY_POLICY_VERSION, accepted_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: "user_id" })
+          .select("policy_version,accepted_at,updated_at")
+          .single();
+        if (error || !data) throw new Error(error?.message ?? "PRIVACY_CONSENT_SAVE_FAILED");
+        return { accepted: true, policyVersion: data.policy_version, acceptedAt: data.accepted_at };
       }),
 
     sessionProfile: publicProcedure
