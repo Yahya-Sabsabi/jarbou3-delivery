@@ -10,6 +10,8 @@ import { publicProcedure, router } from "./_core/trpc";
 import { asPublic, asService, asUser, assertHamaPoint, createOtpHash, decodeDataUrl, getAuthenticatedUser, getUserProfile } from "./jarbou3-supabase";
 import { recordDriverLocation } from "./jarbou3-driver-location";
 import { JARBOU3_PRIVACY_POLICY_VERSION } from "../shared/jarbou3-privacy";
+import { AcceptRequestedOrder } from "../application/use-cases/accept-requested-order";
+import { SupabaseOrderRepository } from "../infrastructure/repositories/supabase-order-repository";
 
 const tokenInput = z.object({ accessToken: z.string().min(20) });
 const pointInput = z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180) });
@@ -597,10 +599,9 @@ export const appRouter = router({
       .input(tokenInput.extend({ orderId: z.string().uuid() }))
       .mutation(async ({ input }) => {
         await requireRole(input.accessToken, ["driver"]);
-        const { data, error } = await asUser(input.accessToken).rpc("accept_order", { p_order_id: input.orderId });
-        if (error) throw new Error(error.message);
-        if (data?.customer_id) await notifyCustomer(data.customer_id, "تم قبول طلبك", "تم تعيين سائق جربوع لطلبك وهو في طريقه إلى نقطة الاستلام.", { orderId: data.id, status: "accepted" });
-        return data;
+        const acceptedOrder = await new AcceptRequestedOrder(new SupabaseOrderRepository(asUser(input.accessToken))).execute(input.orderId);
+        await notifyCustomer(acceptedOrder.customerId, "تم قبول طلبك", "تم تعيين سائق جربوع لطلبك وهو في طريقه إلى نقطة الاستلام.", { orderId: acceptedOrder.id, status: "accepted" });
+        return acceptedOrder;
       }),
 
     declineOrder: publicProcedure
