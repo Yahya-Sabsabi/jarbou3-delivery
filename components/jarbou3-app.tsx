@@ -16,7 +16,9 @@ import { registerJarbou3PushToken } from "@/lib/jarbou3-notifications";
 import { readRuntimeReadiness, requestRuntimeLocationPermission, type RuntimeReadiness } from "@/lib/jarbou3-runtime";
 import { isVersionBelow } from "@/lib/jarbou3-release";
 import { normalizeProblemReportMessage, problemReportErrorMessage } from "@/shared/jarbou3-report";
+import { driverVehicleLabel, type CustomerVisibleDriver } from "@/shared/jarbou3-driver";
 import { isJarbou3Phone, normalizeJarbou3Digits, normalizeJarbou3Otp, normalizeJarbou3Phone } from "@/shared/jarbou3-phone";
+import { JARBOU3_PRIVACY_POLICY_TEXT, JARBOU3_PRIVACY_POLICY_VERSION } from "@/shared/jarbou3-privacy";
 import Constants from "expo-constants";
 
 type Role = "customer" | "driver";
@@ -110,8 +112,9 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
     onTripActivity(true);
     setPage("track");
   }, onError: (error) => Alert.alert("تعذر إنشاء الطلب", error.message === "DISCOUNT_NOT_AVAILABLE" ? "هذا الرمز مخصص لحساب آخر ولا يمكن استخدامه لهذا العميل." : error.message) });
-  const currentTracking = trpc.jarbou3.currentCustomerTracking.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: page === "track" && Boolean(accessToken), refetchInterval: 5_000 });
-  const customerTripPath = trpc.jarbou3.currentCustomerTripPath.useQuery({ accessToken: accessToken ?? "pending-session-token-000", orderId: currentTracking.data?.id ?? "00000000-0000-0000-0000-000000000000" }, { enabled: page === "track" && Boolean(accessToken) && Boolean(currentTracking.data?.id), refetchInterval: 5_000 });
+  // Realtime is the primary transport; slow polling remains only as a recovery fallback.
+  const currentTracking = trpc.jarbou3.currentCustomerTracking.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: page === "track" && Boolean(accessToken), refetchInterval: 30_000 });
+  const customerTripPath = trpc.jarbou3.currentCustomerTripPath.useQuery({ accessToken: accessToken ?? "pending-session-token-000", orderId: currentTracking.data?.id ?? "00000000-0000-0000-0000-000000000000" }, { enabled: page === "track" && Boolean(accessToken) && Boolean(currentTracking.data?.id), refetchInterval: 30_000 });
   const addressSearch = trpc.jarbou3.searchHamaAddresses.useQuery({ query: addressQuery.trim().length >= 2 ? addressQuery.trim() : "حماة", filter: searchFilter }, { enabled: false });
   const discountPreview = trpc.jarbou3.previewDiscount.useQuery({ code: discountCode.trim() || "---", preDiscountPrice: route?.price ?? 0, accessToken: accessToken ?? undefined }, { enabled: false, retry: false });
   const favoriteAddresses = trpc.jarbou3.listFavoriteAddresses.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: Boolean(accessToken) });
@@ -319,7 +322,16 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
     </ScrollView>
   );
 
-  if (page === "track") return <View style={styles.fill}><HamaMap source={trackedSource} destination={trackedDestination} routePath={route?.path} actualPath={liveTripPath} driverLocation={driverLocation} readOnly />{acceptedNotice ? <View style={styles.acceptedNotice}><Text style={styles.acceptedNoticeTitle}>تم قبول طلبك</Text><Text style={styles.acceptedNoticeCopy}>تم تعيين سائق جربوع وبدأت متابعة موقعه.</Text></View> : null}<View style={styles.trackSheet}><View style={styles.handle} /><View style={styles.split}><Tag status>{currentTracking.data?.driver_id ? "تم تعيين سائق" : "بانتظار سائق"}</Tag><Text style={styles.muted}>طلب قيد المتابعة</Text></View><Text style={styles.trackTitle}>{currentTracking.data?.driver_id ? "السائق متجه إلى المصدر" : "سنعيّن سائقاً قريباً قريباً"}</Text><Text style={styles.copy}>{currentTracking.data?.driver_id ? liveTripPath.length > 1 ? `المسار الأخضر يرسم حركة السفير الفعلية مباشرة (${liveTripPath.length} نقاط حديثة).` : "تظهر حركة السفير ومساره تلقائياً بعد أول تحديث GPS." : "ستظهر حركة السائق فور قبوله طلبك."}</Text><View style={styles.driverBox}><View style={styles.avatar}><Text style={styles.avatarText}>ج</Text></View><View style={styles.flex}><Text style={styles.driverName}>{currentTracking.data?.driver_id ? "سائق جربوع معيّن" : "بانتظار قبول السائق"}</Text><Text style={styles.mutedRight}>{pickupEtaSeconds != null ? `يصل إلى الاستلام خلال ${Math.max(1, Math.ceil(pickupEtaSeconds / 60))} دقائق تقريباً` : driverLocation ? "يجري حساب وقت الوصول…" : "سيظهر وقت الوصول عند بدء مشاركة الموقع"}</Text></View><Pressable onPress={() => Alert.alert("اتصال", "سيُفتح الاتصال المباشر بالسائق عند تشغيل أرقام الخدمة.")} style={styles.minor}><Text style={styles.minorText}>اتصال</Text></Pressable></View><View style={styles.timeline}><Text style={styles.done}>● تم إنشاء طلبك</Text><Text style={currentTracking.data?.driver_id ? styles.live : styles.future}>{currentTracking.data?.driver_id ? "● السائق متجه إلى المصدر" : "○ بانتظار قبول سائق"}</Text><Text style={styles.future}>○ استلام رمز التسليم</Text></View><Action title="لدي رمز الاستلام" onPress={() => setPage("otp")} /><Action title="العودة للرئيسية" kind="outline" onPress={() => setPage("home")} /></View></View>;
+  const visibleDriver = (currentTracking.data as { driver?: CustomerVisibleDriver | null } | null | undefined)?.driver ?? null;
+  const callVisibleDriver = () => {
+    if (!visibleDriver?.phone) {
+      Alert.alert("الاتصال غير متاح", "لم يُسجّل السفير رقم اتصال صالحاً حالياً.");
+      return;
+    }
+    Linking.openURL(`tel:${visibleDriver.phone}`).catch(() => Alert.alert("تعذر الاتصال", "افتح تطبيق الهاتف يدوياً وحاول الاتصال بالرقم الظاهر."));
+  };
+
+  if (page === "track") return <View style={styles.fill}><HamaMap source={trackedSource} destination={trackedDestination} routePath={route?.path} actualPath={liveTripPath} driverLocation={driverLocation} readOnly />{acceptedNotice ? <View style={styles.acceptedNotice}><Text style={styles.acceptedNoticeTitle}>تم قبول طلبك</Text><Text style={styles.acceptedNoticeCopy}>تم تعيين سائق جربوع وبدأت متابعة موقعه.</Text></View> : null}<View style={styles.trackSheet}><View style={styles.handle} /><View style={styles.split}><Tag status>{currentTracking.data?.driver_id ? "تم تعيين سائق" : "بانتظار سائق"}</Tag><Text style={styles.muted}>طلب قيد المتابعة</Text></View><Text style={styles.trackTitle}>{currentTracking.data?.driver_id ? "السائق متجه إلى المصدر" : "سنعيّن سائقاً قريباً"}</Text><Text style={styles.copy}>{currentTracking.data?.driver_id ? liveTripPath.length > 1 ? `المسار الأخضر يرسم حركة السفير الفعلية مباشرة (${liveTripPath.length} نقاط حديثة).` : "تظهر حركة السفير ومساره تلقائياً بعد أول تحديث GPS." : "ستظهر حركة السائق فور قبوله طلبك."}</Text><View style={styles.driverBox}><View style={styles.avatar}><Text style={styles.avatarText}>ج</Text></View><View style={styles.flex}><Text style={styles.driverName}>{visibleDriver?.fullName ?? (currentTracking.data?.driver_id ? "سفير جربوع معيّن" : "بانتظار قبول السفير")}</Text><Text style={styles.mutedRight}>{visibleDriver ? `${driverVehicleLabel(visibleDriver.vehicleType)} · ${visibleDriver.phone ?? "الرقم غير متاح"}` : "تظهر بيانات السفير بعد تثبيت التعيين"}</Text><Text style={styles.mutedRight}>{pickupEtaSeconds != null ? `يصل إلى الاستلام خلال ${Math.max(1, Math.ceil(pickupEtaSeconds / 60))} دقائق تقريباً` : driverLocation ? "يجري حساب وقت الوصول…" : "سيظهر وقت الوصول عند بدء مشاركة الموقع"}</Text></View>{visibleDriver?.phone ? <Pressable onPress={callVisibleDriver} style={styles.minor}><Text style={styles.minorText}>اتصال</Text></Pressable> : null}</View><View style={styles.timeline}><Text style={styles.done}>● تم إنشاء طلبك</Text><Text style={currentTracking.data?.driver_id ? styles.live : styles.future}>{currentTracking.data?.driver_id ? "● السفير متجه إلى المصدر" : "○ بانتظار قبول سفير"}</Text><Text style={styles.future}>○ استلام رمز التسليم</Text></View><Action title="لدي رمز الاستلام" onPress={() => setPage("otp")} /><Action title="العودة للرئيسية" kind="outline" onPress={() => setPage("home")} /></View></View>;
 
   if (page === "otp") return <View style={styles.fill}><Top title="تأكيد الاستلام" back={() => setPage("track")} /><View style={styles.centered}><View style={styles.otpBadge}><Text style={styles.otpBadgeText}>OTP</Text></View><Text style={styles.centerTitle}>أدخل رمز الاستلام</Text><Text style={styles.centerCopy}>يشاركك السائق الرمز عند وصول الطلب. لا تؤكده قبل الاستلام.</Text><TextInput style={styles.otp} value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={4} placeholder="••••" placeholderTextColor="#AAA" textAlign="center" /><Action title="تأكيد الرمز" onPress={() => otp.length === 4 ? Alert.alert("تم التأكيد", "سيطلب من السائق الآن تصوير إثبات التسليم.") : Alert.alert("الرمز غير مكتمل", "أدخل أربعة أرقام.")} /><View style={styles.proofNotice}><Text style={styles.proofNoticeIcon}>▧</Text><View style={styles.flex}><Text style={styles.proofNoticeTitle}>صورة إثبات التسليم</Text><Text style={styles.proofNoticeCopy}>ستظهر هنا فور رفعها من السائق.</Text></View></View></View></View>;
 
@@ -455,7 +467,7 @@ function Top({ title, back }: { title: string; back: () => void }) { return <Vie
 
 export function Jarbou3App() {
   const [role, setRole] = useState<Role>("customer");
-  const [stage, setStage] = useState<"loading" | "choose" | "form" | "waiting" | "code" | "password" | "signin" | "recoveryRequest" | "recoveryWaiting" | "recoveryCode" | "recoveryPassword" | "workspace">("loading");
+  const [stage, setStage] = useState<"loading" | "choose" | "form" | "waiting" | "code" | "password" | "signin" | "recoveryRequest" | "recoveryWaiting" | "recoveryCode" | "recoveryPassword" | "consent" | "workspace">("loading");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [vehicleType, setVehicleType] = useState<"motorcycle" | "electric_scooter">("motorcycle");
@@ -483,7 +495,8 @@ export function Jarbou3App() {
     const applyRestoredState = (token: string | null, saved: Awaited<ReturnType<typeof jarbou3Session.getOnboarding>>) => {
       if (!active || settled) return;
       settled = true;
-      if (saved) {
+      const canResume = Boolean(saved?.requestId) || saved?.stage === "waiting" || saved?.stage === "code" || saved?.stage === "password";
+      if (saved && canResume) {
         setRole(saved.role);
         setName(saved.name);
         setPhone(saved.phone);
@@ -491,6 +504,8 @@ export function Jarbou3App() {
         setCodeExpiresAt(saved.codeExpiresAt);
         setRetryAfter(saved.retryAfter ?? null);
         setStage(saved.stage);
+      } else {
+        setStage("choose");
       }
       setSavedToken(token);
     };
@@ -504,6 +519,8 @@ export function Jarbou3App() {
     return () => { active = false; clearTimeout(watchdog); };
   }, []);
   const savedSession = trpc.jarbou3.sessionProfile.useQuery({ accessToken: savedToken ?? "pending-session-token-000" }, { enabled: Boolean(savedToken), retry: false });
+  const privacyConsent = trpc.jarbou3.privacyConsentStatus.useQuery({ accessToken: savedToken ?? "pending-session-token-000" }, { enabled: Boolean(savedToken) && Boolean(savedSession.data), retry: false });
+  const acceptPrivacyConsent = trpc.jarbou3.acceptPrivacyConsent.useMutation({ onSuccess: async () => { await privacyConsent.refetch(); setStage("workspace"); }, onError: () => Alert.alert("تعذر حفظ الموافقة", "تحقق من اتصال الإنترنت ثم أعد المحاولة.") });
   const releaseSettings = trpc.jarbou3.releaseSettings.useQuery(undefined, { enabled: Boolean(savedToken), refetchInterval: 30_000, retry: false });
   const currentVersion = Constants.expoConfig?.version ?? "1.0.0";
   const onboardingStatus = trpc.jarbou3.onboardingStatus.useQuery({ requestId: requestId ?? "00000000-0000-0000-0000-000000000000", phone: normalizedPhone }, { enabled: Boolean(requestId) && Boolean(normalizedPhone) && (stage === "waiting" || stage === "code"), refetchInterval: stage === "waiting" || stage === "code" ? 4_000 : false, retry: false });
@@ -789,10 +806,15 @@ export function Jarbou3App() {
     setRuntimeReadiness(await readRuntimeReadiness());
   };
   const updateRequired = Boolean(releaseSettings.data?.forceUpdate && releaseSettings.data.updateUrl && isVersionBelow(currentVersion, releaseSettings.data.minVersion));
+  useEffect(() => {
+    if (!savedToken || !savedSession.data || savedSession.data.pendingPassword || privacyConsent.isLoading) return;
+    if (privacyConsent.isError || (privacyConsent.data && !privacyConsent.data.accepted)) setStage("consent");
+  }, [savedToken, savedSession.data, privacyConsent.data, privacyConsent.isError, privacyConsent.isLoading]);
   const runtimeBlocked = stage === "workspace" && !activeTrip && (!runtimeReadiness || !runtimeReadiness.online || !runtimeReadiness.gpsEnabled || !runtimeReadiness.locationGranted);
   const runtimeProblem = !runtimeReadiness ? "جارٍ التحقق من الجاهزية…" : !runtimeReadiness.online ? "يلزم اتصال بالإنترنت لاستخدام جربوع." : !runtimeReadiness.locationGranted ? "اسمح للموقع الجغرافي لاستخدام جربوع." : "فعّل خدمات GPS من إعدادات الجهاز ثم أعد المحاولة.";
 
   if (stage === "loading") return <View style={styles.onboardingRoot}><ActivityIndicator color={gray} size="large" /></View>;
+  if (stage === "consent") return <ScrollView contentContainerStyle={styles.onboardingScroll}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>سياسة الخصوصية</Text><Text style={styles.onboardingCopy}>{privacyConsent.isError ? "تعذر تحميل حالة الموافقة. أعد المحاولة قبل متابعة استخدام جربوع." : "قبل استخدام جربوع، اقرأ السياسة التالية واختر الموافقة أو الرفض."}</Text><View style={styles.verificationGuide}><Text style={styles.verificationGuideText}>{JARBOU3_PRIVACY_POLICY_TEXT}</Text><Text style={styles.verificationGuideText}>نسخة السياسة: {JARBOU3_PRIVACY_POLICY_VERSION}</Text></View>{privacyConsent.isError ? <Pressable onPress={() => privacyConsent.refetch()} disabled={privacyConsent.isFetching} style={styles.authAction}><Text style={styles.actionText}>{privacyConsent.isFetching ? "جارٍ إعادة المحاولة…" : "إعادة تحميل السياسة"}</Text></Pressable> : <Pressable onPress={() => savedToken && acceptPrivacyConsent.mutate({ accessToken: savedToken, policyVersion: JARBOU3_PRIVACY_POLICY_VERSION })} disabled={acceptPrivacyConsent.isPending || !savedToken} style={[styles.authAction, acceptPrivacyConsent.isPending && styles.authActionDisabled]}>{acceptPrivacyConsent.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionText}>أوافق وأتابع</Text>}</Pressable>}<Pressable onPress={logout} disabled={acceptPrivacyConsent.isPending} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>أرفض وأخرج</Text></Pressable></View></ScrollView>;
   if (updateRequired) return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>تحديث مطلوب</Text><Text style={styles.onboardingCopy}>توجد نسخة أحدث مطلوبة لمتابعة استخدام جربوع. حدّث التطبيق ثم افتحه من جديد.</Text><Pressable onPress={() => Linking.openURL(releaseSettings.data?.updateUrl ?? "").catch(() => Alert.alert("تعذر فتح الرابط", "تواصل مع الإدارة للحصول على رابط التحديث."))} style={styles.authAction}><Text style={styles.actionText}>تحديث التطبيق</Text></Pressable></View></View>;
   if (runtimeBlocked) return <View style={styles.onboardingRoot}><View style={styles.onboardingCard}><Mark /><Text style={styles.onboardingTitle}>يلزم الإنترنت وGPS</Text><Text style={styles.onboardingCopy}>{runtimeProblem}</Text><Pressable onPress={() => refreshRuntimeReadiness().catch(() => Alert.alert("تعذر الفحص", "تحقق من أذونات الموقع والاتصال ثم حاول مرة أخرى."))} style={styles.authAction}><Text style={styles.actionText}>إعادة التحقق</Text></Pressable><Pressable onPress={logout} style={styles.modeSwitch}><Text style={styles.modeSwitchText}>تسجيل الخروج</Text></Pressable></View></View>;
   if (stage === "workspace") return <View style={styles.root}>{activeTrip && runtimeReadiness && (!runtimeReadiness.online || !runtimeReadiness.gpsEnabled || !runtimeReadiness.locationGranted) ? <View style={styles.runtimeBanner}><Text style={styles.runtimeBannerText}>{!runtimeReadiness.online ? "انقطع الإنترنت؛ ستُستأنف المزامنة تلقائياً عند عودته." : "تعذر الوصول إلى GPS مؤقتاً؛ الرحلة محفوظة وستستأنف عند عودته."}</Text></View> : null}<View style={styles.accessBar}><Text style={styles.accessCopy}>{role === "driver" ? "مساحة السفير" : "مساحة العميل"} · جلسة محمية على هذا الجهاز</Text><ProblemReportButton accessToken={savedToken} /><Pressable onPress={logout} style={styles.accessButton}><Text style={styles.accessButtonText}>تسجيل الخروج</Text></Pressable></View>{role === "customer" ? <Customer name={workspaceName} onTripActivity={setActiveTrip} /> : <Driver name={workspaceName} onTripActivity={setActiveTrip} />}</View>;

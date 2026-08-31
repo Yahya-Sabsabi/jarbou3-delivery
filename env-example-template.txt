@@ -1,0 +1,35 @@
+# جربوع للتوصيل — مثال إعدادات البيئة المحلية
+# انسخ هذا الملف محلياً إلى .env.example أو .env، ثم استبدل العناصر النائبة.
+# لا ترفع .env إلى GitHub ولا تضع الأسرار داخل APK.
+
+# عنوان API المنشور الذي سيستخدمه تطبيق Expo.
+EXPO_PUBLIC_API_BASE_URL=<عنوان_API_المنشور>
+
+# إعدادات OAuth العامة.
+EXPO_PUBLIC_OAUTH_PORTAL_URL=https://manus.im
+EXPO_PUBLIC_OAUTH_SERVER_URL=https://api.manus.im
+EXPO_PUBLIC_APP_ID=<معرّف_التطبيق>
+EXPO_PUBLIC_OWNER_OPEN_ID=<معرّف_المالك>
+EXPO_PUBLIC_OWNER_NAME=<اسم_المالك>
+
+# Supabase. المفتاح الخادمي لا يوضع في تطبيق الهاتف.
+SUPABASE_URL=<رابط_مشروع_Supabase>
+SUPABASE_KEY=<مفتاح_Supabase_الخادم>
+EXPO_PUBLIC_SUPABASE_URL=<رابط_Supabase_العام>
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<مفتاح_Supabase_القابل_للنشر>
+
+# قاعدة البيانات للخادم وDrizzle فقط.
+DATABASE_URL=<رابط_قاعدة_البيانات_مع_SSL>
+DRIZZLE_DATABASE_URL=<رابط_قاعدة_البيانات_مع_SSL>
+
+# خدمة Manus المدمجة للخادم فقط.
+BUILT_IN_FORGE_API_URL=https://forge.manus.ai
+BUILT_IN_FORGE_API_KEY=<مفتاح_خدمة_الخادم>
+
+# EAS للبناء من الطرفية فقط، ولا يُضمّن في APK أو GitHub.
+# EXPO_TOKEN=<Personal_Access_Token_من_Expo>
+
+# قواعد الأمان:
+# 1) لا تضع SUPABASE_KEY أو DATABASE_URL أو BUILT_IN_FORGE_API_KEY في EXPO_PUBLIC_*.
+# 2) لا تشارك EXPO_TOKEN أو أي كلمة مرور.
+# 3) استخدم أسرار EAS/منصة الاستضافة للقيم السرية بدلاً من المستودع.

@@ -9,9 +9,13 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { asPublic, asService, asUser, assertHamaPoint, createOtpHash, decodeDataUrl, getAuthenticatedUser, getUserProfile } from "./jarbou3-supabase";
 import { recordDriverLocation } from "./jarbou3-driver-location";
+import { JARBOU3_PRIVACY_POLICY_VERSION } from "../shared/jarbou3-privacy";
+import { AcceptRequestedOrder } from "../application/use-cases/accept-requested-order";
+import { SupabaseOrderRepository } from "../infrastructure/repositories/supabase-order-repository";
+import { SupabaseCustomerTripRepository } from "../infrastructure/repositories/supabase-customer-trip-repository";
 
 const tokenInput = z.object({ accessToken: z.string().min(20) });
-const pointInput = z.object({ latitude: z.number(), longitude: z.number() });
+const pointInput = z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180) });
 const imageInput = z.string().min(50).max(7_000_000);
 const otpCodeInput = z.string().transform((value) => normalizeJarbou3Otp(value)).refine((value) => value.length === 6, { message: "INVALID_OR_EXPIRED_CODE" });
 type HamaSearchFilter = "all" | "shops" | "streets";
@@ -341,6 +345,37 @@ export const appRouter = router({
         return { accessToken: session.session.access_token, refreshToken: session.session.refresh_token, user: { id: session.user.id, name: profile.name, role: profile.role } };
       }),
 
+    privacyConsentStatus: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["customer", "driver"]);
+        const { data, error } = await asUser(input.accessToken)
+          .from("privacy_consents")
+          .select("policy_version,accepted_at,updated_at")
+          .eq("user_id", authUser.id)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        return {
+          accepted: data?.policy_version === JARBOU3_PRIVACY_POLICY_VERSION,
+          policyVersion: data?.policy_version ?? null,
+          acceptedAt: data?.accepted_at ?? null,
+        };
+      }),
+
+    acceptPrivacyConsent: publicProcedure
+      .input(tokenInput.extend({ policyVersion: z.string().trim().min(1).max(40) }))
+      .mutation(async ({ input }) => {
+        if (input.policyVersion !== JARBOU3_PRIVACY_POLICY_VERSION) throw new Error("PRIVACY_POLICY_VERSION_INVALID");
+        const { authUser } = await requireRole(input.accessToken, ["customer", "driver"]);
+        const { data, error } = await asUser(input.accessToken)
+          .from("privacy_consents")
+          .upsert({ user_id: authUser.id, policy_version: JARBOU3_PRIVACY_POLICY_VERSION, accepted_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: "user_id" })
+          .select("policy_version,accepted_at,updated_at")
+          .single();
+        if (error || !data) throw new Error(error?.message ?? "PRIVACY_CONSENT_SAVE_FAILED");
+        return { accepted: true, policyVersion: data.policy_version, acceptedAt: data.accepted_at };
+      }),
+
     sessionProfile: publicProcedure
       .input(tokenInput)
       .query(async ({ input }) => {
@@ -446,7 +481,7 @@ export const appRouter = router({
       .input(z.object({ requestId: z.string().uuid(), phone: z.string().regex(/^\+?[0-9]{8,16}$/), code: otpCodeInput }))
       .mutation(async ({ input }) => {
         const service = asService();
-        const { data: request, error: requestError } = await service.from("account_verification_requests").select("id,full_name,phone,requested_role,status,verification_code_hash,code_expires_at,code_attempts,retry_after,auth_user_id").eq("id", input.requestId).maybeSingle();
+        const { data: request, error: requestError } = await service.from("account_verification_requests").select("id,full_name,phone,requested_role,vehicle_type,status,verification_code_hash,code_expires_at,code_attempts,retry_after,auth_user_id").eq("id", input.requestId).maybeSingle();
         if (requestError || !request || !isSameJarbou3Phone(input.phone, request.phone)) throw new Error("ONBOARDING_REQUEST_NOT_FOUND");
         if (request.status === "locked" && request.retry_after && new Date(request.retry_after).getTime() > Date.now()) throw new Error("ONBOARDING_CODE_LOCKED");
         if (request.status !== "code_sent" || !request.verification_code_hash || !request.code_expires_at) throw new Error("INVALID_OR_EXPIRED_CODE");
@@ -485,7 +520,7 @@ export const appRouter = router({
           const { error: updateAuthError } = await service.auth.admin.updateUserById(userId, { email: authEmail, email_confirm: true, password: authPassword, user_metadata: { name: request.full_name, phone: request.phone } });
           if (updateAuthError) failOnboardingVerification("AUTH_ACCOUNT_UPDATE_FAILED");
         }
-        const { error: profileUpdateError } = await service.from("users").update({ name: request.full_name, phone: request.phone, role: request.requested_role, is_active: false }).eq("id", userId);
+        const { error: profileUpdateError } = await service.from("users").update({ name: request.full_name, phone: request.phone, role: request.requested_role, vehicle_type: request.requested_role === "driver" ? request.vehicle_type : null, is_active: false }).eq("id", userId);
         if (profileUpdateError) failOnboardingVerification("PROFILE_UPDATE_FAILED");
         const { error: verificationUpdateError } = await service.from("account_verification_requests").update({ status: "password_pending", auth_user_id: userId, verification_code_hash: null, code_attempts: 0, retry_after: null }).eq("id", request.id);
         if (verificationUpdateError) failOnboardingVerification("VERIFICATION_UPDATE_FAILED");
@@ -500,7 +535,7 @@ export const appRouter = router({
         const authUser = await getAuthenticatedUser(input.accessToken);
         const service = asService();
         const { data: request, error } = await service.from("account_verification_requests")
-          .select("id,full_name,requested_role,personal_photo_path,identity_photo_path")
+          .select("id,full_name,requested_role,vehicle_type,personal_photo_path,identity_photo_path")
           .eq("auth_user_id", authUser.id)
           .eq("status", "password_pending")
           .maybeSingle();
@@ -512,7 +547,7 @@ export const appRouter = router({
           const { error: driverVerificationError } = await service.from("drivers_verification").upsert({ user_id: authUser.id, personal_photo_path: request.personal_photo_path, id_photo_path: request.identity_photo_path, status: "pending", activation_code_hash: null, activated_at: null }, { onConflict: "user_id" });
           if (driverVerificationError) throw new Error("DRIVER_VERIFICATION_PREPARE_FAILED");
         }
-        const { error: profileError } = await service.from("users").update({ is_active: true, role: request.requested_role, name: request.full_name }).eq("id", authUser.id);
+        const { error: profileError } = await service.from("users").update({ is_active: true, role: request.requested_role, name: request.full_name, vehicle_type: request.requested_role === "driver" ? request.vehicle_type : null }).eq("id", authUser.id);
         if (profileError) throw new Error(profileError.message);
         const { error: requestError } = await service.from("account_verification_requests").update({ status: "verified" }).eq("id", request.id);
         if (requestError) throw new Error(requestError.message);
@@ -565,10 +600,9 @@ export const appRouter = router({
       .input(tokenInput.extend({ orderId: z.string().uuid() }))
       .mutation(async ({ input }) => {
         await requireRole(input.accessToken, ["driver"]);
-        const { data, error } = await asUser(input.accessToken).rpc("accept_order", { p_order_id: input.orderId });
-        if (error) throw new Error(error.message);
-        if (data?.customer_id) await notifyCustomer(data.customer_id, "تم قبول طلبك", "تم تعيين سائق جربوع لطلبك وهو في طريقه إلى نقطة الاستلام.", { orderId: data.id, status: "accepted" });
-        return data;
+        const acceptedOrder = await new AcceptRequestedOrder(new SupabaseOrderRepository(asUser(input.accessToken))).execute(input.orderId);
+        await notifyCustomer(acceptedOrder.customerId, "تم قبول طلبك", "تم تعيين سائق جربوع لطلبك وهو في طريقه إلى نقطة الاستلام.", { orderId: acceptedOrder.id, status: "accepted" });
+        return acceptedOrder;
       }),
 
     declineOrder: publicProcedure
@@ -631,16 +665,7 @@ export const appRouter = router({
       .input(tokenInput)
       .query(async ({ input }) => {
         const { authUser } = await requireRole(input.accessToken, ["customer"]);
-        const { data, error } = await asUser(input.accessToken)
-          .from("orders")
-          .select("id,driver_id,status,source_lat,source_lng,destination_lat,destination_lng")
-          .eq("customer_id", authUser.id)
-          .in("status", ["requested", "accepted", "arriving", "awaiting_otp"])
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (error) throw new Error(error.message);
-        return data;
+        return new SupabaseCustomerTripRepository(asUser(input.accessToken)).findActiveForCustomer(authUser.id);
       }),
 
     currentCustomerTripPath: publicProcedure

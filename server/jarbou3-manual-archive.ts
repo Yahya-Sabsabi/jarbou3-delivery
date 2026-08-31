@@ -102,23 +102,37 @@ async function buildWeeklyDocumentsPdf(periodStart: string, periodEnd: string) {
   return { buffer: await result, counts: { driverDocuments: (verificationsResult.data ?? []).length, deliveryProofs: (orderPhotosResult.data ?? []).length } };
 }
 
-async function buildMonthlyTextPdf(periodStart: string, periodEnd: string) {
-  const service = asService();
-  const start = isoDate(periodStart);
-  const end = endOfPeriod(periodEnd);
-  const [ordersResult, shiftsResult] = await Promise.all([
-    service.from("orders").select("id,status,estimated_price,final_price,discount_amount,company_commission_amount,driver_net_amount,commission_calculated_at,source_address,destination_address,created_at,updated_at").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: true }).limit(1_000),
-    service.from("driver_shifts").select("id,driver_id,shift_date,total_amount,settlement_method,is_closed,closed_at,created_at").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: true }).limit(1_000),
-  ]);
-  if (ordersResult.error) throw new Error(ordersResult.error.message);
-  if (shiftsResult.error) throw new Error(shiftsResult.error.message);
+type MonthlyOrderRow = {
+  id: string;
+  status: string;
+  estimated_price: number | null;
+  final_price: number | null;
+  discount_amount: number | null;
+  company_commission_amount: number | null;
+  driver_net_amount: number | null;
+  commission_calculated_at: string | null;
+  source_address: string;
+  destination_address: string;
+  created_at: string;
+};
+
+type MonthlyShiftRow = {
+  id: string;
+  driver_id: string;
+  shift_date: string;
+  total_amount: number;
+  is_closed: boolean;
+  closed_at: string | null;
+};
+
+export async function buildMonthlyTextPdfFromRows(periodStart: string, periodEnd: string, orders: MonthlyOrderRow[], shifts: MonthlyShiftRow[]) {
   const document = new PDFDocument({ autoFirstPage: true, margin: 48 });
   const result = asBuffer(document);
   writeTitle(document, "Jarbou3 Monthly Operational Archive", periodStart, periodEnd);
-  document.fontSize(11).fillColor("#303030").text(`Orders: ${(ordersResult.data ?? []).length}`);
-  document.text(`Driver shifts: ${(shiftsResult.data ?? []).length}`);
+  document.fontSize(11).fillColor("#303030").text(`Orders: ${orders.length}`);
+  document.text(`Driver shifts: ${shifts.length}`);
   document.moveDown();
-  for (const order of ordersResult.data ?? []) {
+  for (const order of orders) {
     if (document.y > 700) document.addPage();
     document.fontSize(10).fillColor("#202020").text(`Order ${order.id} | ${order.status} | ${order.created_at}`);
     document.fontSize(9).fillColor("#555555").text(`${order.source_address} -> ${order.destination_address}`);
@@ -133,14 +147,27 @@ async function buildMonthlyTextPdf(periodStart: string, periodEnd: string) {
   document.addPage();
   document.fontSize(15).fillColor("#202020").text("Driver shifts");
   document.moveDown();
-  for (const shift of shiftsResult.data ?? []) {
+  for (const shift of shifts) {
     if (document.y > 720) document.addPage();
     document.fontSize(10).fillColor("#202020").text(`Shift ${shift.id} | Driver: ${shift.driver_id} | ${shift.is_closed ? "closed" : "open"}`);
     document.fontSize(9).fillColor("#555555").text(`Date: ${shift.shift_date} | Amount: ${shift.total_amount} | Closed: ${shift.closed_at ?? "—"}`);
     document.moveDown(0.45);
   }
   document.end();
-  return { buffer: await result, counts: { orders: (ordersResult.data ?? []).length, shifts: (shiftsResult.data ?? []).length } };
+  return { buffer: await result, counts: { orders: orders.length, shifts: shifts.length } };
+}
+
+async function buildMonthlyTextPdf(periodStart: string, periodEnd: string) {
+  const service = asService();
+  const start = isoDate(periodStart);
+  const end = endOfPeriod(periodEnd);
+  const [ordersResult, shiftsResult] = await Promise.all([
+    service.from("orders").select("id,status,estimated_price,final_price,discount_amount,company_commission_amount,driver_net_amount,commission_calculated_at,source_address,destination_address,created_at,updated_at").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: true }).limit(1_000),
+    service.from("driver_shifts").select("id,driver_id,shift_date,total_amount,settlement_method,is_closed,closed_at,created_at").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: true }).limit(1_000),
+  ]);
+  if (ordersResult.error) throw new Error(ordersResult.error.message);
+  if (shiftsResult.error) throw new Error(shiftsResult.error.message);
+  return buildMonthlyTextPdfFromRows(periodStart, periodEnd, (ordersResult.data ?? []) as MonthlyOrderRow[], (shiftsResult.data ?? []) as MonthlyShiftRow[]);
 }
 
 export async function listManualArchives() {
