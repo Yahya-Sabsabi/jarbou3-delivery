@@ -16,6 +16,7 @@ import { registerJarbou3PushToken } from "@/lib/jarbou3-notifications";
 import { readRuntimeReadiness, requestRuntimeLocationPermission, type RuntimeReadiness } from "@/lib/jarbou3-runtime";
 import { isVersionBelow } from "@/lib/jarbou3-release";
 import { normalizeProblemReportMessage, problemReportErrorMessage } from "@/shared/jarbou3-report";
+import { driverVehicleLabel, type CustomerVisibleDriver } from "@/shared/jarbou3-driver";
 import { isJarbou3Phone, normalizeJarbou3Digits, normalizeJarbou3Otp, normalizeJarbou3Phone } from "@/shared/jarbou3-phone";
 import { JARBOU3_PRIVACY_POLICY_TEXT, JARBOU3_PRIVACY_POLICY_VERSION } from "@/shared/jarbou3-privacy";
 import Constants from "expo-constants";
@@ -321,7 +322,16 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
     </ScrollView>
   );
 
-  if (page === "track") return <View style={styles.fill}><HamaMap source={trackedSource} destination={trackedDestination} routePath={route?.path} actualPath={liveTripPath} driverLocation={driverLocation} readOnly />{acceptedNotice ? <View style={styles.acceptedNotice}><Text style={styles.acceptedNoticeTitle}>تم قبول طلبك</Text><Text style={styles.acceptedNoticeCopy}>تم تعيين سائق جربوع وبدأت متابعة موقعه.</Text></View> : null}<View style={styles.trackSheet}><View style={styles.handle} /><View style={styles.split}><Tag status>{currentTracking.data?.driver_id ? "تم تعيين سائق" : "بانتظار سائق"}</Tag><Text style={styles.muted}>طلب قيد المتابعة</Text></View><Text style={styles.trackTitle}>{currentTracking.data?.driver_id ? "السائق متجه إلى المصدر" : "سنعيّن سائقاً قريباً قريباً"}</Text><Text style={styles.copy}>{currentTracking.data?.driver_id ? liveTripPath.length > 1 ? `المسار الأخضر يرسم حركة السفير الفعلية مباشرة (${liveTripPath.length} نقاط حديثة).` : "تظهر حركة السفير ومساره تلقائياً بعد أول تحديث GPS." : "ستظهر حركة السائق فور قبوله طلبك."}</Text><View style={styles.driverBox}><View style={styles.avatar}><Text style={styles.avatarText}>ج</Text></View><View style={styles.flex}><Text style={styles.driverName}>{currentTracking.data?.driver_id ? "سائق جربوع معيّن" : "بانتظار قبول السائق"}</Text><Text style={styles.mutedRight}>{pickupEtaSeconds != null ? `يصل إلى الاستلام خلال ${Math.max(1, Math.ceil(pickupEtaSeconds / 60))} دقائق تقريباً` : driverLocation ? "يجري حساب وقت الوصول…" : "سيظهر وقت الوصول عند بدء مشاركة الموقع"}</Text></View><Pressable onPress={() => Alert.alert("اتصال", "سيُفتح الاتصال المباشر بالسائق عند تشغيل أرقام الخدمة.")} style={styles.minor}><Text style={styles.minorText}>اتصال</Text></Pressable></View><View style={styles.timeline}><Text style={styles.done}>● تم إنشاء طلبك</Text><Text style={currentTracking.data?.driver_id ? styles.live : styles.future}>{currentTracking.data?.driver_id ? "● السائق متجه إلى المصدر" : "○ بانتظار قبول سائق"}</Text><Text style={styles.future}>○ استلام رمز التسليم</Text></View><Action title="لدي رمز الاستلام" onPress={() => setPage("otp")} /><Action title="العودة للرئيسية" kind="outline" onPress={() => setPage("home")} /></View></View>;
+  const visibleDriver = (currentTracking.data as { driver?: CustomerVisibleDriver | null } | null | undefined)?.driver ?? null;
+  const callVisibleDriver = () => {
+    if (!visibleDriver?.phone) {
+      Alert.alert("الاتصال غير متاح", "لم يُسجّل السفير رقم اتصال صالحاً حالياً.");
+      return;
+    }
+    Linking.openURL(`tel:${visibleDriver.phone}`).catch(() => Alert.alert("تعذر الاتصال", "افتح تطبيق الهاتف يدوياً وحاول الاتصال بالرقم الظاهر."));
+  };
+
+  if (page === "track") return <View style={styles.fill}><HamaMap source={trackedSource} destination={trackedDestination} routePath={route?.path} actualPath={liveTripPath} driverLocation={driverLocation} readOnly />{acceptedNotice ? <View style={styles.acceptedNotice}><Text style={styles.acceptedNoticeTitle}>تم قبول طلبك</Text><Text style={styles.acceptedNoticeCopy}>تم تعيين سائق جربوع وبدأت متابعة موقعه.</Text></View> : null}<View style={styles.trackSheet}><View style={styles.handle} /><View style={styles.split}><Tag status>{currentTracking.data?.driver_id ? "تم تعيين سائق" : "بانتظار سائق"}</Tag><Text style={styles.muted}>طلب قيد المتابعة</Text></View><Text style={styles.trackTitle}>{currentTracking.data?.driver_id ? "السائق متجه إلى المصدر" : "سنعيّن سائقاً قريباً"}</Text><Text style={styles.copy}>{currentTracking.data?.driver_id ? liveTripPath.length > 1 ? `المسار الأخضر يرسم حركة السفير الفعلية مباشرة (${liveTripPath.length} نقاط حديثة).` : "تظهر حركة السفير ومساره تلقائياً بعد أول تحديث GPS." : "ستظهر حركة السائق فور قبوله طلبك."}</Text><View style={styles.driverBox}><View style={styles.avatar}><Text style={styles.avatarText}>ج</Text></View><View style={styles.flex}><Text style={styles.driverName}>{visibleDriver?.fullName ?? (currentTracking.data?.driver_id ? "سفير جربوع معيّن" : "بانتظار قبول السفير")}</Text><Text style={styles.mutedRight}>{visibleDriver ? `${driverVehicleLabel(visibleDriver.vehicleType)} · ${visibleDriver.phone ?? "الرقم غير متاح"}` : "تظهر بيانات السفير بعد تثبيت التعيين"}</Text><Text style={styles.mutedRight}>{pickupEtaSeconds != null ? `يصل إلى الاستلام خلال ${Math.max(1, Math.ceil(pickupEtaSeconds / 60))} دقائق تقريباً` : driverLocation ? "يجري حساب وقت الوصول…" : "سيظهر وقت الوصول عند بدء مشاركة الموقع"}</Text></View>{visibleDriver?.phone ? <Pressable onPress={callVisibleDriver} style={styles.minor}><Text style={styles.minorText}>اتصال</Text></Pressable> : null}</View><View style={styles.timeline}><Text style={styles.done}>● تم إنشاء طلبك</Text><Text style={currentTracking.data?.driver_id ? styles.live : styles.future}>{currentTracking.data?.driver_id ? "● السفير متجه إلى المصدر" : "○ بانتظار قبول سفير"}</Text><Text style={styles.future}>○ استلام رمز التسليم</Text></View><Action title="لدي رمز الاستلام" onPress={() => setPage("otp")} /><Action title="العودة للرئيسية" kind="outline" onPress={() => setPage("home")} /></View></View>;
 
   if (page === "otp") return <View style={styles.fill}><Top title="تأكيد الاستلام" back={() => setPage("track")} /><View style={styles.centered}><View style={styles.otpBadge}><Text style={styles.otpBadgeText}>OTP</Text></View><Text style={styles.centerTitle}>أدخل رمز الاستلام</Text><Text style={styles.centerCopy}>يشاركك السائق الرمز عند وصول الطلب. لا تؤكده قبل الاستلام.</Text><TextInput style={styles.otp} value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={4} placeholder="••••" placeholderTextColor="#AAA" textAlign="center" /><Action title="تأكيد الرمز" onPress={() => otp.length === 4 ? Alert.alert("تم التأكيد", "سيطلب من السائق الآن تصوير إثبات التسليم.") : Alert.alert("الرمز غير مكتمل", "أدخل أربعة أرقام.")} /><View style={styles.proofNotice}><Text style={styles.proofNoticeIcon}>▧</Text><View style={styles.flex}><Text style={styles.proofNoticeTitle}>صورة إثبات التسليم</Text><Text style={styles.proofNoticeCopy}>ستظهر هنا فور رفعها من السائق.</Text></View></View></View></View>;
 
@@ -485,7 +495,8 @@ export function Jarbou3App() {
     const applyRestoredState = (token: string | null, saved: Awaited<ReturnType<typeof jarbou3Session.getOnboarding>>) => {
       if (!active || settled) return;
       settled = true;
-      if (saved) {
+      const canResume = Boolean(saved?.requestId) || saved?.stage === "waiting" || saved?.stage === "code" || saved?.stage === "password";
+      if (saved && canResume) {
         setRole(saved.role);
         setName(saved.name);
         setPhone(saved.phone);
@@ -493,6 +504,8 @@ export function Jarbou3App() {
         setCodeExpiresAt(saved.codeExpiresAt);
         setRetryAfter(saved.retryAfter ?? null);
         setStage(saved.stage);
+      } else {
+        setStage("choose");
       }
       setSavedToken(token);
     };
