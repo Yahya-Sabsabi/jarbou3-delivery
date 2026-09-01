@@ -699,6 +699,72 @@ export function registerAdminWebRoutes(app: Express) {
     }
   });
 
+  app.get("/admin/api/wallets", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      const { data, error } = await asService().rpc("list_driver_wallets");
+      if (error) throw new Error(error.message);
+      res.json({ wallets: data ?? [] });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "WALLETS_UNAVAILABLE" });
+    }
+  });
+
+  app.post("/admin/api/wallets/:driverId/deposits", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const driverId = z.string().uuid().safeParse(req.params.driverId);
+      const parsed = z.object({ amount: z.number().int().positive().max(1_000_000_000), note: z.string().trim().max(500).optional() }).safeParse(req.body);
+      if (!driverId.success || !parsed.success) return res.status(400).json({ error: "INVALID_WALLET_DEPOSIT" });
+      const { data, error } = await asService().rpc("record_driver_wallet_deposit", { p_driver_id: driverId.data, p_amount: parsed.data.amount, p_note: parsed.data.note ?? null });
+      if (error || !data) throw new Error(error?.message ?? "WALLET_DEPOSIT_FAILED");
+      res.status(201).json({ wallet: data });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "WALLET_DEPOSIT_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/places", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      const { data, error } = await asService().from("jarbou3_places").select("id,name,latitude,longitude,is_active,created_at,updated_at").order("updated_at", { ascending: false }).limit(500);
+      if (error) throw new Error(error.message);
+      res.json({ places: data ?? [] });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "PLACES_UNAVAILABLE" });
+    }
+  });
+
+  app.post("/admin/api/places", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const parsed = z.object({ name: z.string().trim().min(2).max(160), latitude: z.number().finite(), longitude: z.number().finite() }).safeParse(req.body);
+      if (!parsed.success || parsed.data.latitude < 35.04 || parsed.data.latitude > 35.23 || parsed.data.longitude < 36.60 || parsed.data.longitude > 36.91) return res.status(400).json({ error: "INVALID_PLACE" });
+      const { data, error } = await asService().from("jarbou3_places").insert({ name: parsed.data.name, latitude: parsed.data.latitude, longitude: parsed.data.longitude, is_active: true }).select("id,name,latitude,longitude,is_active,created_at,updated_at").single();
+      if (error || !data) throw new Error(error?.message ?? "PLACE_CREATE_FAILED");
+      res.status(201).json({ place: data });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "PLACE_CREATE_FAILED" });
+    }
+  });
+
+  app.patch("/admin/api/places/:placeId", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const placeId = z.string().uuid().safeParse(req.params.placeId);
+      const parsed = z.object({ isActive: z.boolean() }).safeParse(req.body);
+      if (!placeId.success || !parsed.success) return res.status(400).json({ error: "INVALID_PLACE_UPDATE" });
+      const { data, error } = await asService().from("jarbou3_places").update({ is_active: parsed.data.isActive, updated_at: new Date().toISOString() }).eq("id", placeId.data).select("id,is_active,updated_at").single();
+      if (error || !data) throw new Error(error?.message ?? "PLACE_UPDATE_FAILED");
+      res.json({ place: data });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "PLACE_UPDATE_FAILED" });
+    }
+  });
+
   app.get("/admin/api/fleet-map", async (req, res) => {
     try {
       requireSiteSession(req);
