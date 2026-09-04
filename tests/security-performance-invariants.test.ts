@@ -24,6 +24,13 @@ describe("security and performance invariants", () => {
     expect(migration).toContain("revoke all on function public.create_admin_access_recovery_token()");
   });
 
+  it("limits API bursts without replacing Realtime GPS", () => {
+    const server = read("server/_core/index.ts");
+    expect(server).toContain("apiRateLimit = 240");
+    expect(server).toContain('res.status(429).json({ error: "API_RATE_LIMITED" })');
+    expect(server).toContain('res.setHeader("Retry-After", "60")');
+  });
+
   it("uses Realtime first with slow tracking fallback and distance-aware GPS", () => {
     const app = read("components/jarbou3-app.tsx");
     const location = read("lib/jarbou3-location.ts");

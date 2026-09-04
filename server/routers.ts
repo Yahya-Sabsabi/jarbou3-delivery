@@ -661,6 +661,70 @@ export const appRouter = router({
         return data;
       }),
 
+    ownDriverWallet: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        await requireRole(input.accessToken, ["driver"]);
+        const { data, error } = await asUser(input.accessToken).rpc("get_own_driver_wallet").maybeSingle();
+        if (error) throw new Error(error.message);
+        return data;
+      }),
+
+    adminDriverWallets: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        await requireRole(input.accessToken, ["admin"]);
+        const { data, error } = await asUser(input.accessToken).rpc("list_driver_wallets");
+        if (error) throw new Error(error.message);
+        return data ?? [];
+      }),
+
+    recordDriverWalletDeposit: publicProcedure
+      .input(tokenInput.extend({ driverId: z.string().uuid(), amount: z.number().int().positive().max(1_000_000_000), note: z.string().trim().max(500).optional() }))
+      .mutation(async ({ input }) => {
+        await requireRole(input.accessToken, ["admin"]);
+        const { data, error } = await asUser(input.accessToken).rpc("record_driver_wallet_deposit", { p_driver_id: input.driverId, p_amount: input.amount, p_note: input.note ?? null });
+        if (error) throw new Error(error.message);
+        return data;
+      }),
+
+    listJarbou3Places: publicProcedure
+      .input(tokenInput.extend({ query: z.string().trim().max(160).optional() }))
+      .query(async ({ input }) => {
+        await requireRole(input.accessToken, ["customer", "driver"]);
+        const { data, error } = await asUser(input.accessToken).rpc("list_jarbou3_places", { p_query: input.query ?? null });
+        if (error) throw new Error(error.message);
+        return data ?? [];
+      }),
+
+    adminListJarbou3Places: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        await requireRole(input.accessToken, ["admin"]);
+        const { data, error } = await asUser(input.accessToken).rpc("admin_list_jarbou3_places");
+        if (error) throw new Error(error.message);
+        return data ?? [];
+      }),
+
+    adminCreateJarbou3Place: publicProcedure
+      .input(tokenInput.extend({ name: z.string().trim().min(2).max(160), latitude: z.number().finite(), longitude: z.number().finite() }))
+      .mutation(async ({ input }) => {
+        await requireRole(input.accessToken, ["admin"]);
+        assertHamaPoint(input.latitude, input.longitude);
+        const { data, error } = await asUser(input.accessToken).rpc("admin_create_jarbou3_place", { p_name: input.name, p_latitude: input.latitude, p_longitude: input.longitude });
+        if (error) throw new Error(error.message);
+        return data;
+      }),
+
+    adminSetJarbou3PlaceActive: publicProcedure
+      .input(tokenInput.extend({ placeId: z.string().uuid(), isActive: z.boolean() }))
+      .mutation(async ({ input }) => {
+        await requireRole(input.accessToken, ["admin"]);
+        const { data, error } = await asUser(input.accessToken).rpc("admin_set_jarbou3_place_active", { p_id: input.placeId, p_is_active: input.isActive });
+        if (error) throw new Error(error.message);
+        return { updated: Boolean(data) };
+      }),
+
     currentCustomerTracking: publicProcedure
       .input(tokenInput)
       .query(async ({ input }) => {

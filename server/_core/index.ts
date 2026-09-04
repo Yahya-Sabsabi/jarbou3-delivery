@@ -114,8 +114,25 @@ async function startServer() {
     res.json({ ok: true, timestamp: Date.now() });
   });
 
-  app.use("/api", (_req, res, next) => {
+  const apiRateWindowMs = 60_000;
+  const apiRateLimit = 240;
+  const apiRate = new Map<string, { startedAt: number; count: number }>();
+  app.use("/api", (req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
+    const now = Date.now();
+    const key = req.ip || req.socket.remoteAddress || "unknown";
+    const current = apiRate.get(key);
+    if (!current || now - current.startedAt >= apiRateWindowMs) {
+      apiRate.set(key, { startedAt: now, count: 1 });
+      next();
+      return;
+    }
+    current.count += 1;
+    if (current.count > apiRateLimit) {
+      res.setHeader("Retry-After", "60");
+      res.status(429).json({ error: "API_RATE_LIMITED" });
+      return;
+    }
     next();
   });
   app.post("/api/jarbou3/driver-location", async (req, res) => {

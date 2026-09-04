@@ -28,11 +28,11 @@ const schemeFromBundleId = `manus${timestamp}`;
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: "جربوع",
+  appName: "OPTIMUS X",
   appSlug: "jarbou3-delivery",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663276229936/gpWrnZzHAOqIPcdt.png",
+  logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663276229936/mKruWVfgjjYJstzO.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
@@ -102,8 +102,8 @@ const config: ExpoConfig = {
     [
       "expo-location",
       {
-        locationWhenInUsePermission: "اسمح لتطبيق جربوع باستخدام موقعك لاختيار الاستلام والتسليم وتتبع الرحلة داخل حماة.",
-        locationAlwaysAndWhenInUsePermission: "اسمح لتطبيق جربوع بتتبع موقع السفير أثناء الطلب النشط فقط حتى يرى العميل تقدم الرحلة.",
+        locationWhenInUsePermission: "اسمح لتطبيق OPTIMUS X باستخدام موقعك لاختيار الاستلام والتسليم وتتبع الرحلة داخل حماة.",
+        locationAlwaysAndWhenInUsePermission: "اسمح لتطبيق OPTIMUS X بتتبع موقع السفير أثناء الطلب النشط فقط حتى يرى العميل تقدم الرحلة.",
         isIosBackgroundLocationEnabled: true,
         isAndroidBackgroundLocationEnabled: true,
         isAndroidForegroundServiceEnabled: true,
@@ -118,8 +118,8 @@ const config: ExpoConfig = {
     [
       "expo-image-picker",
       {
-        photosPermission: "اسمح لتطبيق جربوع بالوصول إلى الصور لإرفاق وثائق السائق وإثبات التسليم.",
-        cameraPermission: "اسمح لتطبيق جربوع باستخدام الكاميرا لالتقاط وثائق السائق وإثبات التسليم.",
+        photosPermission: "اسمح لتطبيق OPTIMUS X بالوصول إلى الصور لإرفاق وثائق السائق وإثبات التسليم.",
+        cameraPermission: "اسمح لتطبيق OPTIMUS X باستخدام الكاميرا لالتقاط وثائق السائق وإثبات التسليم.",
       },
     ],
     [
