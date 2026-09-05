@@ -4,22 +4,22 @@ import { calculateDriverCompanyBalance, calculateTripFinance } from "./jarbou3-f
 
 describe("حساب عمولة شركة جربوع", () => {
   it("يقتطع 10% من إجمالي رحلة مكتملة ويحدد صافي السفير", () => {
-    expect(calculateTripFinance(100_000)).toEqual({
-      grossAmount: 100_000,
-      companyCommissionAmount: 10_000,
-      driverNetAmount: 90_000,
+    expect(calculateTripFinance(1_000)).toEqual({
+      grossAmount: 1_000,
+      companyCommissionAmount: 100,
+      driverNetAmount: 900,
     });
   });
 
   it("يحسب العمولة من السعر النهائي بعد الخصم وليس السعر قبل الخصم", () => {
-    const preDiscountPrice = 100_000;
-    const discountAmount = 15_000;
+    const preDiscountPrice = 1_000;
+    const discountAmount = 150;
     const finalPrice = preDiscountPrice - discountAmount;
 
     expect(calculateTripFinance(finalPrice)).toEqual({
-      grossAmount: 85_000,
-      companyCommissionAmount: 8_500,
-      driverNetAmount: 76_500,
+      grossAmount: 850,
+      companyCommissionAmount: 85,
+      driverNetAmount: 765,
     });
   });
 
@@ -37,19 +37,19 @@ describe("حساب عمولة شركة جربوع", () => {
   });
 
   it("يتراكم رصيد الشركة من عمولات الرحلات ويصبح صفراً بعد دفع كامل الرصيد", () => {
-    expect(calculateDriverCompanyBalance([10_000, 8_500, 450], [18_950])).toEqual({
-      totalCommissionAmount: 18_950,
-      paidAmount: 18_950,
+    expect(calculateDriverCompanyBalance([100, 85, 5], [190])).toEqual({
+      totalCommissionAmount: 190,
+      paidAmount: 190,
       outstandingAmount: 0,
     });
   });
 
   it("يبقي المتبقي ظاهراً عند تسوية جزئية ويرفض إدخال دفعة تتجاوز المستحق", () => {
-    expect(calculateDriverCompanyBalance([10_000, 8_500], [2_000])).toEqual({
-      totalCommissionAmount: 18_500,
-      paidAmount: 2_000,
-      outstandingAmount: 16_500,
+    expect(calculateDriverCompanyBalance([100, 85], [20])).toEqual({
+      totalCommissionAmount: 185,
+      paidAmount: 20,
+      outstandingAmount: 165,
     });
-    expect(() => calculateDriverCompanyBalance([10_000], [10_001])).toThrow("PAYMENT_EXCEEDS_OUTSTANDING_BALANCE");
+    expect(() => calculateDriverCompanyBalance([100], [101])).toThrow("PAYMENT_EXCEEDS_OUTSTANDING_BALANCE");
   });
 });

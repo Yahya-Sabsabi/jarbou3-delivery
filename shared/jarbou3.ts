@@ -12,6 +12,12 @@ export const HAMA_CENTER = {
 
 export const HAMA_SERVICE_RADIUS_METERS = 7_000;
 
+/** Monetary values are stored and displayed in the new Syrian pound (SYP-N). */
+export const SYRIAN_POUND_UNIT = "SYP_NEW" as const;
+export const OLD_SYRIAN_POUNDS_PER_NEW = 100;
+export const HIGH_VALUE_ORDER_THRESHOLD_SYP = 1_000;
+export const DRIVER_MINIMUM_AVAILABLE_BALANCE_SYP = 100;
+
 export type MapPoint = { latitude: number; longitude: number };
 
 export const VALID_HAMA_STOPS = [
@@ -44,9 +50,9 @@ export function isInsideHama(latitude: number, longitude: number) {
 }
 
 export function estimateDeliveryPrice(distanceM: number) {
-  return Math.max(6_000, Math.ceil(distanceM / 1_000) * 2_500);
+  return Math.max(60, Math.ceil(distanceM / 1_000) * 25);
 }
 
 export function formatSyp(amount: number) {
-  return new Intl.NumberFormat('ar-SY', { maximumFractionDigits: 0 }).format(amount) + ' ل.س';
+  return new Intl.NumberFormat('ar-SY', { maximumFractionDigits: 0 }).format(amount) + ' ل.س جديدة';
 }
