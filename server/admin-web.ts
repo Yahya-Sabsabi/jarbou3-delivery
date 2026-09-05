@@ -265,6 +265,7 @@ const archiveSchema = z.object({ archiveKind: z.enum(["weekly_documents", "month
 const driverCompanyPaymentSchema = z.object({ amount: z.number().int().positive().max(100_000_000), paymentMethod: z.literal("cash"), paymentReference: z.string().trim().max(120).nullable().optional(), note: z.string().trim().max(500).nullable().optional() });
 const driverInviteSchema = z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().trim().min(8).max(24), vehicleType: z.enum(["motorcycle", "electric_scooter"]).nullable().optional(), note: z.string().trim().max(500).nullable().optional() });
 const problemReportStatusSchema = z.object({ status: z.enum(["open", "reviewed", "resolved"]), adminNote: z.string().trim().max(1000).nullable().optional() });
+const pricingSettingsSchema = z.object({ minimumFare: z.number().int().positive().max(1_000_000_000), perKm: z.number().int().positive().max(1_000_000_000) });
 const releaseSchema = z.object({ minVersion: z.string().regex(/^\d+\.\d+\.\d+$/).nullable(), forceUpdate: z.boolean(), updateUrl: z.string().url().nullable() }).superRefine((value, context) => {
   if (value.forceUpdate && (!value.minVersion || !value.updateUrl)) context.addIssue({ code: "custom", message: "FORCED_RELEASE_REQUIRES_VERSION_AND_URL" });
 });
@@ -1078,6 +1079,34 @@ export function registerAdminWebRoutes(app: Express) {
       res.json({ payment: data });
     } catch (error) {
       res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "DRIVER_COMPANY_PAYMENT_FAILED" });
+    }
+  });
+
+  app.get("/admin/api/pricing-settings", async (req, res) => {
+    try {
+      requireSiteSession(req);
+      const { data, error } = await asService().rpc("get_delivery_pricing_settings");
+      if (error) throw new Error(error.message);
+      const row = Array.isArray(data) ? data[0] : data;
+      res.json({ settings: { minimumFare: Number(row?.minimum_fare ?? 60), perKm: Number(row?.per_km ?? 25), currencyCode: row?.currency_code ?? "SYP_NEW", updatedAt: row?.updated_at ?? null } });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: "PRICING_SETTINGS_UNAVAILABLE" });
+    }
+  });
+
+  app.put("/admin/api/pricing-settings", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const parsed = pricingSettingsSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "INVALID_PRICING_SETTINGS" });
+      const { data, error } = await asService().rpc("update_delivery_pricing_settings", { p_minimum_fare: parsed.data.minimumFare, p_per_km: parsed.data.perKm });
+      if (error) throw new Error(error.message);
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) return res.status(500).json({ error: "PRICING_SETTINGS_NOT_UPDATED" });
+      res.json({ updated: true, settings: { minimumFare: Number(row.minimum_fare), perKm: Number(row.per_km), currencyCode: row.currency_code, updatedAt: row.updated_at } });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "PRICING_SETTINGS_UPDATE_FAILED" });
     }
   });
 

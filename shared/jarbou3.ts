@@ -18,6 +18,13 @@ export const OLD_SYRIAN_POUNDS_PER_NEW = 100;
 export const HIGH_VALUE_ORDER_THRESHOLD_SYP = 1_000;
 export const DRIVER_MINIMUM_AVAILABLE_BALANCE_SYP = 100;
 
+export type DeliveryPricing = {
+  minimumFare: number;
+  perKm: number;
+};
+
+export const DEFAULT_DELIVERY_PRICING: DeliveryPricing = { minimumFare: 60, perKm: 25 };
+
 export type MapPoint = { latitude: number; longitude: number };
 
 export const VALID_HAMA_STOPS = [
@@ -49,8 +56,8 @@ export function isInsideHama(latitude: number, longitude: number) {
   return insideBox && distanceMeters(HAMA_CENTER, { latitude, longitude }) <= HAMA_SERVICE_RADIUS_METERS;
 }
 
-export function estimateDeliveryPrice(distanceM: number) {
-  return Math.max(60, Math.ceil(distanceM / 1_000) * 25);
+export function estimateDeliveryPrice(distanceM: number, pricing: DeliveryPricing = DEFAULT_DELIVERY_PRICING) {
+  return Math.max(pricing.minimumFare, Math.ceil(distanceM / 1_000) * pricing.perKm);
 }
 
 export function formatSyp(amount: number) {
