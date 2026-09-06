@@ -9,22 +9,26 @@ function readProjectFile(relativePath: string) {
 }
 
 describe("admin map boot contract", () => {
-  it("renders overview immediately after an authenticated admin session", () => {
-    const app = readProjectFile("admin-site/app.js");
-    expect(app).toContain("activateView(\"overview\"); try { await refreshDashboard(); activateView(\"overview\"); subscribeNotifications(); } catch (error) { handleApiError(error); }");
-  });
-
-  it("renders the overview map after the DOM is injected and retries Leaflet safely", () => {
+  it("renders overview immediately without mounting a map", () => {
     const app = readProjectFile("admin-site/app.js");
     const liveMap = readProjectFile("admin-site/live-map.js");
-    expect(app).toContain("if (typeof window.refreshOverviewMap === \"function\") window.refreshOverviewMap(state.dashboard);");
+    expect(app).toContain("activateView(\"overview\"); try { await refreshDashboard(); activateView(\"overview\"); subscribeNotifications(); } catch (error) { handleApiError(error); }");
+    expect(app).not.toContain("overview-fleet-map");
+    expect(app).not.toContain("refreshOverviewMap");
+    expect(liveMap).not.toContain("overview-fleet-map");
+    expect(liveMap).not.toContain("refreshOverviewMap");
+  });
+
+  it("opens the fleet map directly and retries only its own Leaflet target", () => {
+    const app = readProjectFile("admin-site/app.js");
+    const liveMap = readProjectFile("admin-site/live-map.js");
     expect(app).toContain('if (view === "fleet") renderFleetMap();');
     expect(app).toContain('fleet:"خريطة الأسطول"');
-    expect(liveMap).toContain("const target = document.querySelector(\"#overview-fleet-map\");");
-    expect(liveMap).toContain("document.body.dataset.overviewMapAttempts");
-    expect(liveMap).toContain("window.setTimeout(() => installDriverMap(payload), 150);");
+    expect(liveMap).toContain('const target = document.querySelector("#fleet-map");');
+    expect(liveMap).toContain("window.installFleetOperationsMap(payload)");
     expect(liveMap).toContain("if (!window.L) {");
     expect(liveMap).toContain("window.L.tileLayer(\"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png\"");
+    expect(liveMap).toContain("window.refreshFleetOperationsMap");
   });
 
   it("allows OpenStreetMap tiles through the admin CSP", () => {

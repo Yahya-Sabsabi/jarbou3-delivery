@@ -5,14 +5,14 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(resolve(process.cwd(), "components/jarbou3-app.tsx"), "utf8");
 
 describe("mobile privacy consent flow", () => {
-  it("moves to workspace immediately after consent mutation succeeds", () => {
-    expect(source).toContain('onSuccess: () => { setStage("workspace");');
-    expect(source).toContain("void privacyConsent.refetch().catch(() => undefined);");
+  it("requires consent in account creation", () => {
+    expect(source).toContain("policyAccepted");
+    expect(source).toContain("أوافق على");
+    expect(source).toContain("disabled={submitOnboarding.isPending || !policyAccepted}");
   });
 
-  it("keeps the accept action available even when consent status needs retry", () => {
-    expect(source).toContain("privacyConsent.isError ? <Pressable");
-    expect(source).toContain("<Text style={styles.actionText}>أوافق وأتابع</Text>");
-    expect(source).toContain("تعذر حفظ الموافقة على الخادم");
+  it("does not reopen a consent gate during sign-in or session restore", () => {
+    expect(source).toContain("Privacy consent is collected during account creation");
+    expect(source).not.toContain('setStage("consent")');
   });
 });

@@ -833,10 +833,7 @@ export function Jarbou3App() {
     setRuntimeReadiness(await readRuntimeReadiness());
   };
   const updateRequired = Boolean(releaseSettings.data?.forceUpdate && releaseSettings.data.updateUrl && isVersionBelow(currentVersion, releaseSettings.data.minVersion));
-  useEffect(() => {
-    if (!savedToken || !savedSession.data || savedSession.data.pendingPassword || privacyConsent.isLoading) return;
-    if (privacyConsent.isError || (privacyConsent.data && !privacyConsent.data.accepted)) setStage("consent");
-  }, [savedToken, savedSession.data, privacyConsent.data, privacyConsent.isError, privacyConsent.isLoading]);
+  // Privacy consent is collected during account creation; sign-in must not reopen the consent gate.
   const runtimeBlocked = stage === "workspace" && !activeTrip && (!runtimeReadiness || !runtimeReadiness.online || !runtimeReadiness.gpsEnabled || !runtimeReadiness.locationGranted);
   const runtimeProblem = !runtimeReadiness ? "جارٍ التحقق من الجاهزية…" : !runtimeReadiness.online ? "يلزم اتصال بالإنترنت لاستخدام OPTIMUS X." : !runtimeReadiness.locationGranted ? "اسمح للموقع الجغرافي لاستخدام OPTIMUS X." : "فعّل خدمات GPS من إعدادات الجهاز ثم أعد المحاولة.";
 
