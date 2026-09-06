@@ -11,12 +11,15 @@ function readProjectFile(relativePath: string) {
 describe("admin map boot contract", () => {
   it("renders overview immediately after an authenticated admin session", () => {
     const app = readProjectFile("admin-site/app.js");
-    expect(app).toContain("await refreshDashboard(); activateView(\"overview\"); subscribeNotifications();");
+    expect(app).toContain("activateView(\"overview\"); try { await refreshDashboard(); activateView(\"overview\"); subscribeNotifications(); } catch (error) { handleApiError(error); }");
   });
 
-  it("re-renders the first overview after the deferred map module loads", () => {
+  it("renders the overview map after the DOM is injected and retries Leaflet safely", () => {
+    const app = readProjectFile("admin-site/app.js");
     const liveMap = readProjectFile("admin-site/live-map.js");
-    expect(liveMap).toContain("if (!adminView.hidden && state.currentView === \"overview\" && state.dashboard) renderOverview();");
+    expect(app).toContain("if (typeof window.refreshOverviewMap === \"function\") window.refreshOverviewMap(state.dashboard);");
+    expect(liveMap).toContain("const target = document.querySelector(\"#overview-fleet-map\");");
+    expect(liveMap).toContain("if (!window.L) {");
     expect(liveMap).toContain("window.L.tileLayer(\"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png\"");
   });
 

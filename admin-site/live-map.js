@@ -2,15 +2,16 @@ let liveDriverMap = null;
 let overviewMarkerLayers = null;
 
 function installDriverMap(payload) {
-  const target = document.querySelector(".map-panel");
+  const target = document.querySelector("#overview-fleet-map");
   if (!target) return;
-  if (!window.L) { window.setTimeout(() => installDriverMap(payload), 120); return; }
+  if (!window.L) { const attempts = Number(target.dataset.leafletAttempts || "0"); if (attempts >= 40) { target.innerHTML = "<p class=\"map-empty\">تعذر تحميل مكتبة الخريطة. تحقق من الاتصال ثم حدّث الصفحة.</p>"; delete target.dataset.leafletAttempts; return; } target.dataset.leafletAttempts = String(attempts + 1); window.setTimeout(() => installDriverMap(payload), 120); return; } delete target.dataset.leafletAttempts;
   const sourceDrivers = Array.isArray(payload) ? payload : payload?.drivers || [];
   const sourceCustomers = Array.isArray(payload) ? [] : payload?.customers || [];
   const drivers = sourceDrivers.map((driver) => ({ ...driver, latitude: Number(driver.latitude ?? driver.last_location_lat), longitude: Number(driver.longitude ?? driver.last_location_lng) })).filter((driver) => Number.isFinite(driver.latitude) && Number.isFinite(driver.longitude));
   const customers = sourceCustomers.map((customer) => ({ ...customer, latitude: Number(customer.latitude ?? customer.last_location_lat), longitude: Number(customer.longitude ?? customer.last_location_lng) })).filter((customer) => Number.isFinite(customer.latitude) && Number.isFinite(customer.longitude));
   const existingContainer = liveDriverMap?.getContainer?.();
-  if (!liveDriverMap || existingContainer !== target) {
+  const isNewMap = !liveDriverMap || !existingContainer || existingContainer !== target;
+  if (isNewMap) {
     if (liveDriverMap) liveDriverMap.remove();
     target.innerHTML = "";
     liveDriverMap = window.L.map(target, { zoomControl: true }).setView([35.1319, 36.7547], 12);
@@ -61,7 +62,7 @@ window.installFleetOperationsMap = function installFleetOperationsMap(payload) {
   }
   delete target.dataset.leafletAttempts;
   const existingContainer = fleetOperationsMap?.getContainer?.();
-  const isNewMap = !fleetOperationsMap || !existingContainer || existingContainer !== target;
+  const isNewMap = !fleetOperationsMap || !existingContainer || existingContainer !== target || !target.querySelector(".leaflet-container");
   if (isNewMap) {
     if (fleetOperationsMap) fleetOperationsMap.remove();
     target.innerHTML = "";
@@ -126,7 +127,7 @@ window.installFleetOperationsMap = function installFleetOperationsMap(payload) {
 };
 
 window.refreshFleetOperationsMap = async function refreshFleetOperationsMap() {
-  if (!fleetOperationsMap || fleetRefreshInFlight || state.currentView !== "fleet") return;
+  if (fleetRefreshInFlight || state.currentView !== "fleet") return;
   fleetRefreshInFlight = true;
   try {
     const payload = await api("/admin/api/fleet-map");
@@ -137,18 +138,6 @@ window.refreshFleetOperationsMap = async function refreshFleetOperationsMap() {
     fleetRefreshInFlight = false;
   }
 };
-
-const originalRenderOverview = renderOverview;
-renderOverview = function () {
-  originalRenderOverview();
-  installDriverMap(state.dashboard || {});
-};
-
-// app.js may open the dashboard before this deferred map module finishes loading.
-// Re-render once so the first overview visit gets a real Leaflet map immediately.
-window.setTimeout(() => {
-  if (!adminView.hidden && state.currentView === "overview" && state.dashboard) renderOverview();
-}, 0);
 
 document.querySelector("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();

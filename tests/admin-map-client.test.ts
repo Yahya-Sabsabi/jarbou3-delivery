@@ -14,10 +14,11 @@ describe("خريطة بوابة الإدارة", () => {
 
   it("لا يعيد إنشاء خريطة النظرة العامة عند كل تحديث دوري", () => {
     expect(liveMap).toContain("overviewMarkerLayers?.clearLayers();");
-    expect(liveMap).toContain("if (!liveDriverMap || existingContainer !== target)");
+    expect(liveMap).toContain("const target = document.querySelector(\"#overview-fleet-map\");");
+    expect(liveMap).toContain("const isNewMap = !liveDriverMap || !existingContainer || existingContainer !== target;");
   });
 
   it("يسمح بطلب صور بلاطات OpenStreetMap عبر CSP الإدارة", () => {
-    expect(serverEntry).toContain("img-src 'self' data: https://*.tile.openstreetmap.org;");
+    expect(serverEntry).toContain("img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org");
   });
 });
