@@ -36,6 +36,6 @@ describe("admin map boot contract", () => {
     expect(server).toContain("connect-src 'self' https://*.tile.openstreetmap.org https://tile.openstreetmap.org");
     expect(server).toContain("img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org");
     const html = readProjectFile("admin-site/index.html");
-    expect(html).toContain("live-map.js?v=admin-map-20260906-2");
+    expect(html).toContain("live-map.js?v=admin-map-20260906-3");
   });
 });

@@ -22,12 +22,12 @@ window.installFleetOperationsMap = function installFleetOperationsMap(payload) {
   }
   delete target.dataset.leafletAttempts;
   const existingContainer = fleetOperationsMap?.getContainer?.();
-  const isNewMap = !fleetOperationsMap || !existingContainer || existingContainer !== target || !target.querySelector(".leaflet-container");
+  const isNewMap = !fleetOperationsMap || !existingContainer || existingContainer !== target || !target.classList.contains("leaflet-container");
   if (isNewMap) {
     if (fleetOperationsMap) fleetOperationsMap.remove();
     target.innerHTML = "";
-    fleetOperationsMap = window.L.map(target, { zoomControl:true }).setView([35.1319, 36.7547], 12);
-    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19, attribution:"© OpenStreetMap" }).addTo(fleetOperationsMap).on("tileerror", () => { if (!target.querySelector(".map-empty")) target.insertAdjacentHTML("beforeend", "<p class=\"map-empty\">تعذر تحميل بلاطات الخريطة. تحقق من اتصال الإنترنت أو سياسة الشبكة.</p>"); });
+    fleetOperationsMap = window.L.map(target).setView([35.13, 36.76], 12);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(fleetOperationsMap).on("tileerror", () => { if (!target.querySelector(".map-empty")) target.insertAdjacentHTML("beforeend", "<p class=\"map-empty\">تعذر تحميل بلاطات الخريطة. تحقق من اتصال الإنترنت أو سياسة الشبكة.</p>"); });
     fleetRouteLayers = window.L.layerGroup().addTo(fleetOperationsMap);
     fleetMarkerLayers = window.L.layerGroup().addTo(fleetOperationsMap);
   } else {

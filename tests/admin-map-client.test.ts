@@ -19,6 +19,9 @@ describe("خريطة بوابة الإدارة", () => {
     expect(liveMap).toContain("driver-marker-dot");
     expect(liveMap).toContain("last_location_lat");
     expect(liveMap).toContain("window.refreshFleetOperationsMap");
+    expect(liveMap).toContain('!target.classList.contains("leaflet-container")');
+    expect(liveMap).toContain("window.L.map(target).setView([35.13, 36.76], 12)");
+    expect(liveMap).toContain('window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19');
     expect(liveMap).toContain("تعذر تحميل بلاطات الخريطة");
   });
 
