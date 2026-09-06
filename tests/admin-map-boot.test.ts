@@ -18,6 +18,8 @@ describe("admin map boot contract", () => {
     const app = readProjectFile("admin-site/app.js");
     const liveMap = readProjectFile("admin-site/live-map.js");
     expect(app).toContain("if (typeof window.refreshOverviewMap === \"function\") window.refreshOverviewMap(state.dashboard);");
+    expect(app).toContain('if (view === "fleet") renderFleetMap();');
+    expect(app).toContain('fleet:"خريطة الأسطول"');
     expect(liveMap).toContain("const target = document.querySelector(\"#overview-fleet-map\");");
     expect(liveMap).toContain("document.body.dataset.overviewMapAttempts");
     expect(liveMap).toContain("window.setTimeout(() => installDriverMap(payload), 150);");
