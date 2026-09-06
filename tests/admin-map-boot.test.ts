@@ -19,6 +19,8 @@ describe("admin map boot contract", () => {
     const liveMap = readProjectFile("admin-site/live-map.js");
     expect(app).toContain("if (typeof window.refreshOverviewMap === \"function\") window.refreshOverviewMap(state.dashboard);");
     expect(liveMap).toContain("const target = document.querySelector(\"#overview-fleet-map\");");
+    expect(liveMap).toContain("document.body.dataset.overviewMapAttempts");
+    expect(liveMap).toContain("window.setTimeout(() => installDriverMap(payload), 150);");
     expect(liveMap).toContain("if (!window.L) {");
     expect(liveMap).toContain("window.L.tileLayer(\"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png\"");
   });
@@ -27,5 +29,7 @@ describe("admin map boot contract", () => {
     const server = readProjectFile("server/_core/index.ts");
     expect(server).toContain("connect-src 'self' https://*.tile.openstreetmap.org https://tile.openstreetmap.org");
     expect(server).toContain("img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org");
+    const html = readProjectFile("admin-site/index.html");
+    expect(html).toContain("live-map.js?v=admin-map-20260906-2");
   });
 });

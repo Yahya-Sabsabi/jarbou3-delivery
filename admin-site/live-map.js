@@ -3,7 +3,15 @@ let overviewMarkerLayers = null;
 
 function installDriverMap(payload) {
   const target = document.querySelector("#overview-fleet-map");
-  if (!target) return;
+  if (!target) {
+    const attempts = Number(document.body.dataset.overviewMapAttempts || "0");
+    if (!adminView.hidden && state.currentView === "overview" && attempts < 40) {
+      document.body.dataset.overviewMapAttempts = String(attempts + 1);
+      window.setTimeout(() => installDriverMap(payload), 150);
+    }
+    return;
+  }
+  delete document.body.dataset.overviewMapAttempts;
   if (!window.L) { const attempts = Number(target.dataset.leafletAttempts || "0"); if (attempts >= 40) { target.innerHTML = "<p class=\"map-empty\">تعذر تحميل مكتبة الخريطة. تحقق من الاتصال ثم حدّث الصفحة.</p>"; delete target.dataset.leafletAttempts; return; } target.dataset.leafletAttempts = String(attempts + 1); window.setTimeout(() => installDriverMap(payload), 120); return; } delete target.dataset.leafletAttempts;
   const sourceDrivers = Array.isArray(payload) ? payload : payload?.drivers || [];
   const sourceCustomers = Array.isArray(payload) ? [] : payload?.customers || [];
@@ -15,7 +23,7 @@ function installDriverMap(payload) {
     if (liveDriverMap) liveDriverMap.remove();
     target.innerHTML = "";
     liveDriverMap = window.L.map(target, { zoomControl: true }).setView([35.1319, 36.7547], 12);
-    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(liveDriverMap);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(liveDriverMap).on("tileerror", () => { if (!target.querySelector(".map-empty")) target.insertAdjacentHTML("beforeend", "<p class=\"map-empty\">تعذر تحميل بلاطات الخريطة. تحقق من اتصال الإنترنت أو سياسة الشبكة.</p>"); });
     overviewMarkerLayers = window.L.layerGroup().addTo(liveDriverMap);
   } else {
     liveDriverMap.invalidateSize();
@@ -41,6 +49,12 @@ function installDriverMap(payload) {
 
 window.refreshOverviewMap = installDriverMap;
 
+// app.js is deferred before this module. If the first overview render happened
+// before this file loaded, attach the real Leaflet map on the next frame.
+window.setTimeout(() => {
+  if (!adminView.hidden && state.currentView === "overview" && state.dashboard) installDriverMap(state.dashboard);
+}, 0);
+
 let fleetOperationsMap = null;
 let fleetRouteLayers = null;
 let fleetMarkerLayers = null;
@@ -52,7 +66,10 @@ function fleetMinutes(order) { if (!order?.startedAt) return "لم يبدأ عد
 
 window.installFleetOperationsMap = function installFleetOperationsMap(payload) {
   const target = document.querySelector("#fleet-map");
-  if (!target) return;
+  if (!target) {
+    if (!adminView.hidden && state.currentView === "fleet") window.setTimeout(() => window.installFleetOperationsMap(payload), 150);
+    return;
+  }
   if (!window.L) {
     const attempts = Number(target.dataset.leafletAttempts || "0");
     if (attempts >= 40) { target.innerHTML = "<p class=\"map-empty\">تعذر تحميل مكتبة الخريطة. تحقق من الاتصال ثم حدّث الصفحة.</p>"; delete target.dataset.leafletAttempts; return; }
@@ -67,7 +84,7 @@ window.installFleetOperationsMap = function installFleetOperationsMap(payload) {
     if (fleetOperationsMap) fleetOperationsMap.remove();
     target.innerHTML = "";
     fleetOperationsMap = window.L.map(target, { zoomControl:true }).setView([35.1319, 36.7547], 12);
-    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19, attribution:"© OpenStreetMap" }).addTo(fleetOperationsMap);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19, attribution:"© OpenStreetMap" }).addTo(fleetOperationsMap).on("tileerror", () => { if (!target.querySelector(".map-empty")) target.insertAdjacentHTML("beforeend", "<p class=\"map-empty\">تعذر تحميل بلاطات الخريطة. تحقق من اتصال الإنترنت أو سياسة الشبكة.</p>"); });
     fleetRouteLayers = window.L.layerGroup().addTo(fleetOperationsMap);
     fleetMarkerLayers = window.L.layerGroup().addTo(fleetOperationsMap);
   } else {
