@@ -12,6 +12,20 @@ export const HAMA_CENTER = {
 
 export const HAMA_SERVICE_RADIUS_METERS = 7_000;
 
+/** Monetary values are stored and displayed in the new Syrian pound (SYP-N). */
+export const SYRIAN_POUND_UNIT = "SYP_NEW" as const;
+export const OLD_SYRIAN_POUNDS_PER_NEW = 100;
+export const HIGH_VALUE_ORDER_THRESHOLD_SYP = 1_000;
+export const DRIVER_MINIMUM_AVAILABLE_BALANCE_SYP = 100;
+
+export type DeliveryPricing = {
+  minimumFare: number;
+  perKm: number;
+  perMinute: number;
+};
+
+export const DEFAULT_DELIVERY_PRICING: DeliveryPricing = { minimumFare: 60, perKm: 25, perMinute: 1 };
+
 export type MapPoint = { latitude: number; longitude: number };
 
 export const VALID_HAMA_STOPS = [
@@ -43,10 +57,12 @@ export function isInsideHama(latitude: number, longitude: number) {
   return insideBox && distanceMeters(HAMA_CENTER, { latitude, longitude }) <= HAMA_SERVICE_RADIUS_METERS;
 }
 
-export function estimateDeliveryPrice(distanceM: number) {
-  return Math.max(6_000, Math.ceil(distanceM / 1_000) * 2_500);
+export function estimateDeliveryPrice(distanceM: number, durationSeconds = 0, pricing: DeliveryPricing = DEFAULT_DELIVERY_PRICING) {
+  const distanceFare = Math.ceil(Math.max(0, distanceM) / 1_000) * pricing.perKm;
+  const durationFare = Math.ceil(Math.max(0, durationSeconds) / 60) * pricing.perMinute;
+  return Math.max(pricing.minimumFare, distanceFare + durationFare);
 }
 
 export function formatSyp(amount: number) {
-  return new Intl.NumberFormat('ar-SY', { maximumFractionDigits: 0 }).format(amount) + ' ل.س';
+  return new Intl.NumberFormat('ar-SY', { maximumFractionDigits: 0 }).format(amount) + ' ل.س جديدة';
 }

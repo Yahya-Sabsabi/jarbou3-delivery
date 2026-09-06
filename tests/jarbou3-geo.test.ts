@@ -18,12 +18,13 @@ describe("Jarbou3 Hama service boundary", () => {
     expect(isInsideHama(outsideRadius.latitude, outsideRadius.longitude)).toBe(false);
   });
 
-  it("derives a non-zero local delivery price from the route distance", () => {
-    expect(estimateDeliveryPrice(0)).toBe(6000);
-    expect(estimateDeliveryPrice(4200)).toBeGreaterThan(6000);
+  it("derives a non-zero local delivery price from distance and duration", () => {
+    expect(estimateDeliveryPrice(0, 0)).toBe(60);
+    expect(estimateDeliveryPrice(4200, 0)).toBe(125);
+    expect(estimateDeliveryPrice(4200, 600)).toBe(135);
   });
 
   it("formats prices using the new Syrian pound label", () => {
-    expect(formatSyp(12000)).toContain("ل.س");
+    expect(formatSyp(120)).toContain("ل.س جديدة");
   });
 });

@@ -1,5 +1,5 @@
 import { COOKIE_NAME } from "../shared/const.js";
-import { HAMA_BOUNDS, distanceMeters, isInsideHama } from "../shared/jarbou3";
+import { HAMA_BOUNDS, DEFAULT_DELIVERY_PRICING, distanceMeters, estimateDeliveryPrice, isInsideHama } from "../shared/jarbou3";
 import { isSameJarbou3Phone, normalizeJarbou3Otp, normalizeJarbou3Phone } from "../shared/jarbou3-phone";
 import bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "node:crypto";
@@ -190,6 +190,13 @@ export const appRouter = router({
       const { data, error } = await asService().from("app_release_settings").select("min_version,force_update,update_url,updated_at").eq("singleton", true).maybeSingle();
       if (error) throw new Error(error.message);
       return { minVersion: data?.min_version ?? null, forceUpdate: Boolean(data?.force_update), updateUrl: data?.update_url ?? null, updatedAt: data?.updated_at ?? null };
+    }),
+
+    pricingSettings: publicProcedure.query(async () => {
+      const { data, error } = await asService().rpc("get_delivery_pricing_settings");
+      if (error) throw new Error(error.message);
+      const row = Array.isArray(data) ? data[0] : data;
+      return { minimumFare: Number(row?.minimum_fare ?? 60), perKm: Number(row?.per_km ?? 25), perMinute: Number(row?.per_minute ?? 1), currencyCode: row?.currency_code ?? "SYP_NEW", updatedAt: row?.updated_at ?? null };
     }),
 
     previewDiscount: publicProcedure
@@ -577,15 +584,20 @@ export const appRouter = router({
       }),
 
     createOrder: publicProcedure
-      .input(tokenInput.extend({ sourceAddress: z.string().trim().min(3).max(300), destinationAddress: z.string().trim().min(3).max(300), source: pointInput, destination: pointInput, estimatedPrice: z.number().int().nonnegative(), paymentMethod: z.enum(["cash", "sham_cash"]), distanceM: z.number().int().nonnegative(), discountCode: z.string().trim().max(32).optional() }))
+      .input(tokenInput.extend({ sourceAddress: z.string().trim().min(3).max(300), destinationAddress: z.string().trim().min(3).max(300), source: pointInput, destination: pointInput, estimatedPrice: z.number().int().nonnegative(), paymentMethod: z.enum(["cash", "sham_cash"]), distanceM: z.number().int().nonnegative(), durationSeconds: z.number().int().nonnegative().max(86_400), discountCode: z.string().trim().max(32).optional() }))
       .mutation(async ({ input }) => {
         const { authUser } = await requireRole(input.accessToken, ["customer"]);
         assertHamaPoint(input.source.latitude, input.source.longitude);
         assertHamaPoint(input.destination.latitude, input.destination.longitude);
         if (!isInsideHama(input.destination.latitude, input.destination.longitude)) throw new Error("OUTSIDE_HAMA");
-        const discount = await resolveActiveDiscount(input.discountCode, input.estimatedPrice, authUser.id);
+        const { data: pricingRows, error: pricingError } = await asService().rpc("get_delivery_pricing_settings");
+        if (pricingError) throw new Error(pricingError.message);
+        const pricingRow = Array.isArray(pricingRows) ? pricingRows[0] : pricingRows;
+        const serverPricing = pricingRow ? { minimumFare: Number(pricingRow.minimum_fare), perKm: Number(pricingRow.per_km), perMinute: Number(pricingRow.per_minute ?? 1) } : DEFAULT_DELIVERY_PRICING;
+        const serverEstimatedPrice = estimateDeliveryPrice(input.distanceM, input.durationSeconds, serverPricing);
+        const discount = await resolveActiveDiscount(input.discountCode, serverEstimatedPrice, authUser.id);
         const { hash } = await createOtpHash();
-        const { data, error } = await asUser(input.accessToken).from("orders").insert({ customer_id: authUser.id, source_address: input.sourceAddress, source_lat: input.source.latitude, source_lng: input.source.longitude, destination_address: input.destinationAddress, destination_lat: input.destination.latitude, destination_lng: input.destination.longitude, estimated_price: input.estimatedPrice, pre_discount_price: input.estimatedPrice, discount_amount: discount.discountAmount, discount_code_id: discount.discountCodeId, final_price: discount.finalPrice, payment_method: input.paymentMethod, distance_m: input.distanceM, status: "requested", delivery_otp_hash: hash }).select("id,status,created_at,final_price,discount_amount").single();
+        const { data, error } = await asUser(input.accessToken).from("orders").insert({ customer_id: authUser.id, source_address: input.sourceAddress, source_lat: input.source.latitude, source_lng: input.source.longitude, destination_address: input.destinationAddress, destination_lat: input.destination.latitude, destination_lng: input.destination.longitude, estimated_price: serverEstimatedPrice, pre_discount_price: serverEstimatedPrice, discount_amount: discount.discountAmount, discount_code_id: discount.discountCodeId, final_price: discount.finalPrice, payment_method: input.paymentMethod, distance_m: input.distanceM, estimated_duration_seconds: input.durationSeconds, status: "requested", delivery_otp_hash: hash }).select("id,status,created_at,final_price,discount_amount").single();
         if (error) throw new Error(error.message);
         try {
           const offer = await assignNextDriverOffer(data.id);
