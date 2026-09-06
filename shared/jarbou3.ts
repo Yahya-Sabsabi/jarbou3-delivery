@@ -21,9 +21,10 @@ export const DRIVER_MINIMUM_AVAILABLE_BALANCE_SYP = 100;
 export type DeliveryPricing = {
   minimumFare: number;
   perKm: number;
+  perMinute: number;
 };
 
-export const DEFAULT_DELIVERY_PRICING: DeliveryPricing = { minimumFare: 60, perKm: 25 };
+export const DEFAULT_DELIVERY_PRICING: DeliveryPricing = { minimumFare: 60, perKm: 25, perMinute: 1 };
 
 export type MapPoint = { latitude: number; longitude: number };
 
@@ -56,8 +57,10 @@ export function isInsideHama(latitude: number, longitude: number) {
   return insideBox && distanceMeters(HAMA_CENTER, { latitude, longitude }) <= HAMA_SERVICE_RADIUS_METERS;
 }
 
-export function estimateDeliveryPrice(distanceM: number, pricing: DeliveryPricing = DEFAULT_DELIVERY_PRICING) {
-  return Math.max(pricing.minimumFare, Math.ceil(distanceM / 1_000) * pricing.perKm);
+export function estimateDeliveryPrice(distanceM: number, durationSeconds = 0, pricing: DeliveryPricing = DEFAULT_DELIVERY_PRICING) {
+  const distanceFare = Math.ceil(Math.max(0, distanceM) / 1_000) * pricing.perKm;
+  const durationFare = Math.ceil(Math.max(0, durationSeconds) / 60) * pricing.perMinute;
+  return Math.max(pricing.minimumFare, distanceFare + durationFare);
 }
 
 export function formatSyp(amount: number) {

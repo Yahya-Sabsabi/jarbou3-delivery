@@ -165,9 +165,9 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
     if (!source || !destination) return;
     let active = true;
     setRouteLoading(true);
-    getOsrmRoute(source, destination).then((next) => { if (!active) return; const pricing = pricingSettings.data ? { minimumFare: pricingSettings.data.minimumFare, perKm: pricingSettings.data.perKm } : DEFAULT_DELIVERY_PRICING; setRoute({ ...next, price: estimateDeliveryPrice(next.distanceM, pricing) }); }).catch(() => { if (active) setRoute(null); }).finally(() => { if (active) setRouteLoading(false); });
+    getOsrmRoute(source, destination).then((next) => { if (!active) return; const pricing = pricingSettings.data ? { minimumFare: pricingSettings.data.minimumFare, perKm: pricingSettings.data.perKm, perMinute: pricingSettings.data.perMinute } : DEFAULT_DELIVERY_PRICING; setRoute({ ...next, price: estimateDeliveryPrice(next.distanceM, next.durationSeconds, pricing) }); }).catch(() => { if (active) setRoute(null); }).finally(() => { if (active) setRouteLoading(false); });
     return () => { active = false; };
-  }, [source, destination, pricingSettings.data?.minimumFare, pricingSettings.data?.perKm]);
+  }, [source, destination, pricingSettings.data?.minimumFare, pricingSettings.data?.perKm, pricingSettings.data?.perMinute]);
   useEffect(() => {
     const query = addressQuery.trim();
     if (page !== "order" || query.length < 2) {
@@ -287,7 +287,7 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
     if (!source || !destination || !route) return Alert.alert("اختر النقطتين", "ضع دبوس الاستلام ودبوس التسليم داخل دائرة حماة أولاً.");
     const accessToken = await jarbou3Session.getAccessToken();
     if (!accessToken) return Alert.alert("سجّل الدخول أولاً", "يلزم الدخول الآمن لإنشاء طلب محفوظ ومتابعة السائق.");
-    createOrder.mutate({ accessToken, sourceAddress: "نقطة الاستلام المحددة على الخريطة، حماة", destinationAddress: "وجهة التسليم المحددة على الخريطة، حماة", source, destination, estimatedPrice: route.price, paymentMethod: payment === "نقدي" ? "cash" : "sham_cash", distanceM: route.distanceM, discountCode: discountCode.trim() || undefined });
+    createOrder.mutate({ accessToken, sourceAddress: "نقطة الاستلام المحددة على الخريطة، حماة", destinationAddress: "وجهة التسليم المحددة على الخريطة، حماة", source, destination, estimatedPrice: route.price, paymentMethod: payment === "نقدي" ? "cash" : "sham_cash", distanceM: route.distanceM, durationSeconds: route.durationSeconds, discountCode: discountCode.trim() || undefined });
   };
   const verifyDiscount = async () => {
     if (!route || discountCode.trim().length < 3) return Alert.alert("أدخل الرمز", "اكتب رمز الخصم الذي وصلك ثم اضغط تحقق.");

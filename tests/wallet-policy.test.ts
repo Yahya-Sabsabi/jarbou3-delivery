@@ -8,6 +8,7 @@ const adminWeb = readFileSync(resolve(process.cwd(), "server/admin-web.ts"), "ut
 const adminUi = readFileSync(resolve(process.cwd(), "admin-site/app.js"), "utf8");
 const adminIndex = readFileSync(resolve(process.cwd(), "admin-site/index.html"), "utf8");
 const pricingMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/20260905_delivery_pricing_settings.sql"), "utf8");
+const pricingTimeMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/20260905_delivery_pricing_time.sql"), "utf8");
 const routers = readFileSync(resolve(process.cwd(), "server/routers.ts"), "utf8");
 
 describe("حماية دفتر رصيد السفير", () => {
@@ -30,13 +31,15 @@ describe("حماية دفتر رصيد السفير", () => {
   it("يثبت إعداد التسعير الإداري المحمي ووحدة الليرة الجديدة", () => {
     expect(pricingMigration).toContain("currency_code text not null default 'SYP_NEW'");
     expect(pricingMigration).toContain("if auth.role() <> 'service_role' and not private.is_admin() then");
+    expect(pricingTimeMigration).toContain("per_minute bigint");
+    expect(pricingTimeMigration).toContain("estimated_duration_seconds");
     expect(adminWeb).toContain('app.put("/admin/api/pricing-settings"');
     expect(adminUi).toContain("/admin/api/pricing-settings");
     expect(adminIndex).toContain('data-view="pricing"');
   });
 
   it("يثبت أن الخادم يعيد حساب السعر ولا يثق بقيمة العميل", () => {
-    expect(routers).toContain("const serverEstimatedPrice = estimateDeliveryPrice(input.distanceM, serverPricing)");
+    expect(routers).toContain("const serverEstimatedPrice = estimateDeliveryPrice(input.distanceM, input.durationSeconds, serverPricing)");
     expect(routers).toContain("estimated_price: serverEstimatedPrice");
     expect(routers).toContain('rpc("get_delivery_pricing_settings")');
   });
