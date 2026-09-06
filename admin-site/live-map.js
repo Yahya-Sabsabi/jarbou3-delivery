@@ -144,6 +144,12 @@ renderOverview = function () {
   installDriverMap(state.dashboard || {});
 };
 
+// app.js may open the dashboard before this deferred map module finishes loading.
+// Re-render once so the first overview visit gets a real Leaflet map immediately.
+window.setTimeout(() => {
+  if (!adminView.hidden && state.currentView === "overview" && state.dashboard) renderOverview();
+}, 0);
+
 document.querySelector("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   event.stopImmediatePropagation();
