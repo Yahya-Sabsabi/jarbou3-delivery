@@ -14,6 +14,7 @@ describe("Expo build authentication", () => {
       body: JSON.stringify({
         query: "query MeUserActorQuery { meUserActor { id username } }",
       }),
+      signal: AbortSignal.timeout(15_000),
     });
 
     expect(response.status).toBe(200);
