@@ -30,6 +30,7 @@ const env = {
   // App branding - update these values directly (do not use env vars)
   appName: "OPTIMUS X",
   appSlug: "jarbou3-delivery",
+  expoOwner: "yahyak32",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
   logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663276229936/mKruWVfgjjYJstzO.png",
@@ -43,6 +44,7 @@ const env = {
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
+  owner: env.expoOwner,
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
@@ -91,7 +93,7 @@ const config: ExpoConfig = {
   extra: {
     apiBaseUrl: env.apiBaseUrl,
     eas: {
-      projectId: "c377d81d-b28d-491e-83c5-f9f64fe9a2c3",
+      projectId: "a58c74b7-50f0-466a-ac49-d0629b9cad42",
     },
   },
   plugins: [
