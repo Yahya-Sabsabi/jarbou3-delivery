@@ -32,6 +32,7 @@ export type SavedActiveTrip = {
   destinationLat: number;
   destinationLng: number;
   distanceM: number;
+  started?: boolean;
   savedAt: string;
 };
 

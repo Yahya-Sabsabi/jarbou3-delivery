@@ -15,6 +15,8 @@ describe("customer-visible driver contact contract", () => {
     expect(repositorySource).toContain('.eq("role", "driver")');
     expect(repositorySource).toContain('.eq("is_active", true)');
     expect(repositorySource).toContain("fullName: typeof value.name === \"string\"");
+    expect(trackingBlock).toContain("createSignedUrl(verification.personal_photo_path, 300)");
+    expect(trackingBlock).toContain("photoUrl");
   });
 
   it("does not reopen a stale role form without an active request", () => {

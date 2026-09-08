@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AcceptRequestedOrder } from "../application/use-cases/accept-requested-order";
+import { StartAcceptedTrip } from "../application/use-cases/start-accepted-trip";
 import type { DeliveryOrder } from "../domain/entities/delivery-order";
 
 const order: DeliveryOrder = {
@@ -13,7 +14,8 @@ const order: DeliveryOrder = {
 describe("AcceptRequestedOrder", () => {
   it("validates the order id and delegates exactly once", async () => {
     const acceptRequestedOrder = vi.fn().mockResolvedValue(order);
-    const useCase = new AcceptRequestedOrder({ acceptRequestedOrder });
+    const startAcceptedTrip = vi.fn();
+    const useCase = new AcceptRequestedOrder({ acceptRequestedOrder, startAcceptedTrip });
 
     await expect(useCase.execute(order.id)).resolves.toEqual(order);
     expect(acceptRequestedOrder).toHaveBeenCalledOnce();
@@ -22,9 +24,29 @@ describe("AcceptRequestedOrder", () => {
 
   it("rejects malformed ids before touching the repository", async () => {
     const acceptRequestedOrder = vi.fn();
-    const useCase = new AcceptRequestedOrder({ acceptRequestedOrder });
+    const startAcceptedTrip = vi.fn();
+    const useCase = new AcceptRequestedOrder({ acceptRequestedOrder, startAcceptedTrip });
 
     await expect(useCase.execute("not-an-order-id")).rejects.toThrow("INVALID_ORDER_ID");
     expect(acceptRequestedOrder).not.toHaveBeenCalled();
+  });
+});
+
+describe("StartAcceptedTrip", () => {
+  it("validates the order id and delegates exactly once", async () => {
+    const startAcceptedTrip = vi.fn().mockResolvedValue(order);
+    const useCase = new StartAcceptedTrip({ acceptRequestedOrder: vi.fn(), startAcceptedTrip });
+
+    await expect(useCase.execute(order.id)).resolves.toEqual(order);
+    expect(startAcceptedTrip).toHaveBeenCalledOnce();
+    expect(startAcceptedTrip).toHaveBeenCalledWith(order.id);
+  });
+
+  it("rejects malformed ids before touching the repository", async () => {
+    const startAcceptedTrip = vi.fn();
+    const useCase = new StartAcceptedTrip({ acceptRequestedOrder: vi.fn(), startAcceptedTrip });
+
+    await expect(useCase.execute("not-an-order-id")).rejects.toThrow("INVALID_ORDER_ID");
+    expect(startAcceptedTrip).not.toHaveBeenCalled();
   });
 });

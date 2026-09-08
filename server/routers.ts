@@ -11,6 +11,7 @@ import { asPublic, asService, asUser, assertHamaPoint, createOtpHash, decodeData
 import { recordDriverLocation } from "./jarbou3-driver-location";
 import { JARBOU3_PRIVACY_POLICY_VERSION } from "../shared/jarbou3-privacy";
 import { AcceptRequestedOrder } from "../application/use-cases/accept-requested-order";
+import { StartAcceptedTrip } from "../application/use-cases/start-accepted-trip";
 import { SupabaseOrderRepository } from "../infrastructure/repositories/supabase-order-repository";
 import { SupabaseCustomerTripRepository } from "../infrastructure/repositories/supabase-customer-trip-repository";
 
@@ -617,6 +618,14 @@ export const appRouter = router({
         return acceptedOrder;
       }),
 
+    startTrip: publicProcedure
+      .input(tokenInput.extend({ orderId: z.string().uuid() }))
+      .mutation(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["driver"]);
+        const startedOrder = await new StartAcceptedTrip(new SupabaseOrderRepository(asUser(input.accessToken))).execute(input.orderId);
+        await notifyCustomer(startedOrder.customerId, "بدأت الرحلة", "وصل السفير إلى نقطة الاستلام وبدأ الرحلة. لم يعد الإلغاء متاحاً، ويمكنك متابعة الموقع أو إرسال بلاغ.", { orderId: startedOrder.id, status: "started" });
+        return startedOrder;
+      }),
     declineOrder: publicProcedure
       .input(tokenInput.extend({ orderId: z.string().uuid() }))
       .mutation(async ({ input }) => {
@@ -737,11 +746,35 @@ export const appRouter = router({
         return { updated: Boolean(data) };
       }),
 
+    cancelCustomerOrder: publicProcedure
+      .input(tokenInput.extend({ orderId: z.string().uuid() }))
+      .mutation(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["customer"]);
+        const { data, error } = await asUser(input.accessToken).rpc("cancel_order_by_customer", { p_order_id: input.orderId });
+        if (error) throw new Error(error.message);
+        if (data?.driver_id) await notifyDriver(data.driver_id, "أُلغي الطلب", "ألغى العميل الطلب قبل بدء الرحلة.", { orderId: data.id, status: "cancelled" });
+        return data;
+      }),
     currentCustomerTracking: publicProcedure
       .input(tokenInput)
       .query(async ({ input }) => {
         const { authUser } = await requireRole(input.accessToken, ["customer"]);
-        return new SupabaseCustomerTripRepository(asUser(input.accessToken)).findActiveForCustomer(authUser.id);
+        const tracking = await new SupabaseCustomerTripRepository(asUser(input.accessToken)).findActiveForCustomer(authUser.id);
+        if (!tracking?.driver_id || !tracking.driver) return tracking;
+        const { data: verification, error: verificationError } = await asService()
+          .from("drivers_verification")
+          .select("personal_photo_path")
+          .eq("user_id", tracking.driver_id)
+          .eq("status", "approved")
+          .maybeSingle();
+        if (verificationError) throw new Error(verificationError.message);
+        let photoUrl: string | null = null;
+        if (verification?.personal_photo_path) {
+          const { data: signed, error: signedError } = await asService().storage.from("jarbou3-private").createSignedUrl(verification.personal_photo_path, 300);
+          if (signedError) throw new Error(signedError.message);
+          photoUrl = signed?.signedUrl ?? null;
+        }
+        return { ...tracking, driver: { ...tracking.driver, photoUrl } };
       }),
 
     currentCustomerTripPath: publicProcedure

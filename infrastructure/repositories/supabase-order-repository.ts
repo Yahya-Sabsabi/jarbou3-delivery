@@ -5,7 +5,7 @@ export type RpcClient = {
   rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: { message: string } | null }>;
 };
 
-const STATUSES = new Set<DeliveryOrderStatus>(["requested", "accepted", "arriving", "awaiting_otp", "delivered", "cancelled"]);
+const STATUSES = new Set<DeliveryOrderStatus>(["requested", "accepted", "arriving", "started", "awaiting_otp", "delivered", "cancelled"]);
 
 function toDeliveryOrder(value: unknown): DeliveryOrder {
   if (!value || typeof value !== "object") throw new Error("ORDER_RESPONSE_INVALID");
@@ -28,6 +28,12 @@ export class SupabaseOrderRepository implements OrderRepository {
 
   async acceptRequestedOrder(orderId: string): Promise<DeliveryOrder> {
     const { data, error } = await this.client.rpc("accept_order", { p_order_id: orderId });
+    if (error) throw new Error(error.message);
+    return toDeliveryOrder(data);
+  }
+
+  async startAcceptedTrip(orderId: string): Promise<DeliveryOrder> {
+    const { data, error } = await this.client.rpc("start_trip", { p_order_id: orderId });
     if (error) throw new Error(error.message);
     return toDeliveryOrder(data);
   }

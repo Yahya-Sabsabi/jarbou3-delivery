@@ -4,6 +4,7 @@ export type CustomerVisibleDriver = {
   fullName: string;
   phone: string | null;
   vehicleType: DriverVehicleType | null;
+  photoUrl?: string | null;
 };
 
 export function driverVehicleLabel(vehicleType: DriverVehicleType | null) {

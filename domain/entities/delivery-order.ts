@@ -1,4 +1,4 @@
-export type DeliveryOrderStatus = "requested" | "accepted" | "arriving" | "awaiting_otp" | "delivered" | "cancelled";
+export type DeliveryOrderStatus = "requested" | "accepted" | "arriving" | "started" | "awaiting_otp" | "delivered" | "cancelled";
 
 export type DeliveryOrder = {
   id: string;
