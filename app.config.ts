@@ -155,8 +155,10 @@ const config: ExpoConfig = {
         android: {
           buildArchs: ["armeabi-v7a", "arm64-v8a"],
           minSdkVersion: 24,
-          enableMinifyInReleaseBuilds: true,
-          enableShrinkResourcesInReleaseBuilds: true,
+          // نوقف R8/تقليص الموارد مؤقتاً حتى لا تُحذف أصناف Native المطلوبة وقت الإقلاع.
+          // الاستقرار في APK الأولوية الآن، ويمكن إعادة تفعيل التصغير بعد الحصول على سجل crash من الجهاز.
+          enableMinifyInReleaseBuilds: false,
+          enableShrinkResourcesInReleaseBuilds: false,
         },
       },
     ],
