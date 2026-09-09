@@ -1,5 +1,3 @@
-import * as Haptics from "expo-haptics";
-import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigation } from "@react-navigation/native";
@@ -34,7 +32,11 @@ const dark = "#1E1E1E";
 const gray = "#4A4A4A";
 
 function haptic() {
-  if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  if (Platform.OS !== "web") {
+    void import("expo-haptics")
+      .then(({ impactAsync, ImpactFeedbackStyle }) => impactAsync(ImpactFeedbackStyle.Light))
+      .catch(() => undefined);
+  }
 }
 
 function Action({ title, onPress, kind = "solid" }: { title: string; onPress: () => void; kind?: "solid" | "outline" | "dark" }) {
@@ -415,7 +417,7 @@ function Driver({ name, onTripActivity }: { name: string; onTripActivity: (activ
     },
     onError: (error) => Alert.alert("تعذر تأكيد التسليم", error.message),
   });
-  const camera = async (which: "personal" | "identity" | "proof") => { const permission = await ImagePicker.requestCameraPermissionsAsync(); if (!permission.granted) return Alert.alert("إذن الكاميرا مطلوب", "يلزم الإذن لالتقاط الصور المطلوبة."); const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.65, base64: true }); if (result.canceled) return; const asset = result.assets[0]; const uri = asset.base64 ? `data:${asset.mimeType ?? "image/jpeg"};base64,${asset.base64}` : asset.uri; if (which === "personal") setPersonal(uri); if (which === "identity") setIdentity(uri); if (which === "proof") setProof(uri); };
+  const camera = async (which: "personal" | "identity" | "proof") => { const ImagePicker = await import("expo-image-picker"); const permission = await ImagePicker.requestCameraPermissionsAsync(); if (!permission.granted) return Alert.alert("إذن الكاميرا مطلوب", "يلزم الإذن لالتقاط الصور المطلوبة."); const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.65, base64: true }); if (result.canceled) return; const asset = result.assets[0]; const uri = asset.base64 ? `data:${asset.mimeType ?? "image/jpeg"};base64,${asset.base64}` : asset.uri; if (which === "personal") setPersonal(uri); if (which === "identity") setIdentity(uri); if (which === "proof") setProof(uri); };
 
   useEffect(() => { jarbou3Session.getAccessToken().then(setAccessToken); }, []);
   useEffect(() => {
@@ -840,6 +842,7 @@ export function Jarbou3App() {
     completeRecovery.mutate({ requestId: recoveryRequestId, phone: normalizedPhone, resetToken: recoveryResetToken, password: accountPassword });
   };
   const captureOnboardingDocument = async (kind: "personal" | "identity") => {
+    const ImagePicker = await import("expo-image-picker");
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) return Alert.alert("إذن الكاميرا مطلوب", "يلزم إذن الكاميرا لالتقاط وثائق السفير.");
     const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.6, base64: true });
