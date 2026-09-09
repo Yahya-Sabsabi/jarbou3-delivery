@@ -11,10 +11,8 @@ import { DEFAULT_DELIVERY_PRICING, HAMA_CENTER, estimateDeliveryPrice, formatSyp
 import { HamaMap } from "@/components/hama-map-loader";
 import { SwipeStartButton } from "@/components/swipe-start-button";
 import { getCurrentHamaLocation, watchHamaLocation } from "@/lib/jarbou3-location";
-import { flushJarbou3QueuedLocation, startJarbou3BackgroundTracking, stopJarbou3BackgroundTracking } from "@/lib/jarbou3-background-location";
 import { getOsrmRoute, type RouteEstimate } from "@/lib/osrm";
 import { configureJarbou3Realtime, subscribeToCustomerOrder, subscribeToOrderLiveLocation, unsubscribeRealtime } from "@/lib/jarbou3-realtime";
-import { registerJarbou3PushToken } from "@/lib/jarbou3-notifications";
 import { readRuntimeReadiness, requestRuntimeLocationPermission, type RuntimeReadiness } from "@/lib/jarbou3-runtime";
 import { isVersionBelow } from "@/lib/jarbou3-release";
 import { normalizeProblemReportMessage, problemReportErrorMessage } from "@/shared/jarbou3-report";
@@ -156,11 +154,18 @@ function Customer({ name, onTripActivity }: { name: string; onTripActivity: (act
     configureJarbou3Realtime(accessToken);
   }, [accessToken]);
   useEffect(() => {
-    if (!accessToken) return;
-    registerJarbou3PushToken().then((expoPushToken) => {
-      if (!expoPushToken || Platform.OS === "web") return;
-      registerPushToken.mutate({ accessToken, expoPushToken, platform: Platform.OS === "ios" ? "ios" : "android" });
-    });
+    if (!accessToken || Platform.OS === "web") return;
+    let active = true;
+    void import("@/lib/jarbou3-notifications")
+      .then(({ registerJarbou3PushToken }) => registerJarbou3PushToken())
+      .then((expoPushToken) => {
+        if (!active || !expoPushToken) return;
+        registerPushToken.mutate({ accessToken, expoPushToken, platform: Platform.OS === "ios" ? "ios" : "android" });
+      })
+      .catch((error) => console.warn("[push-init] unavailable", error));
+    return () => {
+      active = false;
+    };
   }, [accessToken]);
 
   useEffect(() => {
@@ -447,19 +452,28 @@ function Driver({ name, onTripActivity }: { name: string; onTripActivity: (activ
     let active = true;
     let remove: (() => void) | undefined;
     let backgroundStarted = false;
-    flushJarbou3QueuedLocation().catch(() => undefined);
-    if (page === "drive") startJarbou3BackgroundTracking().then((status) => {
-      if (!active) return;
-      backgroundStarted = status === "started";
-      setGpsQuality(status === "started" ? "تتبع الرحلة بالخلفية نشط" : status === "unavailable" ? "تتبع الخلفية يحتاج بناء تطبيق على جهاز فعلي" : status === "background_denied" ? "اسمح بتتبع الموقع دائماً أثناء الرحلة" : status === "services_disabled" ? "فعّل خدمات GPS لاستمرار التتبع" : "يلزم السماح بالموقع لبدء التتبع");
-    }).catch(() => { if (active) setGpsQuality("تعذر بدء التتبع الخلفي؛ سيستمر التحديث أثناء فتح التطبيق"); });
-    else setGpsQuality("جارٍ تحديث موقعك لتصل العروض الأقرب إليك");
+    let stopBackground: (() => Promise<void>) | undefined;
+    void import("@/lib/jarbou3-background-location")
+      .then(async ({ flushJarbou3QueuedLocation, startJarbou3BackgroundTracking, stopJarbou3BackgroundTracking }) => {
+        if (!active) return;
+        await flushJarbou3QueuedLocation().catch(() => undefined);
+        stopBackground = stopJarbou3BackgroundTracking;
+        if (page === "drive") {
+          const status = await startJarbou3BackgroundTracking();
+          if (!active) return;
+          backgroundStarted = status === "started";
+          setGpsQuality(status === "started" ? "تتبع الرحلة بالخلفية نشط" : status === "unavailable" ? "تتبع الخلفية يحتاج بناء تطبيق على جهاز فعلي" : status === "background_denied" ? "اسمح بتتبع الموقع دائماً أثناء الرحلة" : status === "services_disabled" ? "فعّل خدمات GPS لاستمرار التتبع" : "يلزم السماح بالموقع لبدء التتبع");
+        } else {
+          setGpsQuality("جارٍ تحديث موقعك لتصل العروض الأقرب إليك");
+        }
+      })
+      .catch(() => { if (active) setGpsQuality("تعذر بدء التتبع الخلفي؛ سيستمر التحديث أثناء فتح التطبيق"); });
     watchHamaLocation((point) => {
       if (!active) return;
       setLivePoint(point);
       if (!backgroundStarted) updateLocation.mutate({ accessToken, location: point });
     }, (quality) => setGpsQuality(quality === "good" ? "GPS عالي الدقة متصل" : quality === "poor_accuracy" ? "إشارة GPS ضعيفة؛ لا نرسل قراءة غير دقيقة" : quality === "mocked" ? "تم رفض موقع غير موثوق" : quality === "unrealistic_jump" ? "تم رفض قفزة موقع غير واقعية" : "الموقع خارج نطاق حماة")).then((subscription) => { remove = () => subscription.remove(); }).catch(() => Alert.alert("تعذر مشاركة الموقع", "فعّل خدمات الموقع واسمح بالتحديد أثناء استخدام التطبيق لمتابعة الرحلة داخل حماة."));
-    return () => { active = false; remove?.(); if (page === "drive") stopJarbou3BackgroundTracking().catch(() => undefined); };
+    return () => { active = false; remove?.(); if (page === "drive") void stopBackground?.().catch(() => undefined); };
   }, [page, accessToken, driverIsApproved]);
 
   if (page === "verify" && !driverIsApproved) return <ScrollView contentContainerStyle={styles.scroll}><Top title="وثائق السفير" back={() => setPage("home")} /><View style={styles.space}><Tag>خطوة مطلوبة</Tag><Heading title="أرفق صورتين قبل الإرسال" /><Text style={styles.copyRight}>تُراجع الصورة الشخصية وصورة الهوية من الإدارة فقط، ولا تُعرض للعملاء أو السفراء الآخرين.</Text><Upload title="الصورة الشخصية" detail={personal ? "تم التقاط الصورة" : "التقط صورة واضحة للوجه"} uri={personal} onPress={() => camera("personal")} /><Upload title="صورة الهوية" detail={identity ? "تم التقاط الصورة" : "التقط صورة الهوية بوضوح"} uri={identity} onPress={() => camera("identity")} /><Action title={submitVerification.isPending ? "جارٍ الإرسال…" : "إرسال للمراجعة"} onPress={() => !personal || !identity || !accessToken ? Alert.alert("تحتاج صورتين", "أرفق الصورة الشخصية وصورة الهوية قبل الإرسال.") : submitVerification.mutate({ accessToken, personalPhoto: personal, identityPhoto: identity })} /></View></ScrollView>;
@@ -594,7 +608,10 @@ export function Jarbou3App() {
     jarbou3Session.getActiveTrip().then((trip) => setActiveTrip(Boolean(trip)));
   }, [savedToken, stage]);
   useEffect(() => {
-    if (runtimeReadiness?.online) flushJarbou3QueuedLocation().catch(() => undefined);
+    if (!runtimeReadiness?.online) return;
+    void import("@/lib/jarbou3-background-location")
+      .then(({ flushJarbou3QueuedLocation }) => flushJarbou3QueuedLocation())
+      .catch(() => undefined);
   }, [runtimeReadiness?.online]);
   useEffect(() => {
     if (Platform.OS !== "android" || stage === "workspace" || stage === "loading") return;
