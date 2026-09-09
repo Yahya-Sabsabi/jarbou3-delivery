@@ -44,12 +44,21 @@ const expoHostUri = [
  * Metro runs on 8081, API server runs on 3000.
  * URL pattern: https://PORT-sandboxid.region.domain
  */
+function getSafeWebOrigin(): string | undefined {
+  const runtimeWindow = (globalThis as typeof globalThis & {
+    window?: { location?: { origin?: unknown } };
+  }).window;
+  return typeof runtimeWindow?.location?.origin === "string"
+    ? runtimeWindow.location.origin
+    : undefined;
+}
+
 export function getApiBaseUrl(): string {
   return resolveJarbou3ApiBaseUrl({
     configuredApiBaseUrl: API_BASE_URL,
     embeddedApiBaseUrl,
     isWeb: ReactNative.Platform.OS === "web",
-    currentOrigin: typeof window !== "undefined" ? window.location.origin : undefined,
+    currentOrigin: getSafeWebOrigin(),
     expoHostUri,
   });
 }
