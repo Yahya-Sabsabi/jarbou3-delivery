@@ -450,7 +450,11 @@ function Driver({ name, onTripActivity }: { name: string; onTripActivity: (activ
     return () => subscription.remove();
   }, [page]);
   useEffect(() => {
-    if ((page !== "home" && page !== "drive") || !accessToken || !driverIsApproved) return;
+    // Never start native GPS watchers immediately after login or permission approval.
+    // Android can terminate the process while a watcher/foreground service is created
+    // before an order exists. Start location only for an accepted order.
+    const shouldTrackAcceptedOrder = page === "drive" && Boolean(accessToken) && driverIsApproved && Boolean(activeOrder);
+    if (!shouldTrackAcceptedOrder || !accessToken || !activeOrder) return;
     let active = true;
     let remove: (() => void) | undefined;
     let backgroundStarted = false;
@@ -460,14 +464,10 @@ function Driver({ name, onTripActivity }: { name: string; onTripActivity: (activ
         if (!active) return;
         await flushJarbou3QueuedLocation().catch(() => undefined);
         stopBackground = stopJarbou3BackgroundTracking;
-        if (page === "drive") {
-          const status = await startJarbou3BackgroundTracking();
-          if (!active) return;
-          backgroundStarted = status === "started";
-          setGpsQuality(status === "started" ? "تتبع الرحلة بالخلفية نشط" : status === "unavailable" ? "تتبع الخلفية يحتاج بناء تطبيق على جهاز فعلي" : status === "background_denied" ? "اسمح بتتبع الموقع دائماً أثناء الرحلة" : status === "services_disabled" ? "فعّل خدمات GPS لاستمرار التتبع" : "يلزم السماح بالموقع لبدء التتبع");
-        } else {
-          setGpsQuality("جارٍ تحديث موقعك لتصل العروض الأقرب إليك");
-        }
+        const status = await startJarbou3BackgroundTracking();
+        if (!active) return;
+        backgroundStarted = status === "started";
+        setGpsQuality(status === "started" ? "تتبع الرحلة بالخلفية نشط" : status === "unavailable" ? "تتبع الخلفية يحتاج بناء تطبيق على جهاز فعلي" : status === "background_denied" ? "اسمح بتتبع الموقع دائماً أثناء الرحلة" : status === "services_disabled" ? "فعّل خدمات GPS لاستمرار التتبع" : "يلزم السماح بالموقع لبدء التتبع");
       })
       .catch(() => { if (active) setGpsQuality("تعذر بدء التتبع الخلفي؛ سيستمر التحديث أثناء فتح التطبيق"); });
     watchHamaLocation((point) => {
@@ -475,8 +475,8 @@ function Driver({ name, onTripActivity }: { name: string; onTripActivity: (activ
       setLivePoint(point);
       if (!backgroundStarted) updateLocation.mutate({ accessToken, location: point });
     }, (quality) => setGpsQuality(quality === "good" ? "GPS عالي الدقة متصل" : quality === "poor_accuracy" ? "إشارة GPS ضعيفة؛ لا نرسل قراءة غير دقيقة" : quality === "mocked" ? "تم رفض موقع غير موثوق" : quality === "unrealistic_jump" ? "تم رفض قفزة موقع غير واقعية" : "الموقع خارج نطاق حماة")).then((subscription) => { remove = () => subscription.remove(); }).catch(() => Alert.alert("تعذر مشاركة الموقع", "فعّل خدمات الموقع واسمح بالتحديد أثناء استخدام التطبيق لمتابعة الرحلة داخل حماة."));
-    return () => { active = false; remove?.(); if (page === "drive") void stopBackground?.().catch(() => undefined); };
-  }, [page, accessToken, driverIsApproved]);
+    return () => { active = false; remove?.(); void stopBackground?.().catch(() => undefined); };
+  }, [page, accessToken, driverIsApproved, activeOrder?.id]);
 
   if (page === "verify" && !driverIsApproved) return <ScrollView contentContainerStyle={styles.scroll}><Top title="وثائق السفير" back={() => setPage("home")} /><View style={styles.space}><Tag>خطوة مطلوبة</Tag><Heading title="أرفق صورتين قبل الإرسال" /><Text style={styles.copyRight}>تُراجع الصورة الشخصية وصورة الهوية من الإدارة فقط، ولا تُعرض للعملاء أو السفراء الآخرين.</Text><Upload title="الصورة الشخصية" detail={personal ? "تم التقاط الصورة" : "التقط صورة واضحة للوجه"} uri={personal} onPress={() => camera("personal")} /><Upload title="صورة الهوية" detail={identity ? "تم التقاط الصورة" : "التقط صورة الهوية بوضوح"} uri={identity} onPress={() => camera("identity")} /><Action title={submitVerification.isPending ? "جارٍ الإرسال…" : "إرسال للمراجعة"} onPress={() => !personal || !identity || !accessToken ? Alert.alert("تحتاج صورتين", "أرفق الصورة الشخصية وصورة الهوية قبل الإرسال.") : submitVerification.mutate({ accessToken, personalPhoto: personal, identityPhoto: identity })} /></View></ScrollView>;
 
