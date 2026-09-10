@@ -3,6 +3,7 @@ import * as ReactNative from "react-native";
 import Constants from "expo-constants";
 
 import { resolveJarbou3ApiBaseUrl } from "@/shared/jarbou3-api";
+import { getSafeWebOrigin as readSafeWebOrigin } from "@/shared/safe-web-origin";
 
 // Extract scheme from bundle ID (last segment timestamp, prefixed with "manus")
 // e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
@@ -44,13 +45,8 @@ const expoHostUri = [
  * Metro runs on 8081, API server runs on 3000.
  * URL pattern: https://PORT-sandboxid.region.domain
  */
-function getSafeWebOrigin(): string | undefined {
-  const runtimeWindow = (globalThis as typeof globalThis & {
-    window?: { location?: { origin?: unknown } };
-  }).window;
-  return typeof runtimeWindow?.location?.origin === "string"
-    ? runtimeWindow.location.origin
-    : undefined;
+export function getSafeWebOrigin(): string | undefined {
+  return readSafeWebOrigin(globalThis);
 }
 
 export function getApiBaseUrl(): string {
