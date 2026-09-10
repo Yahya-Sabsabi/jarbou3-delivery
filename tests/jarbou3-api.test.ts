@@ -18,11 +18,20 @@ describe("عنوان API لتطبيق جربوع", () => {
     })).toBe("https://3000-current-preview.us2.manus.computer");
   });
 
-  it("يفضل عنوان API المعاينة المضمّن في حزمة Expo Go", () => {
+  it("لا يفضّل عنواناً مؤقتاً داخل APK مستقل عندما لا توجد جلسة Expo Go", () => {
     expect(resolveJarbou3ApiBaseUrl({
       configuredApiBaseUrl: "https://3000-current-preview.us2.manus.computer",
       embeddedApiBaseUrl: "https://jarbou-deliv-xoohmte2.manus.space",
       isWeb: false,
+    })).toBe("https://jarbou-deliv-xoohmte2.manus.space");
+  });
+
+  it("يستخدم عنوان المعاينة فقط عند وجود host الخاص بـExpo Go", () => {
+    expect(resolveJarbou3ApiBaseUrl({
+      configuredApiBaseUrl: "https://3000-current-preview.us2.manus.computer",
+      embeddedApiBaseUrl: "https://jarbou-deliv-xoohmte2.manus.space",
+      isWeb: false,
+      expoHostUri: "8081-current-preview.us2.manus.computer",
     })).toBe("https://3000-current-preview.us2.manus.computer");
   });
 

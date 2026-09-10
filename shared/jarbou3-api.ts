@@ -50,18 +50,12 @@ export function resolveJarbou3ApiBaseUrl({
     ? withoutTrailingSlash(embeddedApiBaseUrl)
     : "";
 
-  // Expo replaces EXPO_PUBLIC_* values while bundling. The development script
-  // supplies the matching 3000 preview origin, making this path independent of
-  // manifest shape and Expo Go runtime metadata.
-  if (!isWeb && /^https:\/\/3000-[a-z0-9-]+\.us\d+\.manus\.computer$/i.test(configuredApiUrl)) {
-    return configuredApiUrl;
-  }
-
-  // The presence of Metro's host URI is the reliable indicator of a preview
-  // session. Do not depend on an Expo ownership flag because it differs between
-  // Expo Go releases and can be absent from a development manifest.
+  // The presence of Metro's host URI is the reliable indicator of an Expo Go
+  // preview session. Only then may a native build use the matching preview API.
+  // A standalone APK must always prefer the stable API embedded by app.config;
+  // otherwise a stale EXPO_PUBLIC_API_BASE_URL can route login to an old preview.
   const expoPreviewApiUrl = previewApiFromExpoHost(expoHostUri);
-  if (expoPreviewApiUrl) return expoPreviewApiUrl;
+  if (!isWeb && expoPreviewApiUrl) return expoPreviewApiUrl;
 
   // Installed Android/iOS packages use the stable published API.
   if (!isWeb && embeddedApiUrl) return embeddedApiUrl;
