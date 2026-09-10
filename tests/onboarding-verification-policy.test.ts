@@ -21,8 +21,9 @@ describe("سياسة التحقق برمز التسجيل", () => {
     const source = readFileSync(resolve(process.cwd(), "server/routers.ts"), "utf8");
 
     expect(source).toContain("function authEmailForPhone(phone: string)");
-    expect(source).toContain("service.auth.admin.updateUserById(profile.id, { email: authEmailForPhone(phone), email_confirm: true })");
-    expect(source).toContain("signInWithPassword({ email: authEmailForPhone(phone), password: input.password })");
+    expect(source).toContain("service.auth.admin.getUserById(profile.id)");
+    expect(source).toContain("if (authRecord.user.email !== canonicalEmail)");
+    expect(source).toContain("signInWithPassword({ email: canonicalEmail, password: input.password })");
     expect(source).not.toContain("signInWithPassword({ phone:");
     const recoveryStart = source.indexOf("verifyRecoveryCode: publicProcedure");
     const recoveryEnd = source.indexOf("completeAccountRecovery: publicProcedure", recoveryStart);

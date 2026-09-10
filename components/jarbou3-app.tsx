@@ -738,7 +738,7 @@ export function Jarbou3App() {
       setWorkspaceName(result.user.name);
       setStage("workspace");
     },
-    onError: (error) => Alert.alert("تعذر الدخول", error.message === "INVALID_PHONE" ? "أدخل رقم WhatsApp صحيحاً، مثل 09xxxxxxxx أو +9639xxxxxxxx." : error.message === "SIGN_IN_IDENTITY_MIGRATION_FAILED" ? "تعذر تجهيز هوية الدخول لهذا الحساب. حاول مرة واحدة فقط ثم أبلغ الإدارة بالرمز: SIGN_IN_IDENTITY_MIGRATION_FAILED." : "تحقق من الرقم وكلمة المرور ثم أعد المحاولة."),
+    onError: (error) => Alert.alert("تعذر الدخول", error.message === "INVALID_PHONE" ? "أدخل رقم WhatsApp صحيحاً، مثل 09xxxxxxxx أو +9639xxxxxxxx." : error.message === "SIGN_IN_PASSWORD_INVALID" ? "كلمة المرور غير مطابقة لهذا الحساب. إذا كنت متأكداً منها، استخدم «نسيت كلمة المرور؟» لإعادة تعيينها." : error.message === "SIGN_IN_IDENTITY_LOOKUP_FAILED" ? "تعذر العثور على هوية الحساب. أبلغ الإدارة بالرمز: SIGN_IN_IDENTITY_LOOKUP_FAILED." : error.message === "SIGN_IN_IDENTITY_MIGRATION_FAILED" ? "تعذر تجهيز هوية الدخول لهذا الحساب. أبلغ الإدارة بالرمز: SIGN_IN_IDENTITY_MIGRATION_FAILED." : "تعذر تسجيل الدخول الآن. تحقق من الرقم وحاول مرة أخرى."),
   });
   const requestRecovery = trpc.jarbou3.requestAccountRecovery.useMutation({
     onSuccess: (result) => {

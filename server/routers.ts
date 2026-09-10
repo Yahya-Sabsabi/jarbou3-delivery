@@ -277,10 +277,18 @@ export const appRouter = router({
         const service = asService();
         const { data: profile, error: profileError } = await service.from("users").select("id").eq("phone", phone).maybeSingle();
         if (profileError || !profile) throw new Error("SIGN_IN_FAILED");
-        const { error: identityUpdateError } = await service.auth.admin.updateUserById(profile.id, { email: authEmailForPhone(phone), email_confirm: true });
-        if (identityUpdateError) throw new Error("SIGN_IN_IDENTITY_MIGRATION_FAILED");
-        const { data, error } = await asPublic().auth.signInWithPassword({ email: authEmailForPhone(phone), password: input.password });
-        if (error || !data.session) throw new Error(error?.message ?? "SIGN_IN_FAILED");
+        const canonicalEmail = authEmailForPhone(phone);
+        const { data: authRecord, error: authRecordError } = await service.auth.admin.getUserById(profile.id);
+        if (authRecordError || !authRecord.user) throw new Error("SIGN_IN_IDENTITY_LOOKUP_FAILED");
+        if (authRecord.user.email !== canonicalEmail) {
+          const { error: identityUpdateError } = await service.auth.admin.updateUserById(profile.id, { email: canonicalEmail, email_confirm: true });
+          if (identityUpdateError) throw new Error("SIGN_IN_IDENTITY_MIGRATION_FAILED");
+        }
+        const { data, error } = await asPublic().auth.signInWithPassword({ email: canonicalEmail, password: input.password });
+        if (error || !data.session) {
+          console.warn(`[Jarbou3] Sign-in rejected after identity resolution: ${error?.code ?? "NO_SESSION"}`);
+          throw new Error(error?.code === "invalid_credentials" ? "SIGN_IN_PASSWORD_INVALID" : "SIGN_IN_FAILED");
+        }
         const activeProfile = await getUserProfile(data.user.id);
         return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: { id: data.user.id, name: activeProfile.name, role: activeProfile.role } };
       }),
