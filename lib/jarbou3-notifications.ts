@@ -7,25 +7,30 @@ type NotificationsModule = typeof import("expo-notifications");
 
 function getNotificationsModule(): NotificationsModule | null {
   if (!canUseNativePush) return null;
-  // This runtime import prevents Expo Go from initialising a Push module that
-  // is intentionally unavailable there, while installed Android builds keep it.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require("expo-notifications") as NotificationsModule;
+  try {
+    // Load the native module only after the first workspace render. A missing
+    // or incompatible native module must not abort the whole React tree.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require("expo-notifications") as NotificationsModule;
+  } catch (error) {
+    console.warn("[push-init] native notifications unavailable", error);
+    return null;
+  }
 }
 
-if (canUseNativePush) {
-  const Notifications = getNotificationsModule();
-  if (!Notifications) {
-    throw new Error("PUSH_NOTIFICATIONS_UNAVAILABLE");
+function configureNotifications(Notifications: NotificationsModule) {
+  try {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+  } catch (error) {
+    console.warn("[push-init] notification handler unavailable", error);
   }
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
 }
 
 export async function registerJarbou3PushToken() {
@@ -34,6 +39,7 @@ export async function registerJarbou3PushToken() {
   if (!canUseNativePush) return null;
   const Notifications = getNotificationsModule();
   if (!Notifications) return null;
+  configureNotifications(Notifications);
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("jarbou3-orders", {
       name: "تحديثات طلبات جربوع",
