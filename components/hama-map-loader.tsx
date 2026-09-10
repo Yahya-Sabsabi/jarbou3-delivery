@@ -1,9 +1,28 @@
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 import { HamaMap as FallbackHamaMap, type HamaMapProps } from "@/components/hama-map-fallback";
 
 type LoadedMap = typeof FallbackHamaMap;
+
+type MapBoundaryProps = { children: ReactNode; fallback: ReactNode };
+type MapBoundaryState = { hasError: boolean };
+
+class MapBoundary extends Component<MapBoundaryProps, MapBoundaryState> {
+  state: MapBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): MapBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.warn("[hama-map] render failed; using fallback", error);
+  }
+
+  render() {
+    return this.state.hasError ? this.props.fallback : this.props.children;
+  }
+}
 
 /**
  * لا تُحمّل react-native-maps قبل احتياج الخريطة فعلياً. يحمي ذلك شاشة الإقلاع
@@ -27,7 +46,7 @@ export function HamaMap(props: HamaMapProps) {
 
   if (failedToLoad) return <FallbackHamaMap {...props} />;
   if (!MapComponent) return <View style={[styles.loading, props.compact && styles.compact]}><ActivityIndicator size="small" color="#4A4A4A" /></View>;
-  return <MapComponent {...props} />;
+  return <MapBoundary fallback={<FallbackHamaMap {...props} />}><MapComponent {...props} /></MapBoundary>;
 }
 
 const styles = StyleSheet.create({
