@@ -1,6 +1,6 @@
 import NetInfo from "@react-native-community/netinfo";
 import * as Location from "expo-location";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 
 export type RuntimeReadiness = {
   online: boolean;
@@ -20,4 +20,17 @@ export async function readRuntimeReadiness(): Promise<RuntimeReadiness> {
 export async function requestRuntimeLocationPermission() {
   if (Platform.OS === "web") return;
   await Location.requestForegroundPermissionsAsync();
+}
+
+export async function openRuntimeLocationSettings() {
+  if (Platform.OS !== "android") {
+    await Linking.openSettings();
+    return;
+  }
+
+  try {
+    await Linking.sendIntent("android.settings.LOCATION_SOURCE_SETTINGS");
+  } catch {
+    await Linking.openSettings();
+  }
 }
