@@ -747,7 +747,18 @@ export function Jarbou3App() {
       setRetryAfter(result.retryAfter ?? null);
       setStage(result.status === "code_sent" ? "recoveryCode" : "recoveryWaiting");
     },
-    onError: (error) => Alert.alert("تعذر إرسال الطلب", error.message === "RECOVERY_ACCOUNT_NOT_FOUND" ? "لم نجد حساباً مطابقاً للاسم والرقم ونوع الحساب." : "تعذر إنشاء طلب الاسترجاع الآن."),
+    onError: (error) => {
+      const copy = error.message === "RECOVERY_ACCOUNT_NOT_FOUND"
+        ? "لم نجد حساباً مطابقاً للاسم والرقم ونوع الحساب."
+        : error.message === "ONBOARDING_RATE_LIMITED"
+          ? "تم إيقاف محاولات الاسترجاع مؤقتاً لحماية الحساب. انتظر 15 دقيقة ثم أعد المحاولة."
+          : error.message === "RECOVERY_PROFILE_LOOKUP_FAILED"
+            ? "تعذر قراءة بيانات الحساب من الخادم. أعد المحاولة لاحقاً."
+            : error.message === "RECOVERY_STATUS_LOOKUP_FAILED" || error.message === "RECOVERY_REQUEST_FAILED"
+              ? "تعذر حفظ طلب الاسترجاع في الخادم. أعد المحاولة لاحقاً، وإذا تكرر الخطأ أرسل الرمز: RECOVERY_STORAGE_FAILED."
+              : "تعذر إنشاء طلب الاسترجاع الآن. تحقق من الاتصال والبيانات ثم أعد المحاولة.";
+      Alert.alert("تعذر إرسال الطلب", copy);
+    },
   });
   const recoveryStatus = trpc.jarbou3.recoveryStatus.useQuery({ requestId: recoveryRequestId ?? "00000000-0000-0000-0000-000000000000", phone }, { enabled: Boolean(recoveryRequestId) && Boolean(phone) && (stage === "recoveryWaiting" || stage === "recoveryCode"), refetchInterval: stage === "recoveryWaiting" ? 4_000 : false, retry: false });
   useEffect(() => {

@@ -299,14 +299,33 @@ export const appRouter = router({
         assertOnboardingRateLimit(`recovery:${ctx.req.ip ?? "unknown"}:${input.phone}`);
         const service = asService();
         const { data: profile, error: profileError } = await service.from("users").select("id,name,phone,role").eq("phone", input.phone).eq("role", input.requestedRole).maybeSingle();
-        if (profileError) throw new Error(profileError.message);
+        if (profileError) {
+          console.error(`[Jarbou3] Recovery profile lookup failed: ${profileError.code ?? "unknown"}`);
+          throw new Error("RECOVERY_PROFILE_LOOKUP_FAILED");
+        }
         if (!profile || profile.name.trim() !== input.fullName.trim()) throw new Error("RECOVERY_ACCOUNT_NOT_FOUND");
         const { data: active, error: activeError } = await service.from("account_recovery_requests").select("id,status,code_expires_at,retry_after").eq("phone", input.phone).in("status", ["pending_admin", "code_sent", "verified", "locked"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
-        if (activeError) throw new Error(activeError.message);
+        if (activeError) {
+          console.error(`[Jarbou3] Recovery status lookup failed: ${activeError.code ?? "unknown"}`);
+          throw new Error("RECOVERY_STATUS_LOOKUP_FAILED");
+        }
         if (active?.status === "locked" && active.retry_after && new Date(active.retry_after).getTime() > Date.now()) return { requestId: active.id, status: "locked" as const, retryAfter: active.retry_after, codeExpiresAt: null };
         if (active?.status === "code_sent" && active.code_expires_at && new Date(active.code_expires_at).getTime() > Date.now()) return { requestId: active.id, status: "code_sent" as const, retryAfter: null, codeExpiresAt: active.code_expires_at };
         const { data, error } = await service.from("account_recovery_requests").insert({ full_name: input.fullName, phone: input.phone, requested_role: input.requestedRole, user_id: profile.id }).select("id,status,code_expires_at,retry_after").single();
-        if (error || !data) throw new Error(error?.message ?? "RECOVERY_REQUEST_FAILED");
+        if (error || !data) {
+          if (error?.code === "23505") {
+            const { data: existingRequest } = await service.from("account_recovery_requests")
+              .select("id,status,code_expires_at,retry_after")
+              .eq("user_id", profile.id)
+              .in("status", ["pending_admin", "code_sent", "verified", "locked"])
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (existingRequest) return { requestId: existingRequest.id, status: existingRequest.status, retryAfter: existingRequest.retry_after, codeExpiresAt: existingRequest.code_expires_at };
+          }
+          console.error(`[Jarbou3] Recovery request insert failed: ${error?.code ?? "unknown"}`);
+          throw new Error("RECOVERY_REQUEST_FAILED");
+        }
         return { requestId: data.id, status: data.status, retryAfter: data.retry_after, codeExpiresAt: data.code_expires_at };
       }),
 
