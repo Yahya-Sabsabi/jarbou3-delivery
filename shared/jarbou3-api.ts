@@ -55,7 +55,7 @@ export function resolveJarbou3ApiBaseUrl({
   // A standalone APK must always prefer the stable API embedded by app.config;
   // otherwise a stale EXPO_PUBLIC_API_BASE_URL can route login to an old preview.
   const expoPreviewApiUrl = previewApiFromExpoHost(expoHostUri);
-  if (!isWeb && expoPreviewApiUrl) return expoPreviewApiUrl;
+  if (!isWeb && isExpoGo && expoPreviewApiUrl) return expoPreviewApiUrl;
 
   // Installed Android/iOS packages use the stable published API.
   if (!isWeb && embeddedApiUrl) return embeddedApiUrl;

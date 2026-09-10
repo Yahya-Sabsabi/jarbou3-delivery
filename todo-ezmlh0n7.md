@@ -592,3 +592,11 @@
 - [x] تحديد السبب المثبت: resolver كان يفضّل `EXPO_PUBLIC_API_BASE_URL` المؤقت على `extra.apiBaseUrl` داخل APK، فأرسل الدخول والاسترجاع إلى خادم معاينة قديم.
 - [x] إصلاح الأولوية وإضافة اختبارين يفرّقان بين APK المستقل وExpo Go؛ نجحت المجموعة الكاملة 95 اختباراً مع اختبار واحد متجاوز وTypeScript وبناء الخادم.
 - [x] بناء APK Release جديد من الإصلاح، مع إبقاء التحقق الفعلي على الهاتف خطوة التسليم التالية.
+
+
+سجل متابعة جديد — استمرار المشكلة بعد APK الإصلاح السابق:
+- [x] تثبيت سبب النسخة المختبرة بفحص APK: bundle كان يحتوي host preview `3000-ifp6v4ashv374quahhoms-6ed5dae0.us5.manus.computer`، لذلك لم يكن يتصل بالإنتاج فعلياً.
+- [x] التحقق من أن خادم الإنتاج يستجيب، وأن الحسابات وطلبات الاسترجاع موجودة دون تعديل أو كشف كلمات مرور.
+- [x] تحديد السبب النهائي: `Constants.expoConfig.hostUri` كان يُعامل كإشارة Expo Go حتى داخل APK Release، فيحوّل الدخول والاسترجاع إلى preview قديم.
+- [x] إصلاح resolver وربطه بـ`appOwnership/executionEnvironment`، وإضافة اختبارات standalone/Expo Go؛ نجحت 96 اختباراً مع اختبار واحد متجاوز وTypeScript وبناء الخادم.
+- [x] بناء APK Release جديد؛ فحص bundle يثبت تضمين شرط `storeClient`/`executionEnvironment`، ويبقى checkpoint والرفع والتجربة على الهاتف.

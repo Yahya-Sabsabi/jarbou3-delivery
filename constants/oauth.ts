@@ -50,11 +50,18 @@ export function getSafeWebOrigin(): string | undefined {
 }
 
 export function getApiBaseUrl(): string {
+  const constantsWithRuntime = Constants as typeof Constants & {
+    appOwnership?: string | null;
+    executionEnvironment?: string | null;
+  };
+  const isExpoGo = constantsWithRuntime.appOwnership === "expo"
+    || constantsWithRuntime.executionEnvironment === "storeClient";
   return resolveJarbou3ApiBaseUrl({
     configuredApiBaseUrl: API_BASE_URL,
     embeddedApiBaseUrl,
     isWeb: ReactNative.Platform.OS === "web",
     currentOrigin: getSafeWebOrigin(),
+    isExpoGo,
     expoHostUri,
   });
 }

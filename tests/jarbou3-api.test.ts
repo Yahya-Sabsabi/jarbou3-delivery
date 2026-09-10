@@ -10,10 +10,11 @@ describe("عنوان API لتطبيق جربوع", () => {
     })).toBe("https://jarbou-deliv-xoohmte2.manus.space");
   });
 
-  it("يستخدم API معاينة Metro المطابق متى كان عنوان المعاينة متاحاً", () => {
+  it("يستخدم API معاينة Metro المطابق داخل Expo Go", () => {
     expect(resolveJarbou3ApiBaseUrl({
       embeddedApiBaseUrl: "https://jarbou-deliv-xoohmte2.manus.space",
       isWeb: false,
+      isExpoGo: true,
       expoHostUri: "8081-current-preview.us2.manus.computer",
     })).toBe("https://3000-current-preview.us2.manus.computer");
   });
@@ -26,13 +27,24 @@ describe("عنوان API لتطبيق جربوع", () => {
     })).toBe("https://jarbou-deliv-xoohmte2.manus.space");
   });
 
-  it("يستخدم عنوان المعاينة فقط عند وجود host الخاص بـExpo Go", () => {
+  it("يستخدم عنوان المعاينة فقط عند وجود Expo Go فعلي وhost مطابق", () => {
     expect(resolveJarbou3ApiBaseUrl({
       configuredApiBaseUrl: "https://3000-current-preview.us2.manus.computer",
       embeddedApiBaseUrl: "https://jarbou-deliv-xoohmte2.manus.space",
       isWeb: false,
+      isExpoGo: true,
       expoHostUri: "8081-current-preview.us2.manus.computer",
     })).toBe("https://3000-current-preview.us2.manus.computer");
+  });
+
+  it("يتجاهل host preview المضمّن داخل APK المستقل", () => {
+    expect(resolveJarbou3ApiBaseUrl({
+      configuredApiBaseUrl: "https://3000-old-preview.us2.manus.computer",
+      embeddedApiBaseUrl: "https://jarbou-deliv-xoohmte2.manus.space",
+      isWeb: false,
+      isExpoGo: false,
+      expoHostUri: "8081-old-preview.us2.manus.computer",
+    })).toBe("https://jarbou-deliv-xoohmte2.manus.space");
   });
 
   it("يربط معاينة الويب بخادم API المقابل لها", () => {
