@@ -36,18 +36,15 @@ function configureNotifications(Notifications: NotificationsModule) {
 export async function registerJarbou3PushToken() {
   // Expo Go no longer ships Android remote-push support. Production builds
   // keep the registration path below; Expo Go simply skips it.
-  if (!canUseNativePush) return null;
+  // لا نبدأ أي مسار Push native تلقائياً عند دخول مساحة العمل على Android.
+  // هذا المسار يتضمن قناة Android وصلاحية النظام وGoogle/Expo token، وأي
+  // خلل native فيه قد يغلق العملية قبل أن يستطيع React تسجيل الخطأ. تبقى
+  // تحديثات الطلبات العاملة عبر API/Realtime، ويمكن إعادة تفعيل Push بعد
+  // إثبات توافق نسخة Android على جهاز فعلي.
+  if (!canUseNativePush || Platform.OS === "android") return null;
   const Notifications = getNotificationsModule();
   if (!Notifications) return null;
   configureNotifications(Notifications);
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("jarbou3-orders", {
-      name: "تحديثات طلبات جربوع",
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 180, 120, 180],
-      lightColor: "#4A4A4A",
-    });
-  }
   const current = await Notifications.getPermissionsAsync();
   const permission = current.status === "granted" ? current : await Notifications.requestPermissionsAsync();
   if (permission.status !== "granted") return null;

@@ -17,4 +17,9 @@ describe("notification native initialization safety", () => {
     expect(source).toContain("catch (error)");
     expect(source).toContain("return null;");
   });
+
+  it("does not start Android push setup during workspace entry", () => {
+    expect(source).toContain('if (!canUseNativePush || Platform.OS === "android") return null;');
+    expect(source).not.toContain("setNotificationChannelAsync");
+  });
 });
