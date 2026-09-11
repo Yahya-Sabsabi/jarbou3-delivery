@@ -906,7 +906,9 @@ export function Jarbou3App() {
     if (kind === "personal") setOnboardingPersonalPhoto(uri); else setOnboardingIdentityPhoto(uri);
   };
   const submitSignIn = () => {
-    if (!isJarbou3Phone(phone) || accountPassword.length < 8) return Alert.alert("تحقق من البيانات", "أدخل رقم WhatsApp وكلمة المرور.");
+    // تسجيل الدخول يجب أن يقبل كلمات المرور القديمة؛ حد الثمانية أحرف
+    // يطبق فقط عند إنشاء/تغيير كلمة مرور جديدة، وليس على الحسابات الموروثة.
+    if (!isJarbou3Phone(phone) || accountPassword.length < 1) return Alert.alert("تحقق من البيانات", "أدخل رقم WhatsApp وكلمة المرور.");
     setPhone(normalizedPhone);
     signIn.mutate({ phone: normalizedPhone, password: accountPassword });
   };

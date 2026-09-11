@@ -12,4 +12,15 @@ describe("legacy password login compatibility", () => {
     expect(body).toContain('password: z.string().min(1).max(72)');
     expect(body).not.toContain('password: z.string().min(8).max(72)');
   });
+
+  it("does not block legacy short passwords in the mobile sign-in form", () => {
+    const source = readFileSync(resolve(process.cwd(), "components/jarbou3-app.tsx"), "utf8");
+    const start = source.indexOf("const submitSignIn");
+    const end = source.indexOf("const logout", start);
+    const body = source.slice(start, end);
+
+    expect(body).toContain("accountPassword.length < 1");
+    expect(body).not.toContain("accountPassword.length < 8");
+    expect(body).toContain("signIn.mutate({ phone: normalizedPhone, password: accountPassword })");
+  });
 });
