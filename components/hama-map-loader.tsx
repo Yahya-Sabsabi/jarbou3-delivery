@@ -1,5 +1,5 @@
 import { Component, useEffect, useState, type ReactNode } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 
 import { HamaMap as FallbackHamaMap, type HamaMapProps } from "@/components/hama-map-fallback";
 
@@ -33,6 +33,11 @@ export function HamaMap(props: HamaMapProps) {
   const [failedToLoad, setFailedToLoad] = useState(false);
 
   useEffect(() => {
+    // لا نُنشئ MapView الأصلي على Android قبل تهيئة مزود خرائط native.
+    // غياب Google Maps metadata قد يسبب خروج العملية native، ولا يمكن لـ
+    // React Error Boundary التقاط هذا النوع من الأعطال. الخريطة البديلة
+    // تظل تفاعلية وتدعم اختيار نقاط حماة وتتبع المسار.
+    if (Platform.OS === "android") return;
     let active = true;
     import("@/components/hama-map")
       .then((module) => {
@@ -44,7 +49,7 @@ export function HamaMap(props: HamaMapProps) {
     return () => { active = false; };
   }, []);
 
-  if (failedToLoad) return <FallbackHamaMap {...props} />;
+  if (Platform.OS === "android" || failedToLoad) return <FallbackHamaMap {...props} />;
   if (!MapComponent) return <View style={[styles.loading, props.compact && styles.compact]}><ActivityIndicator size="small" color="#4A4A4A" /></View>;
   return <MapBoundary fallback={<FallbackHamaMap {...props} />}><MapComponent {...props} /></MapBoundary>;
 }

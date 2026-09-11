@@ -12,4 +12,9 @@ describe("HamaMap render safety", () => {
     expect(source).toContain("getDerivedStateFromError");
     expect(source).toContain("<MapBoundary fallback={<FallbackHamaMap {...props} />}");
   });
+
+  it("does not initialize native MapView on Android before provider configuration", () => {
+    expect(source).toContain('if (Platform.OS === "android") return;');
+    expect(source).toContain('if (Platform.OS === "android" || failedToLoad) return <FallbackHamaMap {...props} />;');
+  });
 });
