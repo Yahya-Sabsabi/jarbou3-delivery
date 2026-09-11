@@ -274,19 +274,34 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const phone = normalizeJarbou3Phone(input.phone);
         if (!phone) throw new Error("INVALID_PHONE");
-        const service = asService();
-        const { data: profile, error: profileError } = await service.from("users").select("id").eq("phone", phone).maybeSingle();
-        if (profileError || !profile) throw new Error("SIGN_IN_FAILED");
         const canonicalEmail = authEmailForPhone(phone);
-        const { data: authRecord, error: authRecordError } = await service.auth.admin.getUserById(profile.id);
-        if (authRecordError || !authRecord.user) throw new Error("SIGN_IN_IDENTITY_LOOKUP_FAILED");
-        if (authRecord.user.email !== canonicalEmail) {
-          const { error: identityUpdateError } = await service.auth.admin.updateUserById(profile.id, { email: canonicalEmail, email_confirm: true });
-          if (identityUpdateError) throw new Error("SIGN_IN_IDENTITY_MIGRATION_FAILED");
+        const publicAuth = asPublic();
+        let authResult = await publicAuth.auth.signInWithPassword({ email: canonicalEmail, password: input.password });
+
+        // Normal accounts should not depend on a profile lookup before Auth.
+        // If an older account still has a legacy Auth email, migrate it once
+        // and retry; this keeps login resilient when profile phone formatting
+        // differs from the value entered in the mobile UI.
+        if (authResult.error?.code === "invalid_credentials") {
+          const service = asService();
+          const { data: profile, error: profileError } = await service.from("users").select("id").eq("phone", phone).maybeSingle();
+          if (profileError) {
+            console.error(`[Jarbou3] Sign-in profile lookup failed: ${profileError.code ?? "unknown"}`);
+            throw new Error("SIGN_IN_PROFILE_LOOKUP_FAILED");
+          }
+          if (!profile) throw new Error("SIGN_IN_ACCOUNT_NOT_FOUND");
+          const { data: authRecord, error: authRecordError } = await service.auth.admin.getUserById(profile.id);
+          if (authRecordError || !authRecord.user) throw new Error("SIGN_IN_IDENTITY_LOOKUP_FAILED");
+          if (authRecord.user.email !== canonicalEmail) {
+            const { error: identityUpdateError } = await service.auth.admin.updateUserById(profile.id, { email: canonicalEmail, email_confirm: true });
+            if (identityUpdateError) throw new Error("SIGN_IN_IDENTITY_MIGRATION_FAILED");
+          }
+          authResult = await publicAuth.auth.signInWithPassword({ email: canonicalEmail, password: input.password });
         }
-        const { data, error } = await asPublic().auth.signInWithPassword({ email: canonicalEmail, password: input.password });
+
+        const { data, error } = authResult;
         if (error || !data.session) {
-          console.warn(`[Jarbou3] Sign-in rejected after identity resolution: ${error?.code ?? "NO_SESSION"}`);
+          console.warn(`[Jarbou3] Sign-in rejected: ${error?.code ?? "NO_SESSION"}`);
           throw new Error(error?.code === "invalid_credentials" ? "SIGN_IN_PASSWORD_INVALID" : "SIGN_IN_FAILED");
         }
         const activeProfile = await getUserProfile(data.user.id);
