@@ -270,7 +270,7 @@ export const appRouter = router({
       }),
 
     signIn: publicProcedure
-      .input(z.object({ phone: z.string().trim().min(8).max(24), password: z.string().min(8).max(72) }))
+      .input(z.object({ phone: z.string().trim().min(8).max(24), password: z.string().min(1).max(72) }))
       .mutation(async ({ input }) => {
         const phone = normalizeJarbou3Phone(input.phone);
         if (!phone) throw new Error("INVALID_PHONE");
