@@ -509,10 +509,19 @@ function DeliveryStep({ number, title, detail }: { number: string; title: string
 
 function Top({ title, back }: { title: string; back: () => void }) { return <View style={styles.top}><Pressable onPress={back} style={styles.back}><Text style={styles.backText}>‹</Text></Pressable><Text style={styles.topTitle}>{title}</Text><View style={styles.backBlank} /></View>; }
 
-function signInErrorCode(error: { message?: string }): string {
+function appErrorCode(error: { message?: string }): string {
   const message = error.message ?? "";
   const knownCodes = [
     "INVALID_PHONE",
+    "PHONE_ALREADY_REGISTERED",
+    "PASSWORD_SETUP_PENDING",
+    "ACCOUNT_ALREADY_VERIFIED",
+    "DRIVER_DOCUMENTS_REQUIRED",
+    "VEHICLE_TYPE_REQUIRED",
+    "CUSTOMER_DOCUMENTS_NOT_ALLOWED",
+    "ONBOARDING_RATE_LIMITED",
+    "ONBOARDING_REQUEST_FAILED",
+    "DOCUMENT_UPLOAD_FAILED",
     "SIGN_IN_PASSWORD_INVALID",
     "SIGN_IN_IDENTITY_LOOKUP_FAILED",
     "SIGN_IN_IDENTITY_MIGRATION_FAILED",
@@ -685,21 +694,24 @@ export function Jarbou3App() {
       setStage(result.status === "code_sent" ? "code" : "waiting");
     },
     onError: (error) => {
-      const copy = error.message === "PHONE_ALREADY_REGISTERED"
+      const code = appErrorCode(error);
+      const copy = code === "PHONE_ALREADY_REGISTERED"
         ? "هذا الرقم مستخدم بالفعل. اختر «لدي حساب بالفعل» لتسجيل الدخول أو استرجاع كلمة المرور."
-        : error.message === "PASSWORD_SETUP_PENDING"
+        : code === "PASSWORD_SETUP_PENDING"
           ? "تم التحقق من هذا الحساب سابقاً لكنه ينتظر اختيار كلمة المرور. أكمل التسجيل من نفس الجهاز أو اطلب رمزاً جديداً من الإدارة."
-          : error.message === "ACCOUNT_ALREADY_VERIFIED"
+          : code === "ACCOUNT_ALREADY_VERIFIED"
             ? "هذا الحساب مكتمل بالفعل. اختر «لدي حساب بالفعل» لتسجيل الدخول."
-            : error.message === "DRIVER_DOCUMENTS_REQUIRED"
+            : code === "DRIVER_DOCUMENTS_REQUIRED"
               ? "يلزم للسفير التقاط صورة شخصية وصورة هوية قبل إرسال الطلب."
-              : error.message === "VEHICLE_TYPE_REQUIRED"
+              : code === "VEHICLE_TYPE_REQUIRED"
                 ? "اختر نوع المركبة قبل إرسال طلب السفير."
-                : error.message === "INVALID_PHONE"
+                : code === "INVALID_PHONE"
                   ? "أدخل رقم WhatsApp صحيحاً، مثل 09xxxxxxxx أو +9639xxxxxxxx."
-                  : error.message === "ONBOARDING_RATE_LIMITED"
+                  : code === "ONBOARDING_RATE_LIMITED"
                     ? "تم إيقاف المحاولات مؤقتاً لحماية الحساب. حاول بعد قليل."
-                    : "تعذر الوصول إلى خدمة التسجيل الآن. تحقق من الإنترنت ثم أعد المحاولة.";
+                    : code === "DOCUMENT_UPLOAD_FAILED"
+                      ? "تم حفظ الطلب، لكن تعذر رفع الوثائق. أعد المحاولة بصورة أصغر."
+                      : "تعذر الوصول إلى خدمة التسجيل الآن. تحقق من الإنترنت ثم أعد المحاولة.";
       Alert.alert("تعذر إرسال الطلب", copy);
     },
   });
@@ -752,7 +764,7 @@ export function Jarbou3App() {
       setStage("workspace");
     },
     onError: (error) => {
-      const code = signInErrorCode(error);
+      const code = appErrorCode(error);
       const copy = code === "INVALID_PHONE"
         ? "أدخل رقم WhatsApp صحيحاً، مثل 09xxxxxxxx أو +9639xxxxxxxx."
         : code === "SIGN_IN_PASSWORD_INVALID"
