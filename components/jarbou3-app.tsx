@@ -509,6 +509,19 @@ function DeliveryStep({ number, title, detail }: { number: string; title: string
 
 function Top({ title, back }: { title: string; back: () => void }) { return <View style={styles.top}><Pressable onPress={back} style={styles.back}><Text style={styles.backText}>‹</Text></Pressable><Text style={styles.topTitle}>{title}</Text><View style={styles.backBlank} /></View>; }
 
+function signInErrorCode(error: { message?: string }): string {
+  const message = error.message ?? "";
+  const knownCodes = [
+    "INVALID_PHONE",
+    "SIGN_IN_PASSWORD_INVALID",
+    "SIGN_IN_IDENTITY_LOOKUP_FAILED",
+    "SIGN_IN_IDENTITY_MIGRATION_FAILED",
+    "SIGN_IN_ACCOUNT_NOT_FOUND",
+    "SIGN_IN_PROFILE_LOOKUP_FAILED",
+  ];
+  return knownCodes.find((code) => message === code || message.includes(code)) ?? message;
+}
+
 export function Jarbou3App() {
   const [role, setRole] = useState<Role>("customer");
   const [stage, setStage] = useState<"loading" | "choose" | "form" | "waiting" | "code" | "password" | "signin" | "recoveryRequest" | "recoveryWaiting" | "recoveryCode" | "recoveryPassword" | "consent" | "workspace">("loading");
@@ -738,7 +751,23 @@ export function Jarbou3App() {
       setWorkspaceName(result.user.name);
       setStage("workspace");
     },
-    onError: (error) => Alert.alert("تعذر الدخول", error.message === "INVALID_PHONE" ? "أدخل رقم WhatsApp صحيحاً، مثل 09xxxxxxxx أو +9639xxxxxxxx." : error.message === "SIGN_IN_PASSWORD_INVALID" ? "كلمة المرور غير مطابقة لهذا الحساب. إذا كنت متأكداً منها، استخدم «نسيت كلمة المرور؟» لإعادة تعيينها." : error.message === "SIGN_IN_IDENTITY_LOOKUP_FAILED" ? "تعذر العثور على هوية الحساب. أبلغ الإدارة بالرمز: SIGN_IN_IDENTITY_LOOKUP_FAILED." : error.message === "SIGN_IN_IDENTITY_MIGRATION_FAILED" ? "تعذر تجهيز هوية الدخول لهذا الحساب. أبلغ الإدارة بالرمز: SIGN_IN_IDENTITY_MIGRATION_FAILED." : error.message === "SIGN_IN_ACCOUNT_NOT_FOUND" ? "لا يوجد حساب مسجل بهذا الرقم. تحقق من الرقم أو أنشئ حساباً جديداً." : error.message === "SIGN_IN_PROFILE_LOOKUP_FAILED" ? "تعذر الوصول إلى ملف الحساب في الخادم. حاول بعد قليل؛ المشكلة من الخدمة وليست من كلمة المرور." : "تعذر تسجيل الدخول الآن. تحقق من الرقم وحاول مرة أخرى."),
+    onError: (error) => {
+      const code = signInErrorCode(error);
+      const copy = code === "INVALID_PHONE"
+        ? "أدخل رقم WhatsApp صحيحاً، مثل 09xxxxxxxx أو +9639xxxxxxxx."
+        : code === "SIGN_IN_PASSWORD_INVALID"
+          ? "كلمة المرور غير مطابقة لهذا الحساب. استخدم «نسيت كلمة المرور؟» لإعادة تعيينها."
+          : code === "SIGN_IN_IDENTITY_LOOKUP_FAILED"
+            ? "تعذر العثور على هوية الحساب. أبلغ الإدارة بالرمز: SIGN_IN_IDENTITY_LOOKUP_FAILED."
+            : code === "SIGN_IN_IDENTITY_MIGRATION_FAILED"
+              ? "تعذر تجهيز هوية الدخول لهذا الحساب. أبلغ الإدارة بالرمز: SIGN_IN_IDENTITY_MIGRATION_FAILED."
+              : code === "SIGN_IN_ACCOUNT_NOT_FOUND"
+                ? "لا يوجد حساب مسجل بهذا الرقم. تحقق من الرقم أو أنشئ حساباً جديداً."
+                : code === "SIGN_IN_PROFILE_LOOKUP_FAILED"
+                  ? "تعذر الوصول إلى ملف الحساب في الخادم. حاول بعد قليل؛ المشكلة من الخدمة وليست من كلمة المرور."
+                  : "تعذر تسجيل الدخول الآن. تحقق من الاتصال والرقم وكلمة المرور ثم حاول مرة أخرى.";
+      Alert.alert("تعذر الدخول", copy);
+    },
   });
   const requestRecovery = trpc.jarbou3.requestAccountRecovery.useMutation({
     onSuccess: (result) => {
