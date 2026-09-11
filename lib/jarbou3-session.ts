@@ -6,6 +6,7 @@ const REFRESH_TOKEN_KEY = "jarbou3.refresh-token";
 const ONBOARDING_KEY = "jarbou3.onboarding-state";
 const ACTIVE_TRIP_KEY = "jarbou3.active-trip";
 const QUEUED_LOCATION_KEY = "jarbou3.queued-location";
+const PROFILE_KEY = "jarbou3.session-profile";
 
 function webStore() {
   if (typeof localStorage === "undefined") return null;
@@ -20,6 +21,11 @@ export type SavedOnboarding = {
   requestId: string | null;
   codeExpiresAt: string | null;
   retryAfter?: string | null;
+};
+
+export type SavedSessionProfile = {
+  role: "customer" | "driver";
+  name: string;
 };
 
 export type SavedActiveTrip = {
@@ -71,16 +77,18 @@ async function removeValue(key: string) {
 }
 
 export const jarbou3Session = {
-  async save(accessToken: string, refreshToken: string) {
+  async save(accessToken: string, refreshToken: string, profile?: SavedSessionProfile) {
     if (Platform.OS === "web") {
       webStore()?.setItem(ACCESS_TOKEN_KEY, accessToken);
       webStore()?.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      if (profile) await writeJson(PROFILE_KEY, profile);
       return;
     }
     await Promise.all([
       SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken),
       SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken),
     ]);
+    if (profile) await writeJson(PROFILE_KEY, profile);
   },
   async getAccessToken() {
     return Platform.OS === "web" ? webStore()?.getItem(ACCESS_TOKEN_KEY) ?? null : SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
@@ -89,9 +97,19 @@ export const jarbou3Session = {
     if (Platform.OS === "web") {
       webStore()?.removeItem(ACCESS_TOKEN_KEY);
       webStore()?.removeItem(REFRESH_TOKEN_KEY);
+      webStore()?.removeItem(PROFILE_KEY);
       return;
     }
-    await Promise.all([SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY), SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY)]);
+    await Promise.all([
+      SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY),
+      SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
+      SecureStore.deleteItemAsync(PROFILE_KEY),
+    ]);
+  },
+  async getProfile(): Promise<SavedSessionProfile | null> {
+    const profile = await readJson<SavedSessionProfile>(PROFILE_KEY);
+    if (!profile || !["customer", "driver"].includes(profile.role) || typeof profile.name !== "string") return null;
+    return profile;
   },
   async saveOnboarding(state: SavedOnboarding) {
     const value = JSON.stringify(state);
