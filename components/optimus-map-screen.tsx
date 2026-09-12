@@ -53,11 +53,11 @@ export function OptimusMapScreen({
         fullScreen
         readOnly={!selecting}
       />
-      <View pointerEvents="box-none" style={styles.floatingLayer}>
-        <Pressable accessibilityLabel="تحديد موقعي الحالي" onPress={onLocate} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]}>
+      <View pointerEvents="box-none" style={[styles.floatingLayer, { top: Math.max(insets.top + 12, 20), right: Math.max(insets.right + 12, 16) }]}>
+        <Pressable accessibilityLabel="تحديد موقعي الحالي" onPress={onLocate} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}>
           <MaterialIcons name={locating ? "gps-not-fixed" : "my-location"} size={23} color="#263238" />
         </Pressable>
-        <Pressable accessibilityLabel="فتح الملف الشخصي" onPress={onProfile} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]}>
+        <Pressable accessibilityLabel="فتح الملف الشخصي" onPress={onProfile} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}>
           <MaterialIcons name="person-outline" size={24} color="#263238" />
         </Pressable>
       </View>
@@ -77,7 +77,7 @@ export function OptimusMapScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 520, backgroundColor: "#E7EBE8" },
-  floatingLayer: { position: "absolute", top: 16, right: 16, gap: 10, alignItems: "center" },
+  floatingLayer: { position: "absolute", gap: 10, alignItems: "center", zIndex: 20 },
   floatingButton: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFFF2", shadowColor: "#0B1F17", shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
   sheetBackground: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, shadowColor: "#10231B", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: -5 }, elevation: 16 },
