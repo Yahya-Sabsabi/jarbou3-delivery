@@ -15,6 +15,7 @@ function safeJson(value: unknown) {
 function buildMapHtml(props: HamaMapProps) {
   const payload = {
     center: props.focusPoint ?? props.driverLocation ?? HAMA_INITIAL_REGION,
+    focusZoom: props.focusZoom ?? 13,
     source: props.source ?? null,
     destination: props.destination ?? null,
     driverLocation: props.driverLocation ?? null,
@@ -48,7 +49,7 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
 (function(){
   const data = ${safeJson(payload)};
   const initial = data.center && typeof data.center.latitude === 'number' ? data.center : { latitude: ${HAMA_INITIAL_REGION.latitude}, longitude: ${HAMA_INITIAL_REGION.longitude} };
-  const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true, dragging:true, touchZoom:true, doubleClickZoom:true, scrollWheelZoom:true, boxZoom:false, keyboard:false }).setView([initial.latitude, initial.longitude], 13);
+  const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true, dragging:true, touchZoom:true, doubleClickZoom:true, scrollWheelZoom:true, wheelDebounceTime:100, wheelPxPerZoomLevel:120, zoomDelta:0.5, zoomSnap:0.5, smoothWheelZoom:true, boxZoom:false, keyboard:false }).setView([initial.latitude, initial.longitude], data.focusZoom || 13);
   L.tileLayer('${TILE_URL}', { maxZoom:19, attribution:'${OSM_ATTRIBUTION}', crossOrigin:true }).addTo(map);
   const layer = L.layerGroup().addTo(map);
   function pin(kind, label) {
@@ -74,7 +75,7 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
   window.setTimeout(refreshMapSize, 0);
   window.setTimeout(refreshMapSize, 80);
   window.setTimeout(refreshMapSize, 300);
-  window.receiveMapUpdate=function(next){ Object.assign(data,next||{}); render(); const focus=data.focusPoint || data.driverLocation || data.center; if(focus) map.flyTo([focus.latitude,focus.longitude],13,{duration:.35}); };
+  window.receiveMapUpdate=function(next){ Object.assign(data,next||{}); render(); const focus=data.focusPoint || data.driverLocation || data.center; if(focus) map.flyTo([focus.latitude,focus.longitude],data.focusZoom || 13,{duration:.35,easeLinearity:.25}); refreshMapSize(); };
   window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 })();
 </script>

@@ -132,6 +132,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
   const [source, setSource] = useState<MapPoint | null>(null);
   const [destination, setDestination] = useState<MapPoint | null>(null);
   const [selecting, setSelecting] = useState<"source" | "destination">("source");
+  const [mapFocusZoom, setMapFocusZoom] = useState(13);
   const [route, setRoute] = useState<RouteEstimate | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState<MapPoint | null>(null);
@@ -269,7 +270,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
     if (!driverId) setPreviousDriverId(null);
   }, [page, currentTracking.data?.driver_id, previousDriverId]);
 
-  const setMapPoint = (point: MapPoint) => { if (selecting === "source") setSource(point); else setDestination(point); };
+  const setMapPoint = (point: MapPoint) => { setMapFocusZoom(13); if (selecting === "source") setSource(point); else setDestination(point); };
   const trackedSource = currentTracking.data ? { latitude: Number(currentTracking.data.source_lat), longitude: Number(currentTracking.data.source_lng) } : source;
   const trackedDestination = currentTracking.data ? { latitude: Number(currentTracking.data.destination_lat), longitude: Number(currentTracking.data.destination_lng) } : destination;
   const liveTripPath = useMemo(() => {
@@ -305,6 +306,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
   };
   const useMyLocation = async () => {
     setLocating(true);
+    setMapFocusZoom(16);
     setLocationNotice(null);
     try {
       const point = await getCurrentHamaLocation();
@@ -353,6 +355,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
       source={source}
       destination={destination}
       focusPoint={source ?? destination}
+      focusZoom={mapFocusZoom}
       routePath={route?.path}
       selecting={selecting}
       onSelect={setMapPoint}
@@ -407,7 +410,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
 
   if (page === "otp") return <View style={styles.fill}><Top title="تأكيد الاستلام" back={() => setPage("track")} /><View style={styles.centered}><View style={styles.otpBadge}><Text style={styles.otpBadgeText}>OTP</Text></View><Text style={styles.centerTitle}>أدخل رمز الاستلام</Text><Text style={styles.centerCopy}>يشاركك السائق الرمز عند وصول الطلب. لا تؤكده قبل الاستلام.</Text><TextInput style={styles.otp} value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={4} placeholder="••••" placeholderTextColor="#AAA" textAlign="center" /><Action title="تأكيد الرمز" onPress={() => otp.length === 4 ? Alert.alert("تم التأكيد", "سيطلب من السائق الآن تصوير إثبات التسليم.") : Alert.alert("الرمز غير مكتمل", "أدخل أربعة أرقام.")} /><View style={styles.proofNotice}><Text style={styles.proofNoticeIcon}>▧</Text><View style={styles.flex}><Text style={styles.proofNoticeTitle}>صورة إثبات التسليم</Text><Text style={styles.proofNoticeCopy}>ستظهر هنا فور رفعها من السائق.</Text></View></View></View></View>;
 
-  return <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom + 30, 42) }]}><View style={styles.hero}><View><Text style={styles.eyebrow}>OPTIMUS X في حماة</Text><Text style={styles.heroTitle}>أهلاً، {name}</Text><Text style={styles.copy}>توصيل قريب وواضح وبالليرة السورية الجديدة.</Text></View><Mark /></View><HamaMap compact source={source} destination={destination} routePath={route?.path} readOnly /><View style={styles.space}><Heading eyebrow="الخدمة متاحة" title="إلى أين نوصلك اليوم؟" /><Action title="إنشاء طلب توصيل" onPress={() => setPage("order")} /><View style={styles.note}><Text style={styles.noteIcon}>↗</Text><View style={styles.flex}><Text style={styles.noteTitle}>اختر نقاطك بحرية داخل حماة</Text><Text style={styles.noteCopy}>اضغط الخريطة لوضع دبوس الاستلام ودبوس التسليم ضمن دائرة ٧ كم.</Text></View></View><Heading eyebrow="آخر الطلبات" title="لا توجد طلبات نشطة" aside="عرض السجل" /><View style={styles.empty}><Text style={styles.emptyText}>ستظهر حالة طلبك وتفاصيل السفير هنا فور التأكيد.</Text></View></View></ScrollView>;
+  return <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom + 30, 42) }]}><View style={styles.hero}><View><Text style={styles.eyebrow}>OPTIMUS X في حماة</Text><Text style={styles.heroTitle}>أهلاً، {name}</Text><Text style={styles.copy}>توصيل قريب وواضح وبالليرة السورية الجديدة.</Text></View><Mark /></View><View style={styles.space}><Heading eyebrow="الخدمة متاحة" title="إلى أين نوصلك اليوم؟" /><Action title="إنشاء طلب توصيل" onPress={() => setPage("order")} /><View style={styles.note}><Text style={styles.noteIcon}>↗</Text><View style={styles.flex}><Text style={styles.noteTitle}>الخريطة الكاملة داخل إنشاء الطلب</Text><Text style={styles.noteCopy}>اضغط إنشاء طلب توصيل لتحديد الاستلام والوجهة على خريطة حماة التفاعلية.</Text></View></View><Heading eyebrow="آخر الطلبات" title="لا توجد طلبات نشطة" aside="عرض السجل" /><View style={styles.empty}><Text style={styles.emptyText}>ستظهر حالة طلبك وتفاصيل السفير هنا فور التأكيد.</Text></View></View></ScrollView>;
 }
 
 function Driver({ name, onTripActivity }: { name: string; onTripActivity: (active: boolean) => void }) {

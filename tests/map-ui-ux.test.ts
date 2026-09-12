@@ -22,12 +22,32 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(openMap).toContain("HAMA_INITIAL_REGION");
   });
 
+  it("removes the compact map preview from the customer home screen", () => {
+    expect(app).not.toContain("<HamaMap compact source={source}");
+    expect(app).toContain("الخريطة الكاملة داخل إنشاء الطلب");
+  });
+
+  it("uses smooth Leaflet zoom settings and GPS focus zoom", () => {
+    expect(openMap).toContain("wheelDebounceTime:100");
+    expect(openMap).toContain("zoomSnap:0.5");
+    expect(openMap).toContain("smoothWheelZoom:true");
+    expect(openMap).toContain("data.focusZoom || 13");
+    expect(app).toContain("setMapFocusZoom(16)");
+    expect(app).toContain("focusZoom={mapFocusZoom}");
+  });
+
   it("keeps Leaflet sizing valid after WebView layout and orientation changes", () => {
     expect(openMap).toContain("map.invalidateSize(false)");
     expect(openMap).toContain("window.addEventListener('resize'");
     expect(openMap).toContain("window.addEventListener('orientationchange'");
     expect(openMap).toContain("min-width:100%");
     expect(openMap).toContain("width:100vw");
+  });
+
+  it("keeps the bottom sheet keyboard-safe with at least 40px bottom space", () => {
+    expect(mapScreen).toContain("KeyboardAvoidingView");
+    expect(mapScreen).toContain("insets.bottom + 40");
+    expect(mapScreen).toContain("Math.max(insets.bottom + 40, 40)");
   });
 
   it("keeps form fields interactive above the keyboard", () => {

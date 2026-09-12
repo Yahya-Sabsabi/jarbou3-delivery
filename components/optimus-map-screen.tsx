@@ -1,7 +1,7 @@
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useMemo, useRef } from "react";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from "react-native";
 import type { ReactNode } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,6 +12,7 @@ export function OptimusMapScreen({
   source,
   destination,
   focusPoint,
+  focusZoom,
   routePath,
   actualPath,
   selecting,
@@ -25,6 +26,7 @@ export function OptimusMapScreen({
   source?: MapPoint | null;
   destination?: MapPoint | null;
   focusPoint?: MapPoint | null;
+  focusZoom?: number;
   routePath?: MapPoint[];
   actualPath?: MapPoint[];
   selecting?: "source" | "destination";
@@ -50,6 +52,7 @@ export function OptimusMapScreen({
         onSelect={onSelect}
         onOutsideRange={onOutsideRange}
         focusPoint={focusPoint}
+        focusZoom={focusZoom}
         fullScreen
         readOnly={!selecting}
       />
@@ -62,13 +65,19 @@ export function OptimusMapScreen({
         </Pressable>
       </View>
       {Platform.OS === "web" ? (
-        <View style={[styles.webSheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+        <View style={[styles.webSheet, { paddingBottom: Math.max(insets.bottom + 40, 40) }]}>
           <View style={styles.handle} />
-          {children}
+          <KeyboardAvoidingView behavior="height" style={styles.sheetKeyboardAvoiding}>
+            {children}
+          </KeyboardAvoidingView>
         </View>
       ) : (
         <BottomSheet ref={bottomSheetRef} index={1} snapPoints={snapPoints} enablePanDownToClose={false} backgroundStyle={styles.sheetBackground} handleIndicatorStyle={styles.sheetIndicator}>
-          <BottomSheetView style={[styles.sheetContent, { paddingBottom: Math.max(insets.bottom, 12) }]}>{children}</BottomSheetView>
+          <BottomSheetView style={[styles.sheetContent, { paddingBottom: Math.max(insets.bottom + 40, 40) }]}>
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.sheetKeyboardAvoiding}>
+              {children}
+            </KeyboardAvoidingView>
+          </BottomSheetView>
         </BottomSheet>
       )}
     </View>
@@ -82,7 +91,8 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
   sheetBackground: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, shadowColor: "#10231B", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: -5 }, elevation: 16 },
   sheetIndicator: { backgroundColor: "#9BA8A2", width: 44 },
-  sheetContent: { paddingHorizontal: 16, paddingTop: 2 },
+  sheetContent: { flex: 1, paddingHorizontal: 16, paddingTop: 2 },
+  sheetKeyboardAvoiding: { flex: 1 },
   webSheet: { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "72%", backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 16, paddingTop: 8, shadowColor: "#10231B", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: -5 }, elevation: 16 },
   handle: { alignSelf: "center", width: 44, height: 5, borderRadius: 3, backgroundColor: "#9BA8A2", marginBottom: 8 },
 });

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Animated, type GestureResponderEvent, Image, type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { HAMA_BOUNDS, type MapPoint } from "@/shared/jarbou3";
 
-export type HamaMapProps = { compact?: boolean; driver?: boolean; source?: MapPoint | null; destination?: MapPoint | null; driverLocation?: MapPoint | null; routePath?: MapPoint[]; actualPath?: MapPoint[]; selecting?: "source" | "destination"; onSelect?: (point: MapPoint) => void; onOutsideRange?: () => void; readOnly?: boolean; focusPoint?: MapPoint | null; fullScreen?: boolean };
+export type HamaMapProps = { compact?: boolean; driver?: boolean; source?: MapPoint | null; destination?: MapPoint | null; driverLocation?: MapPoint | null; routePath?: MapPoint[]; actualPath?: MapPoint[]; selecting?: "source" | "destination"; onSelect?: (point: MapPoint) => void; onOutsideRange?: () => void; readOnly?: boolean; focusPoint?: MapPoint | null; focusZoom?: number; fullScreen?: boolean };
 
 function project(point: MapPoint) {
   return {
