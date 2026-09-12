@@ -29,13 +29,17 @@ function buildMapHtml(props: HamaMapProps) {
   return `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxNxv9L5Qk2Y9z8sF2wR0b0Xj0Q8o9m2G7lQ6e9rM=" crossorigin="" />
 <style>
 html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0; padding:0; overflow:hidden; background:#e8ece8; }
 #map { position:absolute; inset:0; width:100vw; height:100vh; margin:0; padding:0; touch-action:none; }
 .leaflet-control-attribution { font-size:10px; background:rgba(255,255,255,.86)!important; }
   .leaflet-control-zoom { display:none; }
+  .leaflet-tile { border:none !important; outline:none !important; margin:-1px !important; padding:1px !important; }
+  .leaflet-tile-container { line-height:0 !important; }
+  .leaflet-pane, .leaflet-layer, .leaflet-tile, .leaflet-marker-icon, .leaflet-marker-shadow { image-rendering:auto; }
+  img { border:0; }
   .center-pointer { position:fixed; left:50%; top:50%; width:34px; height:34px; margin-left:-17px; margin-top:-34px; z-index:1000; pointer-events:none; filter:drop-shadow(0 3px 5px rgba(0,0,0,.3)); }
   .center-pointer::before { content:''; display:block; width:28px; height:28px; margin:3px; background:#24755e; border:4px solid #fff; border-radius:50% 50% 50% 0; transform:rotate(-45deg); }
   .center-pointer::after { content:''; position:absolute; left:12px; top:12px; width:10px; height:10px; border-radius:50%; background:#fff; }

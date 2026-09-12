@@ -29,6 +29,8 @@ describe("OPTIMUS X map UI/UX contract", () => {
 
   it("uses free OpenStreetMap tiles and interactive center selection", () => {
     expect(openMap).toContain("{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
+    expect(openMap).toContain(".leaflet-tile { border:none !important; outline:none !important; margin:-1px !important; padding:1px !important; }");
+    expect(openMap).toContain("initial-scale=1.0, maximum-scale=1.0, user-scalable=no");
     expect(openMap).toContain("map.invalidateSize(false)");
     expect(openMap).toContain("draggable:true");
     expect(openMap).toContain("map.on('click'");
@@ -64,14 +66,14 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(app).toContain("KeyboardAvoidingView");
     expect(app).toContain('keyboardShouldPersistTaps="handled"');
     expect(app).toContain('keyboardDismissMode="on-drag"');
-    expect(app).toContain("paddingBottom: Math.max(insets.bottom + 180, 180)");
+    expect(app).toContain("paddingBottom: Math.max(insets.bottom + 300, 300)");
   });
 
   it("applies dynamic top and profile bottom safe-area spacing", () => {
     expect(app).toContain("paddingTop: Math.max(insets.top + 6, 14)");
     expect(app).toContain("paddingTop: Math.max(insets.top + 8, 20)");
     expect(app).toContain("paddingBottom: Math.max(insets.bottom + 36, 64)");
-    expect(app).toContain("paddingBottom: Math.max(insets.bottom + 180, 180)");
+    expect(app).toContain("paddingBottom: Math.max(insets.bottom + 300, 300)");
   });
 
   it("opens a real profile panel and keeps current-location feedback inline", () => {
