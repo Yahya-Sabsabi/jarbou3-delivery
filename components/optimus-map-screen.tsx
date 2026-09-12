@@ -59,6 +59,7 @@ export function OptimusMapScreen({
         fullScreen
         readOnly={!selecting}
       />
+      {selecting ? <View pointerEvents="none" style={styles.centerMarker}><View style={styles.centerMarkerPin} /></View> : null}
       <View pointerEvents="box-none" style={[styles.floatingLayer, { top: Math.max(insets.top + 12, 20), right: Math.max(insets.right + 12, 16) }]}>
         <Pressable accessibilityLabel="تحديد موقعي الحالي" onPress={onLocate} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}>
           <MaterialIcons name={locating ? "gps-not-fixed" : "my-location"} size={23} color="#263238" />
@@ -89,6 +90,8 @@ export function OptimusMapScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 520, backgroundColor: "#E7EBE8" },
+  centerMarker: { position: "absolute", top: "50%", left: "50%", width: 40, height: 40, marginLeft: -20, marginTop: -40, zIndex: 10, alignItems: "center", justifyContent: "flex-end" },
+  centerMarkerPin: { width: 34, height: 34, borderRadius: 18, backgroundColor: "#24755E", borderWidth: 4, borderColor: "#FFFFFF", shadowColor: "#000000", shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
   floatingLayer: { position: "absolute", gap: 10, alignItems: "center", zIndex: 20 },
   floatingButton: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFFF2", shadowColor: "#0B1F17", shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },

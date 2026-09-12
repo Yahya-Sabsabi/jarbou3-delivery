@@ -764,3 +764,7 @@
 - [x] إزالة الفواصل المرئية بين بلاطات Leaflet وإضافة viewport ثابت وسيرفر بلا مفتاح
 - [x] تحسين رفع حقول الإدخال فوق لوحة المفاتيح داخل اللوحة السفلية
 - [x] زيادة paddingBottom للوحة السفلية إلى 300 وإضافة اختبارات وبناء APK
+- [x] تحويل بلاطات Leaflet إلى Retina Carto Voyager مع CSS مضاد للفواصل وإيقاف doubleClickZoom وbounceAtZoom
+- [x] إزالة دبوس Leaflet التفاعلي واعتماد دبوس React Native ثابت فوق WebView مع إرسال مركز الخريطة عند moveend
+- [x] جعل GPS يستخدم flyTo متحركاً بسلاسة وضبط اللوحة السفلية إلى paddingBottom 220
+- [x] إضافة اختبارات regression وتشغيل TypeScript والاختبارات وبناء APK
