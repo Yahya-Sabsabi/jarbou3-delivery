@@ -133,6 +133,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
   const [destination, setDestination] = useState<MapPoint | null>(null);
   const [selecting, setSelecting] = useState<"source" | "destination">("source");
   const [mapFocusZoom, setMapFocusZoom] = useState(13);
+  const [mapFocusRequestId, setMapFocusRequestId] = useState(0);
   const [route, setRoute] = useState<RouteEstimate | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState<MapPoint | null>(null);
@@ -307,6 +308,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
   const useMyLocation = async () => {
     setLocating(true);
     setMapFocusZoom(16);
+    setMapFocusRequestId((value) => value + 1);
     setLocationNotice(null);
     try {
       const point = await getCurrentHamaLocation();
@@ -356,6 +358,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
       destination={destination}
       focusPoint={source ?? destination}
       focusZoom={mapFocusZoom}
+      focusRequestId={mapFocusRequestId}
       routePath={route?.path}
       selecting={selecting}
       onSelect={setMapPoint}
@@ -364,7 +367,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
       locating={locating}
       onProfile={() => setPage("profile")}
     >
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardAvoiding}><ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.sheetScroll, { paddingBottom: Math.max(insets.bottom + 120, 120) }]} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardAvoiding}><ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.sheetScroll, { paddingBottom: Math.max(insets.bottom + 180, 180) }]} showsVerticalScrollIndicator={false}>
         <Top title="طلب توصيل" back={() => setPage("home")} />
         {locationNotice ? <Pressable onPress={() => setLocationNotice(null)} style={styles.locationNotice}><Text style={styles.locationNoticeText}>{locationNotice}</Text></Pressable> : null}
         <View style={styles.mapModeRow}>

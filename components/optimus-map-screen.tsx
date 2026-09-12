@@ -13,6 +13,7 @@ export function OptimusMapScreen({
   destination,
   focusPoint,
   focusZoom,
+  focusRequestId,
   routePath,
   actualPath,
   selecting,
@@ -27,6 +28,7 @@ export function OptimusMapScreen({
   destination?: MapPoint | null;
   focusPoint?: MapPoint | null;
   focusZoom?: number;
+  focusRequestId?: number;
   routePath?: MapPoint[];
   actualPath?: MapPoint[];
   selecting?: "source" | "destination";
@@ -53,6 +55,7 @@ export function OptimusMapScreen({
         onOutsideRange={onOutsideRange}
         focusPoint={focusPoint}
         focusZoom={focusZoom}
+        focusRequestId={focusRequestId}
         fullScreen
         readOnly={!selecting}
       />

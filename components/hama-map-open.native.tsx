@@ -1,12 +1,12 @@
-import { useMemo } from "react";
-import { Platform, StyleSheet, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { StyleSheet, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
 import { HAMA_BOUNDS, HAMA_INITIAL_REGION, type MapPoint } from "@/shared/jarbou3";
 import type { HamaMapProps } from "@/components/hama-map-fallback";
 
-const TILE_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-const CARTO_ATTRIBUTION = "© OpenStreetMap contributors © CARTO";
+const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 
 function safeJson(value: unknown) {
   return JSON.stringify(value).replace(/</g, "\\u003c");
@@ -16,6 +16,7 @@ function buildMapHtml(props: HamaMapProps) {
   const payload = {
     center: props.focusPoint ?? props.driverLocation ?? HAMA_INITIAL_REGION,
     focusZoom: props.focusZoom ?? 13,
+    focusRequestId: props.focusRequestId ?? 0,
     source: props.source ?? null,
     destination: props.destination ?? null,
     driverLocation: props.driverLocation ?? null,
@@ -38,6 +39,7 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
   .center-pointer { position:fixed; left:50%; top:50%; width:34px; height:34px; margin-left:-17px; margin-top:-34px; z-index:1000; pointer-events:none; filter:drop-shadow(0 3px 5px rgba(0,0,0,.3)); }
   .center-pointer::before { content:''; display:block; width:28px; height:28px; margin:3px; background:#24755e; border:4px solid #fff; border-radius:50% 50% 50% 0; transform:rotate(-45deg); }
   .center-pointer::after { content:''; position:absolute; left:12px; top:12px; width:10px; height:10px; border-radius:50%; background:#fff; }
+  .pin.selection { width:32px; height:32px; background:#24755e; }
   .pin { width:30px; height:30px; border:3px solid #fff; border-radius:50% 50% 50% 0; transform:rotate(-45deg); box-shadow:0 2px 8px rgba(0,0,0,.25); }
 .pin span { display:block; width:10px; height:10px; margin:7px; border-radius:50%; background:#fff; }
 .pin.source { background:#536b78; }
@@ -54,8 +56,10 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
   const data = ${safeJson(payload)};
   const initial = data.center && typeof data.center.latitude === 'number' ? data.center : { latitude: ${HAMA_INITIAL_REGION.latitude}, longitude: ${HAMA_INITIAL_REGION.longitude} };
   const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true, dragging:true, touchZoom:true, doubleClickZoom:true, scrollWheelZoom:true, wheelDebounceTime:100, wheelPxPerZoomLevel:120, zoomDelta:0.5, zoomSnap:0.5, smoothWheelZoom:true, boxZoom:false, keyboard:false }).setView([initial.latitude, initial.longitude], data.focusZoom || 13);
-  L.tileLayer('${TILE_URL}', { maxZoom:19, subdomains:'abcd', tileSize:256, zoomOffset:0, attribution:'${CARTO_ATTRIBUTION}', crossOrigin:true, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:2 }).addTo(map);
+  L.tileLayer('${TILE_URL}', { maxZoom:19, subdomains:'abcd', tileSize:256, zoomOffset:0, attribution:'${OSM_ATTRIBUTION}', crossOrigin:true, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:2 }).addTo(map);
   const layer = L.layerGroup().addTo(map);
+  let selectionMarker = null;
+  let lastFocusRequestId = data.focusRequestId || 0;
   function pin(kind, label) {
     return L.divIcon({ className:'', html:'<div class="pin '+kind+'">'+(kind === 'driver' ? 'ج' : '<span></span>')+'</div>', iconSize: kind === 'driver' ? [36,36] : [30,30], iconAnchor: kind === 'driver' ? [18,18] : [4,30] });
   }
@@ -67,6 +71,14 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
     [['source','استلام',data.source],['destination','وجهة',data.destination],['driver','السفير',data.driverLocation]].forEach(([kind,label,value]) => { if(kind === data.selecting) return; const p=point(value); if(p) L.marker(p,{icon:pin(kind,label),keyboard:false}).addTo(layer).bindTooltip(label,{direction:'top',opacity:.9}); });
   }
   render();
+  function syncSelectionMarker(){
+    if(data.readOnly || !data.selecting){ if(selectionMarker){ map.removeLayer(selectionMarker); selectionMarker=null; } return; }
+    const center=map.getCenter();
+    if(!selectionMarker){
+      selectionMarker=L.marker(center,{icon:pin('selection',''),draggable:true,keyboard:false}).addTo(map);
+      selectionMarker.on('dragend',function(event){ const p=event.target.getLatLng(); map.setView(p,map.getZoom(),{animate:false}); reportCenter(); });
+    } else selectionMarker.setLatLng(center);
+  }
   let lastReportedCenter = null;
   function reportCenter(){
     if(data.readOnly || !data.selecting) return;
@@ -76,14 +88,17 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
     lastReportedCenter={latitude:p.lat,longitude:p.lng};
     window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'select',point:lastReportedCenter}));
   }
-  map.on('moveend', reportCenter);
+  map.on('move', function(){ if(selectionMarker) selectionMarker.setLatLng(map.getCenter()); });
+  map.on('moveend', function(){ syncSelectionMarker(); reportCenter(); });
+  map.on('click', function(event){ if(data.readOnly || !data.selecting) return; map.setView(event.latlng,map.getZoom(),{animate:false}); reportCenter(); });
+  syncSelectionMarker();
   function refreshMapSize(){ map.invalidateSize(false); }
   window.addEventListener('resize', refreshMapSize);
   window.addEventListener('orientationchange', refreshMapSize);
   window.setTimeout(refreshMapSize, 0);
   window.setTimeout(refreshMapSize, 80);
   window.setTimeout(refreshMapSize, 300);
-  window.receiveMapUpdate=function(next){ Object.assign(data,next||{}); render(); const focus=data.focusPoint || data.driverLocation || data.center; if(focus){ const zoom=data.focusZoom || 13; if(zoom >= 16) map.setView([focus.latitude,focus.longitude],16,{animate:false}); else map.flyTo([focus.latitude,focus.longitude],zoom,{duration:.35,easeLinearity:.25}); } refreshMapSize(); };
+  window.receiveMapUpdate=function(next){ const update=next||{}; Object.assign(data,update); render(); syncSelectionMarker(); if(update.focusRequestId && update.focusRequestId !== lastFocusRequestId){ lastFocusRequestId=update.focusRequestId; const focus=data.focusPoint || data.driverLocation || data.center; if(focus) map.setView([focus.latitude,focus.longitude],16,{animate:false}); } refreshMapSize(); };
   window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 })();
 </script>
@@ -92,7 +107,26 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
 }
 
 export function HamaMap(props: HamaMapProps) {
-  const html = useMemo(() => buildMapHtml(props), [props]);
+  const webViewRef = useRef<WebView>(null);
+  const initialHtmlRef = useRef<string | null>(null);
+  const html = initialHtmlRef.current ?? (initialHtmlRef.current = buildMapHtml({ ...props, focusRequestId: 0 }));
+  const updatePayload = {
+    center: props.focusPoint ?? props.driverLocation ?? HAMA_INITIAL_REGION,
+    focusZoom: props.focusZoom ?? 13,
+    focusRequestId: props.focusRequestId ?? 0,
+    source: props.source ?? null,
+    destination: props.destination ?? null,
+    driverLocation: props.driverLocation ?? null,
+    routePath: props.actualPath?.length ? props.actualPath : (props.routePath ?? []),
+    selecting: props.selecting ?? null,
+    readOnly: Boolean(props.readOnly),
+  };
+  const injectUpdate = () => {
+    webViewRef.current?.injectJavaScript(`window.receiveMapUpdate(${safeJson(updatePayload)}); true;`);
+  };
+  useEffect(() => {
+    injectUpdate();
+  }, [props.source, props.destination, props.driverLocation, props.routePath, props.actualPath, props.selecting, props.readOnly, props.focusRequestId, props.focusPoint, props.focusZoom]);
   const handleMessage = (event: WebViewMessageEvent) => {
     try {
       const message = JSON.parse(event.nativeEvent.data) as { type?: string; point?: MapPoint };
@@ -105,18 +139,20 @@ export function HamaMap(props: HamaMapProps) {
   return (
     <View style={[styles.container, props.compact && styles.compact, props.fullScreen && styles.fullScreen]}>
       <WebView
-        originWhitelist={["*"]}
+        ref={webViewRef}
+        originWhitelist={['*']}
         source={{ html, baseUrl: "https://optimus-x.local" }}
         style={styles.webview}
         javaScriptEnabled
         domStorageEnabled
         setSupportMultipleWindows={false}
         onMessage={handleMessage}
+        onLoadEnd={injectUpdate}
         cacheEnabled
         allowsInlineMediaPlayback
         automaticallyAdjustContentInsets={false}
         startInLoadingState={false}
-        applicationNameForUserAgent="OPTIMUS-X/1.0 (Hama Carto Voyager)"
+        applicationNameForUserAgent="OPTIMUS-X/1.0 (Hama OpenStreetMap)"
       />
     </View>
   );

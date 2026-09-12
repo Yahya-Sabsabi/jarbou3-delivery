@@ -757,3 +757,7 @@
 - [x] تحويل اختيار النقاط إلى دبوس مركزي ثابت يتبع مركز الخريطة ويدعم GPS عند مستوى 16
 - [x] رفع paddingBottom للوحة السفلية إلى 120 وضمان KeyboardAvoidingView لحقول الإدخال
 - [x] إضافة اختبارات regression وبناء APK للتعديلات الجديدة
+- [x] استبدال Carto بمصدر OpenStreetMap المباشر وإضافة invalidateSize بعد التحميل
+- [x] منع إعادة تمركز الخريطة أثناء السحب وحصر setView في GPS أو التهيئة الأولى
+- [x] إضافة النقر والسحب لتحديث الدبوس والإحداثيات عند click وdragend
+- [x] رفع paddingBottom إلى 180 والتحقق من KeyboardAvoidingView وبناء APK
