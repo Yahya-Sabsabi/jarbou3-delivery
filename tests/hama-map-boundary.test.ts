@@ -10,11 +10,13 @@ describe("HamaMap render safety", () => {
   it("wraps the dynamically loaded map with an error boundary and fallback", () => {
     expect(source).toContain("class MapBoundary extends Component");
     expect(source).toContain("getDerivedStateFromError");
-    expect(source).toContain("<MapBoundary fallback={<FallbackHamaMap {...props} />}");
+    expect(source).toContain("<MapBoundary fallback={<MapStatus fullScreen={props.fullScreen} failed />}");
+    expect(source).not.toContain("FallbackHamaMap");
   });
 
-  it("does not initialize native MapView on Android before provider configuration", () => {
-    expect(source).toContain('if (Platform.OS === "android") return;');
-    expect(source).toContain('if (Platform.OS === "android" || failedToLoad) return <FallbackHamaMap {...props} />;');
+  it("loads the open-source Android map instead of forcing the static placeholder", () => {
+    expect(source).toContain('import("@/components/hama-map-open")');
+    expect(source).not.toContain('if (Platform.OS === "android") return;');
+    expect(source).not.toContain('if (Platform.OS === "android" || failedToLoad) return <FallbackHamaMap {...props} />;');
   });
 });

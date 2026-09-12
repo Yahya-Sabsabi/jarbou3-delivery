@@ -1,10 +1,9 @@
 import { Component, useEffect, useState, type ReactNode } from "react";
-import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, Platform, StyleSheet, Text, View } from "react-native";
 
-import { HamaMap as FallbackHamaMap, type HamaMapProps } from "@/components/hama-map-fallback";
+import type { HamaMapProps } from "@/components/hama-map-fallback";
 
-type LoadedMap = typeof FallbackHamaMap;
-
+type LoadedMap = (props: HamaMapProps) => ReactNode;
 type MapBoundaryProps = { children: ReactNode; fallback: ReactNode };
 type MapBoundaryState = { hasError: boolean };
 
@@ -16,7 +15,7 @@ class MapBoundary extends Component<MapBoundaryProps, MapBoundaryState> {
   }
 
   componentDidCatch(error: unknown) {
-    console.warn("[hama-map] render failed; using fallback", error);
+    console.warn("[hama-map] render failed", error);
   }
 
   render() {
@@ -24,37 +23,46 @@ class MapBoundary extends Component<MapBoundaryProps, MapBoundaryState> {
   }
 }
 
-/**
- * لا تُحمّل react-native-maps قبل احتياج الخريطة فعلياً. يحمي ذلك شاشة الإقلاع
- * من فشل مكتبة أصلية ثقيلة، مع إبقاء خريطة بديلة تتيح متابعة الرحلة عند تعذرها.
- */
+function MapStatus({ fullScreen, failed }: { fullScreen?: boolean; failed?: boolean }) {
+  return (
+    <View style={[styles.status, fullScreen && styles.fullScreen]}>
+      {failed ? <Text style={styles.statusTitle}>تعذر تحميل الخريطة</Text> : <ActivityIndicator size="small" color="#24755E" />}
+      {failed ? <Text style={styles.statusCopy}>تحقق من اتصال الإنترنت ثم أعد فتح شاشة الخريطة.</Text> : null}
+    </View>
+  );
+}
+
+/** Android map path: Leaflet + OpenStreetMap in WebView, never the old static map. */
 export function HamaMap(props: HamaMapProps) {
   const [MapComponent, setMapComponent] = useState<LoadedMap | null>(null);
   const [failedToLoad, setFailedToLoad] = useState(false);
 
   useEffect(() => {
-    // لا نُنشئ MapView الأصلي على Android قبل تهيئة مزود خرائط native.
-    // غياب Google Maps metadata قد يسبب خروج العملية native، ولا يمكن لـ
-    // React Error Boundary التقاط هذا النوع من الأعطال. الخريطة البديلة
-    // تظل تفاعلية وتدعم اختيار نقاط حماة وتتبع المسار.
-    if (Platform.OS === "android") return;
     let active = true;
-    import("@/components/hama-map")
+    import("@/components/hama-map-open")
       .then((module) => {
-        if (active) setMapComponent(() => module.HamaMap);
+        if (active) setMapComponent(() => module.HamaMap as LoadedMap);
       })
-      .catch(() => {
+      .catch((error) => {
+        console.warn("[hama-map] open-source map failed to load", error);
         if (active) setFailedToLoad(true);
       });
     return () => { active = false; };
   }, []);
 
-  if (Platform.OS === "android" || failedToLoad) return <FallbackHamaMap {...props} />;
-  if (!MapComponent) return <View style={[styles.loading, props.compact && styles.compact]}><ActivityIndicator size="small" color="#4A4A4A" /></View>;
-  return <MapBoundary fallback={<FallbackHamaMap {...props} />}><MapComponent {...props} /></MapBoundary>;
+  if (!MapComponent) return <MapStatus fullScreen={props.fullScreen} failed={failedToLoad} />;
+  return (
+    <MapBoundary fallback={<MapStatus fullScreen={props.fullScreen} failed />}>
+      <MapComponent {...props} />
+    </MapBoundary>
+  );
 }
 
 const styles = StyleSheet.create({
-  loading: { height: 220, marginHorizontal: 16, marginTop: 16, borderRadius: 23, alignItems: "center", justifyContent: "center", backgroundColor: "#E6E7E4" },
-  compact: { height: 188 },
+  status: { height: 220, minHeight: 220, marginHorizontal: 16, marginTop: 16, borderRadius: 23, alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#F0F4F0", padding: 20 },
+  fullScreen: { flex: 1, width: "100%", height: "100%", minHeight: 300, marginHorizontal: 0, marginTop: 0, borderRadius: 0 },
+  statusTitle: { color: "#24342D", fontSize: 15, fontWeight: "800", textAlign: "center" },
+  statusCopy: { color: "#5E7067", fontSize: 12, textAlign: "center" },
 });
+
+export { MapBoundary };

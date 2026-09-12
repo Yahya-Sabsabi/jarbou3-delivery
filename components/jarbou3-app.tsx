@@ -640,6 +640,11 @@ export function Jarbou3App() {
     }
     let active = true;
     const refresh = () => readRuntimeReadiness().then((next) => { if (active) setRuntimeReadiness(next); }).catch(() => { if (active) setRuntimeReadiness({ online: false, gpsEnabled: false, locationGranted: false }); });
+    // Request location opportunistically, but never replace the authenticated
+    // workspace with a blocking GPS screen. Android only shows a prompt when
+    // permission has not already been granted; previously granted users proceed
+    // directly without another prompt.
+    void requestRuntimeLocationPermission().catch(() => undefined).finally(refresh);
     refresh();
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") {
@@ -941,7 +946,10 @@ export function Jarbou3App() {
   };
   const updateRequired = Boolean(releaseSettings.data?.forceUpdate && releaseSettings.data.updateUrl && isVersionBelow(currentVersion, releaseSettings.data.minVersion));
   // Privacy consent is collected during account creation; sign-in must not reopen the consent gate.
-  const runtimeBlocked = stage === "workspace" && !activeTrip && (!runtimeReadiness || !runtimeReadiness.online || !runtimeReadiness.gpsEnabled || !runtimeReadiness.locationGranted);
+  // Readiness is advisory after authentication. Active trips can show a small
+  // banner, but missing GPS/Internet must never hide the workspace or trap the
+  // user behind a repeated permission gate.
+  const runtimeBlocked = false;
   const runtimeProblem = !runtimeReadiness ? "جارٍ التحقق من الجاهزية…" : !runtimeReadiness.online ? "يلزم اتصال بالإنترنت لاستخدام OPTIMUS X." : !runtimeReadiness.locationGranted ? "اسمح للموقع الجغرافي لاستخدام OPTIMUS X." : "فعّل خدمات GPS من إعدادات الجهاز ثم أعد المحاولة.";
 
   if (stage === "loading") return <View style={styles.onboardingRoot}><ActivityIndicator color={gray} size="large" /></View>;
