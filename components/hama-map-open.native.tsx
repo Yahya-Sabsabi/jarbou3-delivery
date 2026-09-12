@@ -30,8 +30,8 @@ function buildMapHtml(props: HamaMapProps) {
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxNxv9L5Qk2Y9z8sF2wR0b0Xj0Q8o9m2G7lQ6e9rM=" crossorigin="" />
 <style>
-html, body, #map { width:100%; height:100%; margin:0; padding:0; overflow:hidden; background:#e8ece8; }
-#map { position:fixed; inset:0; touch-action:none; }
+html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0; padding:0; overflow:hidden; background:#e8ece8; }
+#map { position:absolute; inset:0; width:100vw; height:100vh; margin:0; padding:0; touch-action:none; }
 .leaflet-control-attribution { font-size:10px; background:rgba(255,255,255,.86)!important; }
 .leaflet-control-zoom { display:none; }
 .pin { width:30px; height:30px; border:3px solid #fff; border-radius:50% 50% 50% 0; transform:rotate(-45deg); box-shadow:0 2px 8px rgba(0,0,0,.25); }
@@ -68,7 +68,12 @@ html, body, #map { width:100%; height:100%; margin:0; padding:0; overflow:hidden
     if(p.lat < data.bounds.minLatitude || p.lat > data.bounds.maxLatitude || p.lng < data.bounds.minLongitude || p.lng > data.bounds.maxLongitude){ window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'outside'})); return; }
     window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'select',point:{latitude:p.lat,longitude:p.lng}}));
   });
-  window.setTimeout(function(){ map.invalidateSize(false); }, 80);
+  function refreshMapSize(){ map.invalidateSize(false); }
+  window.addEventListener('resize', refreshMapSize);
+  window.addEventListener('orientationchange', refreshMapSize);
+  window.setTimeout(refreshMapSize, 0);
+  window.setTimeout(refreshMapSize, 80);
+  window.setTimeout(refreshMapSize, 300);
   window.receiveMapUpdate=function(next){ Object.assign(data,next||{}); render(); const focus=data.focusPoint || data.driverLocation || data.center; if(focus) map.flyTo([focus.latitude,focus.longitude],13,{duration:.35}); };
   window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 })();
@@ -109,10 +114,10 @@ export function HamaMap(props: HamaMapProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { height: 220, minHeight: 220, marginHorizontal: 16, marginTop: 16, borderRadius: 23, overflow: "hidden", backgroundColor: "#e8ece8" },
+  container: { height: 220, minHeight: 220, width: "100%", alignSelf: "stretch", marginHorizontal: 16, marginTop: 16, borderRadius: 23, overflow: "hidden", backgroundColor: "#e8ece8" },
   compact: { height: 188, minHeight: 188 },
-  fullScreen: { flex: 1, width: "100%", height: "100%", minHeight: 300, marginHorizontal: 0, marginTop: 0, borderRadius: 0 },
-  webview: { flex: 1, width: "100%", height: "100%", backgroundColor: "#e8ece8" },
+  fullScreen: { flex: 1, flexGrow: 1, flexBasis: 0, width: "100%", height: "100%", minHeight: 300, alignSelf: "stretch", marginHorizontal: 0, marginTop: 0, borderRadius: 0 },
+  webview: { flex: 1, flexGrow: 1, flexBasis: 0, width: "100%", height: "100%", alignSelf: "stretch", backgroundColor: "#e8ece8" },
 });
 
 export { buildMapHtml };
