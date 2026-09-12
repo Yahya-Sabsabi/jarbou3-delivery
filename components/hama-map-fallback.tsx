@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Animated, type GestureResponderEvent, Image, type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { HAMA_BOUNDS, type MapPoint } from "@/shared/jarbou3";
 
-export type HamaMapProps = { compact?: boolean; driver?: boolean; source?: MapPoint | null; destination?: MapPoint | null; driverLocation?: MapPoint | null; routePath?: MapPoint[]; actualPath?: MapPoint[]; selecting?: "source" | "destination"; onSelect?: (point: MapPoint) => void; onOutsideRange?: () => void; readOnly?: boolean; focusPoint?: MapPoint | null };
+export type HamaMapProps = { compact?: boolean; driver?: boolean; source?: MapPoint | null; destination?: MapPoint | null; driverLocation?: MapPoint | null; routePath?: MapPoint[]; actualPath?: MapPoint[]; selecting?: "source" | "destination"; onSelect?: (point: MapPoint) => void; onOutsideRange?: () => void; readOnly?: boolean; focusPoint?: MapPoint | null; fullScreen?: boolean };
 
 function project(point: MapPoint) {
   return {
@@ -43,7 +43,7 @@ function Path({ points, live }: { points: MapPoint[]; live: boolean }) {
   })}</View>;
 }
 
-export function HamaMap({ compact = false, source, destination, driverLocation, routePath = [], actualPath = [], selecting, onSelect, onOutsideRange, readOnly = false }: HamaMapProps) {
+export function HamaMap({ compact = false, source, destination, driverLocation, routePath = [], actualPath = [], selecting, onSelect, onOutsideRange, readOnly = false, fullScreen = false }: HamaMapProps) {
   const [layout, setLayout] = useState({ width: 340, height: compact ? 188 : 220 });
   const select = (event: GestureResponderEvent) => {
     if (readOnly || !onSelect) return;
@@ -57,7 +57,7 @@ export function HamaMap({ compact = false, source, destination, driverLocation, 
   const captureLayout = (event: LayoutChangeEvent) => setLayout({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height });
   const visiblePath = actualPath.length > 1 ? actualPath : routePath;
   return (
-    <Pressable onPress={select} onLayout={captureLayout} disabled={readOnly || !onSelect} style={[styles.map, compact && styles.mapCompact]}>
+    <Pressable onPress={select} onLayout={captureLayout} disabled={readOnly || !onSelect} style={[styles.map, compact && styles.mapCompact, fullScreen && styles.mapFull]}>
       <View style={[styles.road, { top: "42%", transform: [{ rotate: "-18deg" }] }]} />
       <View style={[styles.road, { top: "62%", transform: [{ rotate: "31deg" }] }]} />
       <Text style={styles.city}>حماة</Text>
@@ -71,7 +71,7 @@ export function HamaMap({ compact = false, source, destination, driverLocation, 
 }
 
 const styles = StyleSheet.create({
-  map: { height: 220, borderRadius: 23, overflow: "hidden", backgroundColor: "#D6D8D3", marginHorizontal: 16, marginTop: 16, position: "relative" },
+  map: { height: 220, borderRadius: 23, overflow: "hidden", backgroundColor: "#D6D8D3", marginHorizontal: 16, marginTop: 16, position: "relative" }, mapFull: { flex: 1, width: "100%", height: "100%", minHeight: 220, borderRadius: 0, marginHorizontal: 0, marginTop: 0 },
   mapCompact: { height: 188 },
   road: { position: "absolute", height: 4, left: -30, right: -30, backgroundColor: "#FFFFFF", opacity: 0.75 },
   city: { position: "absolute", top: 18, left: 20, color: "#747474", fontSize: 18, fontWeight: "900" },

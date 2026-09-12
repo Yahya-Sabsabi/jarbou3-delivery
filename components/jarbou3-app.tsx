@@ -19,6 +19,7 @@ import { driverVehicleLabel, type CustomerVisibleDriver } from "@/shared/jarbou3
 import { isJarbou3Phone, normalizeJarbou3Digits, normalizeJarbou3Otp, normalizeJarbou3Phone } from "@/shared/jarbou3-phone";
 import { JARBOU3_PRIVACY_POLICY_TEXT, JARBOU3_PRIVACY_POLICY_VERSION } from "@/shared/jarbou3-privacy";
 import Constants from "expo-constants";
+import * as SplashScreen from "expo-splash-screen";
 
 type Role = "customer" | "driver";
 type CustomerPage = "home" | "order" | "track" | "otp";
@@ -607,6 +608,11 @@ export function Jarbou3App() {
     return () => { active = false; clearTimeout(watchdog); };
   }, []);
   const savedSession = trpc.jarbou3.sessionProfile.useQuery({ accessToken: savedToken ?? "pending-session-token-000" }, { enabled: Boolean(savedToken), retry: false });
+  const authCheckReady = savedToken !== undefined && (Boolean(savedToken) ? Boolean(savedSession.data) || savedSession.isError : stage !== "loading");
+  useEffect(() => {
+    if (!authCheckReady) return;
+    void SplashScreen.hideAsync().catch(() => undefined);
+  }, [authCheckReady]);
   const privacyConsent = trpc.jarbou3.privacyConsentStatus.useQuery({ accessToken: savedToken ?? "pending-session-token-000" }, { enabled: Boolean(savedToken) && Boolean(savedSession.data), retry: false });
   const acceptPrivacyConsent = trpc.jarbou3.acceptPrivacyConsent.useMutation({ onSuccess: () => { setStage("workspace"); void privacyConsent.refetch().catch(() => undefined); void refreshRuntimeReadiness().catch(() => undefined); }, onError: () => Alert.alert("تعذر حفظ الموافقة", "تعذر حفظ الموافقة على الخادم. تحقق من اتصال الإنترنت ثم أعد المحاولة.") });
   const releaseSettings = trpc.jarbou3.releaseSettings.useQuery(undefined, { enabled: Boolean(savedToken), refetchInterval: 30_000, retry: false });

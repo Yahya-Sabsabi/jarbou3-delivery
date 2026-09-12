@@ -10,6 +10,13 @@ export const HAMA_CENTER = {
   longitude: 36.7547,
 } as const;
 
+export const HAMA_INITIAL_REGION = {
+  latitude: 35.1318,
+  longitude: 36.7578,
+  latitudeDelta: 0.05,
+  longitudeDelta: 0.05,
+} as const;
+
 export const HAMA_SERVICE_RADIUS_METERS = 7_000;
 
 /** Monetary values are stored and displayed in the new Syrian pound (SYP-N). */

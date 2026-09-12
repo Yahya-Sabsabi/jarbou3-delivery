@@ -50,6 +50,7 @@ export function OptimusMapScreen({
         onSelect={onSelect}
         onOutsideRange={onOutsideRange}
         focusPoint={focusPoint}
+        fullScreen
         readOnly={!selecting}
       />
       <View pointerEvents="box-none" style={styles.floatingLayer}>

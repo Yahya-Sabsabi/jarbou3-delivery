@@ -1,7 +1,7 @@
 import type { LayerGroup, Map as LeafletMap } from "leaflet";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { HAMA_CENTER, HAMA_SERVICE_RADIUS_METERS, isInsideHama, type MapPoint } from "@/shared/jarbou3";
+import { HAMA_CENTER, HAMA_INITIAL_REGION, HAMA_SERVICE_RADIUS_METERS, isInsideHama, type MapPoint } from "@/shared/jarbou3";
 
 export type HamaMapProps = {
   compact?: boolean;
@@ -14,6 +14,8 @@ export type HamaMapProps = {
   onSelect?: (point: MapPoint) => void;
   onOutsideRange?: () => void;
   readOnly?: boolean;
+  focusPoint?: MapPoint | null;
+  fullScreen?: boolean;
 };
 
 type LeafletModule = typeof import("leaflet");
@@ -28,7 +30,7 @@ function jarbou3Icon(L: LeafletModule, label: string, color: string) {
   });
 }
 
-export function HamaMap({ compact = false, source, destination, driverLocation, routePath, selecting, onSelect, onOutsideRange, readOnly = false }: HamaMapProps) {
+export function HamaMap({ compact = false, source, destination, driverLocation, routePath, selecting, onSelect, onOutsideRange, readOnly = false, focusPoint, fullScreen = false }: HamaMapProps) {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const layersRef = useRef<LayerGroup | null>(null);
@@ -49,7 +51,7 @@ export function HamaMap({ compact = false, source, destination, driverLocation, 
       const L = await import("leaflet");
       if (disposed || !elementRef.current || mapRef.current) return;
       const map = L.map(elementRef.current, { zoomControl: false, attributionControl: true, maxBoundsViscosity: 1, maxBounds: L.latLngBounds([35.05, 36.66], [35.21, 36.85]) });
-      map.setView([HAMA_CENTER.latitude, HAMA_CENTER.longitude], 13);
+      map.setView([HAMA_INITIAL_REGION.latitude, HAMA_INITIAL_REGION.longitude], 13);
       L.control.zoom({ position: "bottomleft" }).addTo(map);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap contributors" }).addTo(map);
       mapRef.current = map;
@@ -64,6 +66,17 @@ export function HamaMap({ compact = false, source, destination, driverLocation, 
       setMapReady(false);
     };
   }, []);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !focusPoint) return;
+    mapRef.current.flyTo([focusPoint.latitude, focusPoint.longitude], 14, { duration: 0.45 });
+  }, [mapReady, focusPoint?.latitude, focusPoint?.longitude]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !elementRef.current) return;
+    const timer = window.setTimeout(() => mapRef.current?.invalidateSize(), 50);
+    return () => window.clearTimeout(timer);
+  }, [mapReady, fullScreen]);
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || !layersRef.current) return;
@@ -91,5 +104,5 @@ export function HamaMap({ compact = false, source, destination, driverLocation, 
     return () => removeClick?.();
   }, [mapReady, latestProps]);
 
-  return <div style={{ height: compact ? 220 : 310, margin: "16px", borderRadius: "22px", overflow: "hidden", position: "relative", border: "1px solid #D7D7D7" }}><div ref={elementRef} style={mapStyle} /><div style={{ position: "absolute", top: 12, right: 12, background: "rgba(255,255,255,.94)", borderRadius: 10, padding: "7px 10px", color: "#4A4A4A", fontSize: 11, fontWeight: 800, direction: "rtl" }}>{selecting === "source" ? "اضغط موقع الاستلام" : selecting === "destination" ? "اضغط وجهة التسليم" : "نطاق حماة · ٧ كم"}</div></div>;
+  return <div style={{ height: fullScreen ? "100%" : compact ? 220 : 310, width: "100%", flex: fullScreen ? 1 : undefined, margin: fullScreen ? 0 : "16px", borderRadius: fullScreen ? 0 : "22px", overflow: "hidden", position: "relative", border: fullScreen ? "none" : "1px solid #D7D7D7" }}><div ref={elementRef} style={mapStyle} /><div style={{ position: "absolute", top: 12, right: 12, background: "rgba(255,255,255,.94)", borderRadius: 10, padding: "7px 10px", color: "#4A4A4A", fontSize: 11, fontWeight: 800, direction: "rtl" }}>{selecting === "source" ? "اضغط موقع الاستلام" : selecting === "destination" ? "اضغط وجهة التسليم" : "نطاق حماة · ٧ كم"}</div></div>;
 }

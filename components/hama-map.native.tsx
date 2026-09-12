@@ -3,9 +3,9 @@ import { Image } from "expo-image";
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 
-import { HAMA_CENTER, HAMA_SERVICE_RADIUS_METERS, isInsideHama, type MapPoint } from "@/shared/jarbou3";
+import { HAMA_CENTER, HAMA_INITIAL_REGION, HAMA_SERVICE_RADIUS_METERS, isInsideHama, type MapPoint } from "@/shared/jarbou3";
 
-export type HamaMapProps = { compact?: boolean; driver?: boolean; source?: MapPoint | null; destination?: MapPoint | null; driverLocation?: MapPoint | null; routePath?: MapPoint[]; actualPath?: MapPoint[]; selecting?: "source" | "destination"; onSelect?: (point: MapPoint) => void; onOutsideRange?: () => void; readOnly?: boolean; focusPoint?: MapPoint | null };
+export type HamaMapProps = { compact?: boolean; driver?: boolean; source?: MapPoint | null; destination?: MapPoint | null; driverLocation?: MapPoint | null; routePath?: MapPoint[]; actualPath?: MapPoint[]; selecting?: "source" | "destination"; onSelect?: (point: MapPoint) => void; onOutsideRange?: () => void; readOnly?: boolean; focusPoint?: MapPoint | null; fullScreen?: boolean };
 
 function RunningMouse() {
   const bounce = useRef(new Animated.Value(0)).current;
@@ -25,7 +25,7 @@ function Jarbou3Marker({ point, label, color, title, mouse = false }: { point: M
   return <Marker coordinate={point} title={title} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={mouse}><View style={[styles.marker, mouse && styles.mouseMarker, { backgroundColor: color }]}>{mouse ? <RunningMouse /> : <Text style={styles.markerText}>{label}</Text>}</View></Marker>;
 }
 
-export function HamaMap({ compact = false, source, destination, driverLocation, routePath, actualPath, selecting, onSelect, onOutsideRange, readOnly = false, focusPoint }: HamaMapProps) {
+export function HamaMap({ compact = false, source, destination, driverLocation, routePath, actualPath, selecting, onSelect, onOutsideRange, readOnly = false, focusPoint, fullScreen = false }: HamaMapProps) {
   const mapRef = useRef<MapView>(null);
   const displayedPath = actualPath && actualPath.length > 1 ? actualPath : routePath;
   useEffect(() => {
@@ -34,8 +34,8 @@ export function HamaMap({ compact = false, source, destination, driverLocation, 
     mapRef.current?.animateToRegion(region, 450);
   }, [focusPoint?.latitude, focusPoint?.longitude]);
   return (
-    <View style={[styles.map, compact && styles.mapCompact]}>
-      <MapView ref={mapRef} mapType="standard" loadingEnabled style={styles.nativeMap} initialRegion={{ ...HAMA_CENTER, latitudeDelta: 0.14, longitudeDelta: 0.14 }} onPress={(event) => { const point = event.nativeEvent.coordinate; if (readOnly || !selecting) return; if (isInsideHama(point.latitude, point.longitude)) onSelect?.(point); else onOutsideRange?.(); }}>
+    <View style={[styles.map, compact && styles.mapCompact, fullScreen && styles.mapFull]}>
+      <MapView ref={mapRef} provider="google" mapType="standard" loadingEnabled style={styles.nativeMap} initialRegion={HAMA_INITIAL_REGION} onPress={(event) => { const point = event.nativeEvent.coordinate; if (readOnly || !selecting) return; if (isInsideHama(point.latitude, point.longitude)) onSelect?.(point); else onOutsideRange?.(); }}>
         <Circle center={HAMA_CENTER} radius={HAMA_SERVICE_RADIUS_METERS} strokeColor="#757575" fillColor="#75757514" strokeWidth={1.5} />
         {displayedPath && displayedPath.length > 1 ? <Polyline coordinates={displayedPath} strokeColor={actualPath && actualPath.length > 1 ? "#24755E" : "#4A4A4A"} strokeWidth={actualPath && actualPath.length > 1 ? 5 : 4} lineDashPattern={actualPath && actualPath.length > 1 ? undefined : [1]} /> : null}
         {source ? <Jarbou3Marker point={source} label="ا" color="#4A4A4A" title="موقع الاستلام" /> : null}
@@ -48,7 +48,7 @@ export function HamaMap({ compact = false, source, destination, driverLocation, 
 }
 
 const styles = StyleSheet.create({
-  map: { height: 220, borderRadius: 23, overflow: "hidden", backgroundColor: "#D6D8D3", marginHorizontal: 16, marginTop: 16, position: "relative" },
+  map: { height: 220, borderRadius: 23, overflow: "hidden", backgroundColor: "#D6D8D3", marginHorizontal: 16, marginTop: 16, position: "relative" }, mapFull: { flex: 1, width: "100%", height: "100%", minHeight: 220, borderRadius: 0, marginHorizontal: 0, marginTop: 0 },
   mapCompact: { height: 188 },
   nativeMap: { flex: 1 },
   marker: { width: 34, height: 34, borderRadius: 17, borderWidth: 3, borderColor: "#FFFFFF", alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 5, elevation: 4 },
