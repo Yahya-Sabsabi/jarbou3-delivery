@@ -27,6 +27,16 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(app).toContain("الخريطة الكاملة داخل إنشاء الطلب");
   });
 
+  it("uses Carto Voyager tiles and a fixed center pointer for point selection", () => {
+    expect(openMap).toContain("basemaps.cartocdn.com/rastertiles/voyager");
+    expect(openMap).toContain("subdomains:'abcd'");
+    expect(openMap).toContain("tileSize:256");
+    expect(openMap).toContain("class=\"center-pointer\"");
+    expect(openMap).toContain("map.getCenter()");
+    expect(openMap).toContain("map.on('moveend', reportCenter)");
+    expect(openMap).toContain("map.setView([focus.latitude,focus.longitude],16");
+  });
+
   it("uses smooth Leaflet zoom settings and GPS focus zoom", () => {
     expect(openMap).toContain("wheelDebounceTime:100");
     expect(openMap).toContain("zoomSnap:0.5");
@@ -54,13 +64,14 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(app).toContain("KeyboardAvoidingView");
     expect(app).toContain('keyboardShouldPersistTaps="handled"');
     expect(app).toContain('keyboardDismissMode="on-drag"');
-    expect(app).toContain("paddingBottom: Math.max(insets.bottom + 36, 52)");
+    expect(app).toContain("paddingBottom: Math.max(insets.bottom + 120, 120)");
   });
 
   it("applies dynamic top and profile bottom safe-area spacing", () => {
     expect(app).toContain("paddingTop: Math.max(insets.top + 6, 14)");
     expect(app).toContain("paddingTop: Math.max(insets.top + 8, 20)");
     expect(app).toContain("paddingBottom: Math.max(insets.bottom + 36, 64)");
+    expect(app).toContain("paddingBottom: Math.max(insets.bottom + 120, 120)");
   });
 
   it("opens a real profile panel and keeps current-location feedback inline", () => {

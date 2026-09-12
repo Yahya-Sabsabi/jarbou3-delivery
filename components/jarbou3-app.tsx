@@ -364,7 +364,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
       locating={locating}
       onProfile={() => setPage("profile")}
     >
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardAvoiding}><ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.sheetScroll, { paddingBottom: Math.max(insets.bottom + 36, 52) }]} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardAvoiding}><ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.sheetScroll, { paddingBottom: Math.max(insets.bottom + 120, 120) }]} showsVerticalScrollIndicator={false}>
         <Top title="طلب توصيل" back={() => setPage("home")} />
         {locationNotice ? <Pressable onPress={() => setLocationNotice(null)} style={styles.locationNotice}><Text style={styles.locationNoticeText}>{locationNotice}</Text></Pressable> : null}
         <View style={styles.mapModeRow}>

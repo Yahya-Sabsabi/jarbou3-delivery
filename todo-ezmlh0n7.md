@@ -753,3 +753,7 @@
 - [x] تحسين Leaflet invalidateSize وحساسية التكبير والتصغير وحركة GPS السلسة
 - [x] إعادة ضبط اللوحة السفلية مع KeyboardAvoidingView وScrollView وpaddingBottom 40
 - [x] إضافة اختبارات regression وبناء APK للتعديلات الجديدة
+- [x] استبدال مصدر البلاطات إلى Carto Voyager مع إعدادات tileLayer المطلوبة
+- [x] تحويل اختيار النقاط إلى دبوس مركزي ثابت يتبع مركز الخريطة ويدعم GPS عند مستوى 16
+- [x] رفع paddingBottom للوحة السفلية إلى 120 وضمان KeyboardAvoidingView لحقول الإدخال
+- [x] إضافة اختبارات regression وبناء APK للتعديلات الجديدة
