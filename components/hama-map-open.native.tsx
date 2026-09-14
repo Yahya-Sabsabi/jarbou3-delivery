@@ -29,7 +29,7 @@ function buildMapHtml(props: HamaMapProps) {
   };
 
   return `<!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="ltr">
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxNxv9L5Qk2Y9z8sF2wR0b0Xj0Q8o9m2G7lQ6e9rM=" crossorigin="" />
@@ -38,11 +38,12 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
 #map { position:absolute; left:0; top:0; right:0; bottom:0; width:100%; height:100%; margin:0; padding:0; touch-action:none; }
 .leaflet-control-attribution { font-size:10px; background:rgba(255,255,255,.86)!important; }
   .leaflet-control-zoom { display:none; }
-  /* Do not alter Leaflet's inline tile geometry: changing margin/padding creates
-     the staggered rows and vertical gaps visible on high-density Android screens. */
-  .leaflet-tile, .leaflet-tile-container img { display:block; border:0 !important; outline:1px solid transparent; margin:0 !important; padding:0 !important; box-sizing:border-box; }
+  /* Leaflet positions tiles in a left-to-right coordinate space. The surrounding
+     app may be Arabic/RTL, but the map DOM must remain LTR or tile panes can split. */
+  .leaflet-container { direction:ltr; background:#f2f2f2 !important; }
   .leaflet-tile-container { line-height:0 !important; }
-  .leaflet-container { background:#f2f2f2 !important; }
+  /* Keep Leaflet's tile geometry untouched; no negative margins or padding. */
+  .leaflet-tile, .leaflet-tile-container img { border:0 !important; margin:0 !important; padding:0 !important; }
   .leaflet-pane, .leaflet-layer, .leaflet-tile, .leaflet-marker-icon, .leaflet-marker-shadow { image-rendering:auto; }
   img { border:0; }
   .pin { width:30px; height:30px; border:3px solid #fff; border-radius:50% 50% 50% 0; transform:rotate(-45deg); box-shadow:0 2px 8px rgba(0,0,0,.25); }
@@ -59,8 +60,8 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
 (function(){
   const data = ${safeJson(payload)};
   const initial = data.center && typeof data.center.latitude === 'number' ? data.center : { latitude: ${HAMA_INITIAL_REGION.latitude}, longitude: ${HAMA_INITIAL_REGION.longitude} };
-  const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true, dragging:true, touchZoom:true, doubleClickZoom:false, scrollWheelZoom:true, wheelDebounceTime:100, wheelPxPerZoomLevel:120, zoomDelta:0.5, zoomSnap:0.5, smoothWheelZoom:true, bounceAtZoom:false, boxZoom:false, keyboard:false }).setView([initial.latitude, initial.longitude], data.focusZoom || 13);
-  L.tileLayer('${TILE_URL}', { maxZoom:19, attribution:'${OSM_ATTRIBUTION}', updateWhenIdle:true, updateWhenZooming:false, keepBuffer:2 }).addTo(map);
+  const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true, dragging:true, touchZoom:true, doubleClickZoom:false, scrollWheelZoom:true, wheelDebounceTime:100, wheelPxPerZoomLevel:120, zoomDelta:0.5, zoomSnap:0.5, smoothWheelZoom:true, bounceAtZoom:false, boxZoom:false, keyboard:false, fadeAnimation:false, zoomAnimation:false, markerZoomAnimation:false }).setView([initial.latitude, initial.longitude], data.focusZoom || 13);
+  L.tileLayer('${TILE_URL}', { maxZoom:19, attribution:'${OSM_ATTRIBUTION}', updateWhenIdle:false, updateWhenZooming:true, updateInterval:100, keepBuffer:1, noWrap:false }).addTo(map);
   const layer = L.layerGroup().addTo(map);
   let lastFocusRequestId = data.focusRequestId || 0;
   function pin(kind, label) {
@@ -91,6 +92,7 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
       window.requestAnimationFrame(function(){ map.invalidateSize({ animate:false, pan:false }); });
     });
   }
+  map.whenReady(refreshMapSize);
   map.on('zoomend', refreshMapSize);
   map.on('moveend', refreshMapSize);
   window.resizeMap = refreshMapSize;

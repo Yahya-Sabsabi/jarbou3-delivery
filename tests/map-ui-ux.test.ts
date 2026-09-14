@@ -59,6 +59,10 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(openMap).toContain("window.addEventListener('orientationchange'");
     expect(openMap).toContain("width:100%; height:100%");
     expect(openMap).not.toContain("width:100vw");
+    expect(openMap).toContain('<html lang="ar" dir="ltr">');
+    expect(openMap).toContain(".leaflet-container { direction:ltr;");
+    expect(openMap).toContain("fadeAnimation:false");
+    expect(openMap).toContain("zoomAnimation:false");
   });
 
   it("keeps the bottom sheet keyboard-safe and fully scrollable", () => {
