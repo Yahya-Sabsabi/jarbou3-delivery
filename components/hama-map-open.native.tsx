@@ -76,6 +76,7 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
   }
   render();
   let lastReportedCenter = null;
+  let mapMoving = false;
   function reportCenter(){
     if(data.readOnly || !data.selecting) return;
     const p=map.getCenter();
@@ -84,17 +85,20 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
     lastReportedCenter={latitude:p.lat,longitude:p.lng};
     window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'select',point:lastReportedCenter}));
   }
-  map.on('moveend', reportCenter);
+  map.on('movestart', function(){ mapMoving = true; });
+  map.on('zoomstart', function(){ mapMoving = true; });
+  map.on('moveend', function(){ mapMoving = false; reportCenter(); });
+  map.on('zoomend', function(){ mapMoving = false; });
   map.on('click', function(){ if(data.readOnly || !data.selecting) return; reportCenter(); });
+  let resizeTimer = null;
   function refreshMapSize(){
-    window.requestAnimationFrame(function(){
+    if(mapMoving) return;
+    if(resizeTimer) window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(function(){
       map.invalidateSize({ animate:false, pan:false });
-      window.requestAnimationFrame(function(){ map.invalidateSize({ animate:false, pan:false }); });
-    });
+    }, 80);
   }
   map.whenReady(refreshMapSize);
-  map.on('zoomend', refreshMapSize);
-  map.on('moveend', refreshMapSize);
   window.resizeMap = refreshMapSize;
   window.addEventListener('resize', refreshMapSize);
   window.addEventListener('orientationchange', refreshMapSize);
@@ -102,7 +106,7 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
   window.setTimeout(refreshMapSize, 80);
   window.setTimeout(refreshMapSize, 300);
   window.setTimeout(refreshMapSize, 700);
-  window.receiveMapUpdate=function(next){ const update=next||{}; Object.assign(data,update); render(); if(update.focusRequestId && update.focusRequestId !== lastFocusRequestId){ lastFocusRequestId=update.focusRequestId; const focus=data.focusPoint || data.driverLocation || data.center; if(focus) map.flyTo([focus.latitude,focus.longitude],16,{animate:true,duration:1}); } refreshMapSize(); };
+  window.receiveMapUpdate=function(next){ const update=next||{}; Object.assign(data,update); render(); if(update.focusRequestId && update.focusRequestId !== lastFocusRequestId){ lastFocusRequestId=update.focusRequestId; const focus=data.focusPoint || data.driverLocation || data.center; if(focus){ mapMoving=true; map.flyTo([focus.latitude,focus.longitude],16,{animate:true,duration:1}); } } };
   window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 })();
 </script>
@@ -158,6 +162,7 @@ export function HamaMap(props: HamaMapProps) {
         cacheEnabled
         allowsInlineMediaPlayback
         automaticallyAdjustContentInsets={false}
+        androidLayerType="software"
         startInLoadingState={false}
         applicationNameForUserAgent="OPTIMUS-X/1.0 (Hama OpenStreetMap)"
       />

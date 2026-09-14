@@ -35,7 +35,7 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(openMap).toContain("margin:0 !important; padding:0 !important;");
     expect(openMap).not.toContain("margin:-1px !important");
     expect(openMap).toContain("doubleClickZoom:false");
-    expect(openMap).toContain("map.on('moveend', reportCenter)");
+    expect(openMap).toContain("map.on('moveend', function(){ mapMoving = false; reportCenter(); })");
     expect(openMap).toContain("map.getCenter()");
     expect(openMap).toContain("map.flyTo([focus.latitude,focus.longitude],16,{animate:true,duration:1})");
     expect(openMap).not.toContain("selectionMarker");
@@ -63,6 +63,11 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(openMap).toContain(".leaflet-container { direction:ltr;");
     expect(openMap).toContain("fadeAnimation:false");
     expect(openMap).toContain("zoomAnimation:false");
+    expect(openMap).toContain("androidLayerType=\"software\"");
+    expect(openMap).toContain("map.on('movestart'");
+    expect(openMap).toContain("map.on('zoomstart'");
+    expect(openMap).not.toContain("map.on('moveend', refreshMapSize)");
+    expect(openMap).not.toContain("map.on('zoomend', refreshMapSize)");
   });
 
   it("keeps the bottom sheet keyboard-safe and fully scrollable", () => {

@@ -55,7 +55,8 @@ export function getApiBaseUrl(): string {
     executionEnvironment?: string | null;
   };
   const isExpoGo = constantsWithRuntime.appOwnership === "expo"
-    || constantsWithRuntime.executionEnvironment === "storeClient";
+    || constantsWithRuntime.executionEnvironment === "storeClient"
+    || /^https?:\/\/8081-[^/]+$/i.test(expoHostUri);
   return resolveJarbou3ApiBaseUrl({
     configuredApiBaseUrl: API_BASE_URL,
     embeddedApiBaseUrl,

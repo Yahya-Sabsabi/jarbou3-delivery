@@ -52,8 +52,7 @@ export function resolveJarbou3ApiBaseUrl({
 
   // The presence of Metro's host URI is the reliable indicator of an Expo Go
   // preview session. Only then may a native build use the matching preview API.
-  // A standalone APK must always prefer the stable API embedded by app.config;
-  // otherwise a stale EXPO_PUBLIC_API_BASE_URL can route login to an old preview.
+  // A standalone APK must always prefer the stable API embedded by app.config.
   const expoPreviewApiUrl = previewApiFromExpoHost(expoHostUri);
   if (!isWeb && isExpoGo && expoPreviewApiUrl) return expoPreviewApiUrl;
 
