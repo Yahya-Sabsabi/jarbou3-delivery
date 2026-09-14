@@ -768,3 +768,15 @@
 - [x] إزالة دبوس Leaflet التفاعلي واعتماد دبوس React Native ثابت فوق WebView مع إرسال مركز الخريطة عند moveend
 - [x] جعل GPS يستخدم flyTo متحركاً بسلاسة وضبط اللوحة السفلية إلى paddingBottom 220
 - [x] إضافة اختبارات regression وتشغيل TypeScript والاختبارات وبناء APK
+- [ ] استبدال WebView/Leaflet بمكوّن react-native-maps مع PROVIDER_GOOGLE ودبوس React Native ثابت
+- [ ] ربط onRegionChangeComplete وanimateToRegion مع مركز الخريطة وموقع GPS دون قفزات
+- [ ] إضافة إعدادات Google Maps الأصلية وإزالة مسار WebView بأمان مع إبقاء اللوحة السفلية وKeyboardAvoidingView وpaddingBottom 220
+- [ ] إضافة اختبارات regression وتشغيل TypeScript والاختبارات وبناء APK Native
+- [ ] إعداد react-native-maps plugin ليقرأ GOOGLE_MAPS_API_KEY من البيئة دون تضمين المفتاح في الشيفرة أو GitHub
+- [ ] استبدال مسار WebView/Leaflet بمكوّن MapView مع PROVIDER_GOOGLE وinitialRegion حماة وonRegionChangeComplete
+- [ ] ربط showsUserLocation وanimateToRegion/animateToRegion مع زر GPS والدبوس المركزي الثابت
+- [ ] ضبط KeyboardAvoidingView وScrollView للوحة السفلية مع paddingBottom 220 وإضافة اختبارات regression وبناء APK
+- [x] فحص خريطة لوحة الإدارة واعتماد نفس مكوّنها أو إعداداتها في تطبيق OPTIMUS X
+- [x] ضمان GPS دقيق وسلس وتكبير وتصغير بالإصبعين وحركة لمس غير محجوبة
+- [x] إعادة ترتيب اللوحة السفلية مع Safe Area وتمرير يظهر جميع الحقول والأزرار
+- [x] إضافة اختبارات regression وتشغيل TypeScript والاختبارات وبناء APK

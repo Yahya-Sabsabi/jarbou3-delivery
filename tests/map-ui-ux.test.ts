@@ -27,10 +27,10 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(app).toContain("الخريطة الكاملة داخل إنشاء الطلب");
   });
 
-  it("uses Retina tiles and a native fixed center marker", () => {
-    expect(openMap).toContain("basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png");
-    expect(openMap).toContain("tileSize:512");
-    expect(openMap).toContain("zoomOffset:-1");
+  it("matches the admin fleet map tile source and keeps a native fixed center marker", () => {
+    expect(openMap).toContain("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
+    expect(openMap).toContain("© OpenStreetMap contributors");
+    expect(openMap).not.toContain("basemaps.cartocdn.com");
     expect(openMap).toContain(".leaflet-tile-container img");
     expect(openMap).toContain("doubleClickZoom:false");
     expect(openMap).toContain("map.on('moveend', reportCenter)");
@@ -58,10 +58,11 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(openMap).toContain("width:100vw");
   });
 
-  it("keeps the bottom sheet keyboard-safe with at least 40px bottom space", () => {
+  it("keeps the bottom sheet keyboard-safe and fully scrollable", () => {
     expect(mapScreen).toContain("KeyboardAvoidingView");
-    expect(mapScreen).toContain("insets.bottom + 40");
-    expect(mapScreen).toContain("Math.max(insets.bottom + 40, 40)");
+    expect(mapScreen).toContain("BottomSheetScrollView");
+    expect(mapScreen).toContain('keyboardShouldPersistTaps="handled"');
+    expect(mapScreen).toContain("paddingBottom: Math.max(insets.bottom + 220, 220)");
   });
 
   it("keeps form fields interactive above the keyboard", () => {

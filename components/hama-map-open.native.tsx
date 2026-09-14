@@ -5,8 +5,10 @@ import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { HAMA_BOUNDS, HAMA_INITIAL_REGION, type MapPoint } from "@/shared/jarbou3";
 import type { HamaMapProps } from "@/components/hama-map-fallback";
 
-const TILE_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-const CARTO_ATTRIBUTION = "© OpenStreetMap contributors © CARTO";
+// Keep the customer map aligned with the protected admin fleet map: the same
+// OpenStreetMap tile source and attribution are used in admin-site/live-map.js.
+const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 
 function safeJson(value: unknown) {
   return JSON.stringify(value).replace(/</g, "\\u003c");
@@ -57,7 +59,7 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
   const data = ${safeJson(payload)};
   const initial = data.center && typeof data.center.latitude === 'number' ? data.center : { latitude: ${HAMA_INITIAL_REGION.latitude}, longitude: ${HAMA_INITIAL_REGION.longitude} };
   const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true, dragging:true, touchZoom:true, doubleClickZoom:false, scrollWheelZoom:true, wheelDebounceTime:100, wheelPxPerZoomLevel:120, zoomDelta:0.5, zoomSnap:0.5, smoothWheelZoom:true, bounceAtZoom:false, boxZoom:false, keyboard:false }).setView([initial.latitude, initial.longitude], data.focusZoom || 13);
-  L.tileLayer('${TILE_URL}', { maxZoom:19, subdomains:'abcd', tileSize:512, zoomOffset:-1, attribution:'${CARTO_ATTRIBUTION}', crossOrigin:true, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:2 }).addTo(map);
+  L.tileLayer('${TILE_URL}', { maxZoom:19, attribution:'${OSM_ATTRIBUTION}', updateWhenIdle:true, updateWhenZooming:false, keepBuffer:2 }).addTo(map);
   const layer = L.layerGroup().addTo(map);
   let lastFocusRequestId = data.focusRequestId || 0;
   function pin(kind, label) {
