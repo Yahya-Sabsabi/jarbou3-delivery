@@ -35,12 +35,13 @@ function buildMapHtml(props: HamaMapProps) {
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxNxv9L5Qk2Y9z8sF2wR0b0Xj0Q8o9m2G7lQ6e9rM=" crossorigin="" />
 <style>
 html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0; padding:0; overflow:hidden; background:#e8ece8; }
-#map { position:absolute; inset:0; width:100vw; height:100vh; margin:0; padding:0; touch-action:none; }
+#map { position:absolute; left:0; top:0; right:0; bottom:0; width:100%; height:100%; margin:0; padding:0; touch-action:none; }
 .leaflet-control-attribution { font-size:10px; background:rgba(255,255,255,.86)!important; }
   .leaflet-control-zoom { display:none; }
-  .leaflet-tile { border:none !important; outline:none !important; margin:-1px !important; padding:1px !important; }
+  /* Do not alter Leaflet's inline tile geometry: changing margin/padding creates
+     the staggered rows and vertical gaps visible on high-density Android screens. */
+  .leaflet-tile, .leaflet-tile-container img { display:block; border:0 !important; outline:1px solid transparent; margin:0 !important; padding:0 !important; box-sizing:border-box; }
   .leaflet-tile-container { line-height:0 !important; }
-  .leaflet-tile-container img { outline:1px solid transparent; border:none !important; margin:0 !important; padding:0 !important; }
   .leaflet-container { background:#f2f2f2 !important; }
   .leaflet-pane, .leaflet-layer, .leaflet-tile, .leaflet-marker-icon, .leaflet-marker-shadow { image-rendering:auto; }
   img { border:0; }
@@ -84,12 +85,21 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
   }
   map.on('moveend', reportCenter);
   map.on('click', function(){ if(data.readOnly || !data.selecting) return; reportCenter(); });
-  function refreshMapSize(){ map.invalidateSize(false); }
+  function refreshMapSize(){
+    window.requestAnimationFrame(function(){
+      map.invalidateSize({ animate:false, pan:false });
+      window.requestAnimationFrame(function(){ map.invalidateSize({ animate:false, pan:false }); });
+    });
+  }
+  map.on('zoomend', refreshMapSize);
+  map.on('moveend', refreshMapSize);
+  window.resizeMap = refreshMapSize;
   window.addEventListener('resize', refreshMapSize);
   window.addEventListener('orientationchange', refreshMapSize);
   window.setTimeout(refreshMapSize, 0);
   window.setTimeout(refreshMapSize, 80);
   window.setTimeout(refreshMapSize, 300);
+  window.setTimeout(refreshMapSize, 700);
   window.receiveMapUpdate=function(next){ const update=next||{}; Object.assign(data,update); render(); if(update.focusRequestId && update.focusRequestId !== lastFocusRequestId){ lastFocusRequestId=update.focusRequestId; const focus=data.focusPoint || data.driverLocation || data.center; if(focus) map.flyTo([focus.latitude,focus.longitude],16,{animate:true,duration:1}); } refreshMapSize(); };
   window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 })();
@@ -129,7 +139,10 @@ export function HamaMap(props: HamaMapProps) {
     }
   };
   return (
-    <View style={[styles.container, props.compact && styles.compact, props.fullScreen && styles.fullScreen]}>
+    <View
+      onLayout={() => webViewRef.current?.injectJavaScript("window.resizeMap && window.resizeMap(); true;")}
+      style={[styles.container, props.compact && styles.compact, props.fullScreen && styles.fullScreen]}
+    >
       <WebView
         ref={webViewRef}
         originWhitelist={['*']}

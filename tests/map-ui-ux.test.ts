@@ -32,6 +32,8 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(openMap).toContain("© OpenStreetMap contributors");
     expect(openMap).not.toContain("basemaps.cartocdn.com");
     expect(openMap).toContain(".leaflet-tile-container img");
+    expect(openMap).toContain("margin:0 !important; padding:0 !important;");
+    expect(openMap).not.toContain("margin:-1px !important");
     expect(openMap).toContain("doubleClickZoom:false");
     expect(openMap).toContain("map.on('moveend', reportCenter)");
     expect(openMap).toContain("map.getCenter()");
@@ -50,12 +52,13 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(app).toContain("focusZoom={mapFocusZoom}");
   });
 
-  it("keeps Leaflet sizing valid after WebView layout and orientation changes", () => {
-    expect(openMap).toContain("map.invalidateSize(false)");
+  it("keeps Leaflet sizing valid after native layout and orientation changes", () => {
+    expect(openMap).toContain("map.invalidateSize({ animate:false, pan:false })");
+    expect(openMap).toContain("window.resizeMap = refreshMapSize");
     expect(openMap).toContain("window.addEventListener('resize'");
     expect(openMap).toContain("window.addEventListener('orientationchange'");
-    expect(openMap).toContain("min-width:100%");
-    expect(openMap).toContain("width:100vw");
+    expect(openMap).toContain("width:100%; height:100%");
+    expect(openMap).not.toContain("width:100vw");
   });
 
   it("keeps the bottom sheet keyboard-safe and fully scrollable", () => {
