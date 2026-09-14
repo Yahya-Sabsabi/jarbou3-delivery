@@ -34,8 +34,8 @@ function buildMapHtml(props: HamaMapProps) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxNxv9L5Qk2Y9z8sF2wR0b0Xj0Q8o9m2G7lQ6e9rM=" crossorigin="" />
 <style>
-html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0; padding:0; overflow:hidden; background:#e8ece8; }
-#map { position:absolute; left:0; top:0; right:0; bottom:0; width:100%; height:100%; margin:0; padding:0; touch-action:none; }
+html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0; padding:0; overflow:hidden; background:#e8ece8; overscroll-behavior:none; }
+#map { position:absolute; inset:0; display:block; width:100%; height:100%; min-width:0; min-height:0; margin:0; padding:0; touch-action:none; overflow:hidden; }
 .leaflet-control-attribution { font-size:10px; background:rgba(255,255,255,.86)!important; }
   .leaflet-control-zoom { display:none; }
   /* Leaflet positions tiles in a left-to-right coordinate space. The surrounding
@@ -60,8 +60,10 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
 (function(){
   const data = ${safeJson(payload)};
   const initial = data.center && typeof data.center.latitude === 'number' ? data.center : { latitude: ${HAMA_INITIAL_REGION.latitude}, longitude: ${HAMA_INITIAL_REGION.longitude} };
-  const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true, dragging:true, touchZoom:true, doubleClickZoom:false, scrollWheelZoom:true, wheelDebounceTime:100, wheelPxPerZoomLevel:120, zoomDelta:0.5, zoomSnap:0.5, smoothWheelZoom:true, bounceAtZoom:false, boxZoom:false, keyboard:false, fadeAnimation:false, zoomAnimation:false, markerZoomAnimation:false }).setView([initial.latitude, initial.longitude], data.focusZoom || 13);
-  L.tileLayer('${TILE_URL}', { maxZoom:19, attribution:'${OSM_ATTRIBUTION}', updateWhenIdle:false, updateWhenZooming:true, updateInterval:100, keepBuffer:1, noWrap:false }).addTo(map);
+  const hamaBounds = [[${HAMA_BOUNDS.minLatitude},${HAMA_BOUNDS.minLongitude}],[${HAMA_BOUNDS.maxLatitude},${HAMA_BOUNDS.maxLongitude}]];
+  const map = L.map('map', { zoomControl:false, attributionControl:true, tap:true, dragging:true, touchZoom:true, doubleClickZoom:false, scrollWheelZoom:true, wheelDebounceTime:100, wheelPxPerZoomLevel:120, zoomDelta:0.5, zoomSnap:0.5, smoothWheelZoom:true, bounceAtZoom:false, boxZoom:false, keyboard:false, fadeAnimation:false, zoomAnimation:false, markerZoomAnimation:false, minZoom:11, maxZoom:19, maxBounds:hamaBounds, maxBoundsViscosity:1, worldCopyJump:false }).setView([initial.latitude, initial.longitude], Math.min(19, Math.max(11, data.focusZoom || 13)));
+  map.setMaxBounds(hamaBounds);
+  L.tileLayer('${TILE_URL}', { minZoom:11, maxZoom:19, maxNativeZoom:19, attribution:'${OSM_ATTRIBUTION}', updateWhenIdle:true, updateWhenZooming:false, updateInterval:200, keepBuffer:2, noWrap:true, bounds:hamaBounds, crossOrigin:true }).addTo(map);
   const layer = L.layerGroup().addTo(map);
   let lastFocusRequestId = data.focusRequestId || 0;
   function pin(kind, label) {
@@ -96,7 +98,11 @@ html, body { width:100%; height:100%; min-width:100%; min-height:100%; margin:0;
     if(resizeTimer) window.clearTimeout(resizeTimer);
     resizeTimer = window.setTimeout(function(){
       map.invalidateSize({ animate:false, pan:false });
-    }, 80);
+      const center = map.getCenter();
+      if(center.lat < data.bounds.minLatitude || center.lat > data.bounds.maxLatitude || center.lng < data.bounds.minLongitude || center.lng > data.bounds.maxLongitude){
+        map.panInsideBounds(hamaBounds, { animate:false });
+      }
+    }, 100);
   }
   map.whenReady(refreshMapSize);
   window.resizeMap = refreshMapSize;
@@ -173,8 +179,8 @@ export function HamaMap(props: HamaMapProps) {
 const styles = StyleSheet.create({
   container: { height: 220, minHeight: 220, width: "100%", alignSelf: "stretch", marginHorizontal: 16, marginTop: 16, borderRadius: 23, overflow: "hidden", backgroundColor: "#e8ece8" },
   compact: { height: 188, minHeight: 188 },
-  fullScreen: { flex: 1, flexGrow: 1, flexBasis: 0, width: "100%", height: "100%", minHeight: 300, alignSelf: "stretch", marginHorizontal: 0, marginTop: 0, borderRadius: 0 },
-  webview: { flex: 1, flexGrow: 1, flexBasis: 0, width: "100%", height: "100%", alignSelf: "stretch", backgroundColor: "#e8ece8" },
+  fullScreen: { flex: 1, flexGrow: 1, flexBasis: 0, width: "100%", height: "100%", minHeight: 0, alignSelf: "stretch", marginHorizontal: 0, marginTop: 0, borderRadius: 0 },
+  webview: { flex: 1, flexGrow: 1, flexBasis: 0, width: "100%", height: "100%", minWidth: 0, minHeight: 0, alignSelf: "stretch", backgroundColor: "#e8ece8" },
 });
 
 export { buildMapHtml };

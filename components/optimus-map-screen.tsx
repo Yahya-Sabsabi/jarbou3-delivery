@@ -97,7 +97,7 @@ export function OptimusMapScreen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, minHeight: 520, backgroundColor: "#E7EBE8" },
+  root: { flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: "#E7EBE8" },
   centerMarker: { position: "absolute", top: "50%", left: "50%", width: 40, height: 40, marginLeft: -20, marginTop: -40, zIndex: 10, alignItems: "center", justifyContent: "flex-end" },
   centerMarkerPin: { width: 34, height: 34, borderRadius: 18, backgroundColor: "#24755E", borderWidth: 4, borderColor: "#FFFFFF", shadowColor: "#000000", shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
   floatingLayer: { position: "absolute", gap: 10, alignItems: "center", zIndex: 20 },

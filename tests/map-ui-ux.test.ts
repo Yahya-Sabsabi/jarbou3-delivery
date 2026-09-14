@@ -35,11 +35,21 @@ describe("OPTIMUS X map UI/UX contract", () => {
     expect(openMap).toContain("margin:0 !important; padding:0 !important;");
     expect(openMap).not.toContain("margin:-1px !important");
     expect(openMap).toContain("doubleClickZoom:false");
+    expect(openMap).toContain("minZoom:11");
+    expect(openMap).toContain("maxZoom:19");
+    expect(openMap).toContain("maxBounds:hamaBounds");
+    expect(openMap).toContain("maxBoundsViscosity:1");
+    expect(openMap).toContain("updateWhenIdle:true");
+    expect(openMap).toContain("keepBuffer:2");
+    expect(openMap).toContain("noWrap:true");
     expect(openMap).toContain("map.on('moveend', function(){ mapMoving = false; reportCenter(); })");
     expect(openMap).toContain("map.getCenter()");
     expect(openMap).toContain("map.flyTo([focus.latitude,focus.longitude],16,{animate:true,duration:1})");
     expect(openMap).not.toContain("selectionMarker");
     expect(mapScreen).toContain("centerMarker");
+    expect(openMap).toContain("inset:0");
+    expect(openMap).toContain("minWidth: 0");
+    expect(mapScreen).toContain("overflow: \"hidden\"");
     expect(mapScreen).toContain("pointerEvents=\"none\"");
   });
 
