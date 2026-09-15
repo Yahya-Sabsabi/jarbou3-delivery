@@ -3,13 +3,14 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ActivityIndicator, Alert, Animated, AppState, BackHandler, KeyboardAvoidingView, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, AppState, BackHandler, KeyboardAvoidingView, LayoutAnimation, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from "react-native";
 
 import { trpc } from "@/lib/trpc";
 import { jarbou3Session } from "@/lib/jarbou3-session";
 import { DEFAULT_DELIVERY_PRICING, HAMA_CENTER, estimateDeliveryPrice, formatSyp, type MapPoint } from "@/shared/jarbou3";
 import { HamaMap } from "@/components/hama-map-loader";
 import { PremiumCustomerNav, PremiumFavoritesMenu, PremiumMoreMenu, PremiumOrderSheet } from "@/components/premium-order-sheet";
+import { PremiumProfilePanel } from "@/components/premium-profile-panel";
 import { OptimusMapScreen } from "@/components/optimus-map-screen";
 import { SwipeStartButton } from "@/components/swipe-start-button";
 import { getCurrentHamaLocation, watchHamaLocation } from "@/lib/jarbou3-location";
@@ -97,40 +98,15 @@ function RoleSwitch({ role, onSelect }: { role: Role; onSelect: (role: Role) => 
   return <View style={styles.roleSwitch}>{(["customer", "driver"] as Role[]).map((option) => <Pressable key={option} onPress={() => onSelect(option)} style={[styles.role, role === option && styles.roleSelected]}><Text style={[styles.roleText, role === option && styles.roleTextSelected]}>{option === "customer" ? "عميل" : "سائق"}</Text></Pressable>)}</View>;
 }
 
-function ProfilePanel({ name, phone, onBack, onLogout }: { name: string; phone?: string; onBack: () => void; onLogout: () => void }) {
-  const insets = useSafeAreaInsets();
+function ProfilePanel({ name, phone, onBack, onLogout, onOrders }: { name: string; phone?: string; onBack: () => void; onLogout: () => void; onOrders: () => void }) {
   const [policyVisible, setPolicyVisible] = useState(false);
-  return (
-    <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.profileScroll, { paddingTop: Math.max(insets.top + 8, 20), paddingBottom: Math.max(insets.bottom + 36, 64) }]}>
-      <View style={styles.profileHeader}>
-        <Pressable accessibilityLabel="العودة من الملف الشخصي" onPress={onBack} style={styles.profileBack}><Text style={styles.profileBackText}>‹</Text></Pressable>
-        <View style={styles.profileAvatar}><Text style={styles.profileAvatarText}>{name.trim().charAt(0) || "م"}</Text></View>
-        <Text style={styles.profileTitle}>الملف الشخصي</Text>
-        <Text style={styles.profileSubtitle}>إدارة بيانات حساب OPTIMUS X</Text>
-      </View>
-      <View style={styles.profileCard}>
-        <Text style={styles.profileSectionTitle}>بيانات الحساب</Text>
-        <View style={styles.profileRow}><Text style={styles.profileValue}>{name || "غير محدد"}</Text><Text style={styles.profileLabel}>الاسم الكامل</Text></View>
-        <View style={styles.profileDivider} />
-        <View style={styles.profileRow}><Text style={styles.profileValue}>{phone || "محفوظ في الحساب"}</Text><Text style={styles.profileLabel}>رقم الهاتف</Text></View>
-        <View style={styles.profileDivider} />
-        <View style={styles.profileRow}><Text style={styles.profileValue}>عميل</Text><Text style={styles.profileLabel}>نوع الحساب</Text></View>
-      </View>
-      <View style={styles.profileCard}>
-        <Text style={styles.profileSectionTitle}>الإعدادات</Text>
-        <Pressable onPress={() => setPolicyVisible(true)} style={styles.profileAction}><Text style={styles.profileActionText}>شروط الاستخدام وسياسة الخصوصية</Text><Text style={styles.profileChevron}>‹</Text></Pressable>
-        <View style={styles.profileDivider} />
-        <Text style={styles.profileHint}>يمكنك التواصل مع الإدارة من زر البلاغات عند وجود مشكلة في الحساب أو الطلب.</Text>
-      </View>
-      <PrivacyPolicySheet visible={policyVisible} onClose={() => setPolicyVisible(false)} />
-      <Pressable onPress={onLogout} style={styles.profileLogout}><Text style={styles.profileLogoutText}>تسجيل الخروج</Text></Pressable>
-    </ScrollView>
-  );
+  return <><PremiumProfilePanel name={name} phone={phone} onBack={onBack} onLogout={onLogout} onOrders={onOrders} onHome={onBack} onPolicy={() => setPolicyVisible(true)} /><PrivacyPolicySheet visible={policyVisible} onClose={() => setPolicyVisible(false)} /></>;
 }
 
 function Customer({ name, phone, onTripActivity, onLogout }: { name: string; phone?: string; onTripActivity: (active: boolean) => void; onLogout: () => void }) {
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState<CustomerPage>("home");
+  const navigateCustomer = (next: CustomerPage) => { if (next === page) return; LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setPage(next); };
   const [source, setSource] = useState<MapPoint | null>(null);
   const [destination, setDestination] = useState<MapPoint | null>(null);
   const [selecting, setSelecting] = useState<"source" | "destination">("source");
@@ -355,9 +331,9 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
     }
   };
 
-  if (page === "profile") return <View style={[styles.fill, styles.profilePage]}><ProfilePanel name={name} phone={phone} onBack={() => setPage("home")} onLogout={onLogout} /></View>;
+  if (page === "profile") return <View style={[styles.fill, styles.profilePage]}><ProfilePanel name={name} phone={phone} onBack={() => navigateCustomer("home")} onLogout={onLogout} onOrders={() => navigateCustomer("orders")} /></View>;
 
-  if (page === "orders") return <View style={styles.fill}><ScrollView contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom + 30, 42) }]}><View style={styles.hero}><View><Text style={styles.eyebrow}>سجل النشاط</Text><Text style={styles.heroTitle}>الطلبات</Text><Text style={styles.copy}>تابع طلباتك الحالية والسابقة من مكان واحد.</Text></View><MaterialIcons name="receipt-long" size={30} color="#24755E" /></View><View style={styles.empty}><Text style={styles.emptyText}>لا توجد طلبات محفوظة للعرض حالياً.</Text></View></ScrollView><PremiumCustomerNav active="orders" onHome={() => setPage("home")} onOrders={() => setPage("orders")} onProfile={() => setPage("profile")} /></View>;
+  if (page === "orders") return <View style={styles.fill}><ScrollView contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom + 30, 42) }]}><View style={styles.hero}><View><Text style={styles.eyebrow}>سجل النشاط</Text><Text style={styles.heroTitle}>الطلبات</Text><Text style={styles.copy}>تابع طلباتك الحالية والسابقة من مكان واحد.</Text></View><MaterialIcons name="receipt-long" size={30} color="#24755E" /></View><View style={styles.empty}><Text style={styles.emptyText}>لا توجد طلبات محفوظة للعرض حالياً.</Text></View></ScrollView><PremiumCustomerNav active="orders" onHome={() => navigateCustomer("home")} onOrders={() => navigateCustomer("orders")} onProfile={() => navigateCustomer("profile")} /></View>;
 
   if (page === "order") return (
     <OptimusMapScreen
@@ -431,7 +407,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
 
   if (page === "otp") return <View style={styles.fill}><Top title="تأكيد الاستلام" back={() => setPage("track")} /><View style={styles.centered}><View style={styles.otpBadge}><Text style={styles.otpBadgeText}>OTP</Text></View><Text style={styles.centerTitle}>أدخل رمز الاستلام</Text><Text style={styles.centerCopy}>يشاركك السائق الرمز عند وصول الطلب. لا تؤكده قبل الاستلام.</Text><TextInput style={styles.otp} value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={4} placeholder="••••" placeholderTextColor="#AAA" textAlign="center" /><Action title="تأكيد الرمز" onPress={() => otp.length === 4 ? Alert.alert("تم التأكيد", "سيطلب من السائق الآن تصوير إثبات التسليم.") : Alert.alert("الرمز غير مكتمل", "أدخل أربعة أرقام.")} /><View style={styles.proofNotice}><Text style={styles.proofNoticeIcon}>▧</Text><View style={styles.flex}><Text style={styles.proofNoticeTitle}>صورة إثبات التسليم</Text><Text style={styles.proofNoticeCopy}>ستظهر هنا فور رفعها من السائق.</Text></View></View></View></View>;
 
-  return <View style={styles.fill}><ScrollView contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom + 108, 120) }]}><View style={styles.hero}><View><Text style={styles.eyebrow}>OPTIMUS X في حماة</Text><Text style={styles.heroTitle}>أهلاً، {name}</Text><Text style={styles.copy}>توصيل قريب وواضح وبالليرة السورية الجديدة.</Text></View><Mark /></View><View style={styles.space}><Heading eyebrow="الخدمة متاحة" title="إلى أين نوصلك اليوم؟" /><Action title="إنشاء طلب توصيل" onPress={() => setPage("order")} /><View style={styles.note}><Text style={styles.noteIcon}>↗</Text><View style={styles.flex}><Text style={styles.noteTitle}>الخريطة الكاملة داخل إنشاء الطلب</Text><Text style={styles.noteCopy}>اضغط إنشاء طلب توصيل لتحديد الاستلام والوجهة على خريطة حماة التفاعلية.</Text></View></View><Heading eyebrow="آخر الطلبات" title="لا توجد طلبات نشطة" aside="عرض السجل" /><View style={styles.empty}><Text style={styles.emptyText}>ستظهر حالة طلبك وتفاصيل السفير هنا فور التأكيد.</Text></View></View></ScrollView><PremiumCustomerNav active="home" onHome={() => setPage("home")} onOrders={() => setPage("orders")} onProfile={() => setPage("profile")} /></View>;
+  return <View style={styles.fill}><ScrollView contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom + 108, 120) }]}><View style={styles.hero}><View><Text style={styles.eyebrow}>OPTIMUS X في حماة</Text><Text style={styles.heroTitle}>أهلاً، {name}</Text><Text style={styles.copy}>توصيل قريب وواضح وبالليرة السورية الجديدة.</Text></View><Mark /></View><View style={styles.space}><Heading eyebrow="الخدمة متاحة" title="إلى أين نوصلك اليوم؟" /><Action title="إنشاء طلب توصيل" onPress={() => setPage("order")} /><View style={styles.note}><Text style={styles.noteIcon}>↗</Text><View style={styles.flex}><Text style={styles.noteTitle}>الخريطة الكاملة داخل إنشاء الطلب</Text><Text style={styles.noteCopy}>اضغط إنشاء طلب توصيل لتحديد الاستلام والوجهة على خريطة حماة التفاعلية.</Text></View></View><Heading eyebrow="آخر الطلبات" title="لا توجد طلبات نشطة" aside="عرض السجل" /><View style={styles.empty}><Text style={styles.emptyText}>ستظهر حالة طلبك وتفاصيل السفير هنا فور التأكيد.</Text></View></View></ScrollView><PremiumCustomerNav active="home" onHome={() => navigateCustomer("home")} onOrders={() => navigateCustomer("orders")} onProfile={() => navigateCustomer("profile")} /></View>;
 }
 
 function Driver({ name, onTripActivity }: { name: string; onTripActivity: (active: boolean) => void }) {

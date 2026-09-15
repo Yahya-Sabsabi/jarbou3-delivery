@@ -8,6 +8,8 @@ const mapScreen = root("components/optimus-map-screen.tsx");
 const loader = root("components/hama-map-loader.tsx");
 const maplibre = root("components/hama-map-maplibre.native.tsx");
 const premiumSheet = root("components/premium-order-sheet.tsx");
+const premiumProfile = root("components/premium-profile-panel.tsx");
+const tabsLayout = root("app/(tabs)/_layout.tsx");
 
 describe("OPTIMUS X MapLibre map UI/UX contract", () => {
   it("keeps map controls below the status bar and sheet content above the navigation bar", () => {
@@ -94,6 +96,18 @@ describe("OPTIMUS X MapLibre map UI/UX contract", () => {
     expect(mapScreen).toContain("paddingBottom: Math.max(insets.bottom + 220, 220)");
     expect(premiumSheet).toContain("confirmButton");
     expect(app).toContain("signIn");
+  });
+
+  it("uses the shared Premium RTL profile design and removes the duplicate Router tab bar", () => {
+    expect(premiumProfile).toContain("الطلبات");
+    expect(premiumProfile).toContain("العناوين المفضلة");
+    expect(premiumProfile).toContain("كوبونات الخصم");
+    expect(premiumProfile).toContain("الإشعارات");
+    expect(premiumProfile).toContain("الدعم والمساعدة");
+    expect(premiumProfile).toContain("تسجيل الخروج");
+    expect(premiumProfile).toContain('active="profile"');
+    expect(tabsLayout).toContain('tabBarStyle: { display: "none" }');
+    expect(tabsLayout).not.toContain('title: "Home"');
   });
 
   it("opens a real profile panel and keeps location feedback inline", () => {
