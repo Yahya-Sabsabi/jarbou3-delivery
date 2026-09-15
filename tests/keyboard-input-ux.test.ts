@@ -39,5 +39,9 @@ describe("keyboard and text input UX", () => {
     expect(manifest).toContain('android:windowSoftInputMode="adjustResize"');
     expect(auth).toContain("contentContainerStyle={styles.scroll}");
     expect(mapScreen).toContain('keyboardShouldPersistTaps="handled"');
+    expect(mapScreen).toContain('keyboardDismissMode="interactive"');
+    expect(mapScreen).toContain('<BottomSheetScrollView');
+    expect(mapScreen).toContain('<KeyboardAwareFocusView scrollRef={nativeScrollRef}');
+    expect(keyboard).not.toContain('<KeyboardAvoidingView');
   });
 });

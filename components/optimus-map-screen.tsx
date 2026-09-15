@@ -105,17 +105,18 @@ export function OptimusMapScreen({
         </View>
       ) : (
         <BottomSheet ref={bottomSheetRef} index={0} snapPoints={snapPoints} onChange={setSheetIndex} enablePanDownToClose={false} backgroundStyle={styles.sheetBackground} handleIndicatorStyle={styles.sheetIndicator}>
-          <KeyboardAwareFocusView scrollRef={nativeScrollRef} scrollOffsetRef={nativeScrollOffsetRef} style={styles.sheetKeyboardAvoiding}>
-            <BottomSheetScrollView
-              ref={nativeScrollRef}
-              onScroll={(event) => { nativeScrollOffsetRef.current = event.nativeEvent.contentOffset.y; }}
-              automaticallyAdjustKeyboardInsets
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={[styles.sheetContent, styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 220, 220) }]}
-            >
+          <BottomSheetScrollView
+            ref={nativeScrollRef}
+            onScroll={(event) => { nativeScrollOffsetRef.current = event.nativeEvent.contentOffset.y; }}
+            automaticallyAdjustKeyboardInsets
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            contentContainerStyle={[styles.sheetContent, styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 220, 220) }]}
+          >
+            <KeyboardAwareFocusView scrollRef={nativeScrollRef} scrollOffsetRef={nativeScrollOffsetRef} style={styles.sheetInnerFocus}>
               {children}
-            </BottomSheetScrollView>
-          </KeyboardAwareFocusView>
+            </KeyboardAwareFocusView>
+          </BottomSheetScrollView>
         </BottomSheet>
       )}
     </View>
@@ -137,6 +138,7 @@ const styles = StyleSheet.create({
   sheetContent: { paddingHorizontal: 18, paddingTop: 2 },
   scrollContent: { paddingBottom: 220 },
   sheetKeyboardAvoiding: { flex: 1 },
+  sheetInnerFocus: { width: "100%" },
   webSheet: { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "72%", backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 16, paddingTop: 8, shadowColor: "#10231B", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: -5 }, elevation: 16 },
   handle: { alignSelf: "center", width: 44, height: 5, borderRadius: 3, backgroundColor: "#9BA8A2", marginBottom: 8 },
 });

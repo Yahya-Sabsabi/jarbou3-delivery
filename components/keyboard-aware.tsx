@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { Dimensions, findNodeHandle, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, UIManager, View, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewProps } from "react-native";
+import { Dimensions, findNodeHandle, Keyboard, ScrollView, StyleSheet, UIManager, View, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewProps } from "react-native";
 import type { PropsWithChildren, RefObject } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 
@@ -71,23 +71,21 @@ export function KeyboardAwareScrollView({ children, contentContainerStyle, ...pr
   };
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-      <FocusView style={styles.focusContainer} onFocusCapture={onFocusCapture}>
-        <ScrollView
-          {...props}
-          ref={scrollRef}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
-          automaticallyAdjustKeyboardInsets
-          keyboardShouldPersistTaps={props.keyboardShouldPersistTaps ?? "handled"}
-          keyboardDismissMode={props.keyboardDismissMode ?? "on-drag"}
-          contentContainerStyle={contentContainerStyle}
-          showsVerticalScrollIndicator={props.showsVerticalScrollIndicator ?? false}
-        >
-          {children}
-        </ScrollView>
-      </FocusView>
-    </KeyboardAvoidingView>
+    <FocusView style={styles.root} onFocusCapture={onFocusCapture}>
+      <ScrollView
+        {...props}
+        ref={scrollRef}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps={props.keyboardShouldPersistTaps ?? "handled"}
+        keyboardDismissMode={props.keyboardDismissMode ?? "on-drag"}
+        contentContainerStyle={contentContainerStyle}
+        showsVerticalScrollIndicator={props.showsVerticalScrollIndicator ?? false}
+      >
+        {children}
+      </ScrollView>
+    </FocusView>
   );
 }
 
