@@ -22,6 +22,9 @@ export function OptimusMapScreen({
   onLocate,
   locating,
   onProfile,
+  onHome,
+  onMore,
+  moreMenu,
   children,
 }: {
   source?: MapPoint | null;
@@ -37,12 +40,15 @@ export function OptimusMapScreen({
   onLocate: () => void;
   locating?: boolean;
   onProfile?: () => void;
+  onHome?: () => void;
+  onMore?: () => void;
+  moreMenu?: ReactNode;
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
   const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ["24%", "52%", "82%"], []);
-  const [sheetIndex, setSheetIndex] = useState(1);
+  const snapPoints = useMemo(() => ["24%", "56%", "84%"], []);
+  const [sheetIndex, setSheetIndex] = useState(0);
   const centerPinVisible = Boolean(selecting) && sheetIndex < snapPoints.length - 1;
 
   return (
@@ -62,14 +68,21 @@ export function OptimusMapScreen({
         readOnly={!selecting}
       />
       {centerPinVisible ? <View pointerEvents="none" testID="center-selection-pin" style={styles.centerMarker}><View style={styles.centerMarkerPin}><View style={styles.centerMarkerDot} /></View></View> : null}
-      <View pointerEvents="box-none" style={[styles.floatingLayer, { top: Math.max(insets.top + 12, 20), right: Math.max(insets.right + 12, 16) }]}>
-        <Pressable accessibilityLabel="تحديد موقعي الحالي" onPress={onLocate} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}>
-          <MaterialIcons name={locating ? "gps-not-fixed" : "my-location"} size={23} color="#263238" />
-        </Pressable>
-        <Pressable accessibilityLabel="فتح الملف الشخصي" onPress={onProfile} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}>
-          <MaterialIcons name="person-outline" size={24} color="#263238" />
-        </Pressable>
+      <View pointerEvents="box-none" style={[styles.topActions, { top: Math.max(insets.top + 12, 18), left: Math.max(insets.left + 14, 16), right: Math.max(insets.right + 14, 16) }]}>
+        <View style={styles.topActionsGroup}>
+          {onHome ? <Pressable accessibilityLabel="العودة إلى الرئيسية" onPress={onHome} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}><MaterialIcons name="home-filled" size={22} color="#263238" /></Pressable> : null}
+          {onMore ? <Pressable accessibilityLabel="المزيد من الخيارات" onPress={onMore} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}><MaterialIcons name="more-vert" size={24} color="#263238" /></Pressable> : null}
+        </View>
+        <View style={styles.topActionsGroup}>
+          <Pressable accessibilityLabel="تحديد موقعي الحالي" onPress={onLocate} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}>
+            <MaterialIcons name={locating ? "gps-not-fixed" : "my-location"} size={23} color="#263238" />
+          </Pressable>
+          <Pressable accessibilityLabel="فتح الملف الشخصي" onPress={onProfile} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}>
+            <MaterialIcons name="person-outline" size={24} color="#263238" />
+          </Pressable>
+        </View>
       </View>
+      {moreMenu}
       {Platform.OS === "web" ? (
         <View style={[styles.webSheet, { paddingBottom: Math.max(insets.bottom + 24, 24) }]}>
           <ScrollView
@@ -83,7 +96,7 @@ export function OptimusMapScreen({
           </ScrollView>
         </View>
       ) : (
-        <BottomSheet ref={bottomSheetRef} index={1} snapPoints={snapPoints} onChange={setSheetIndex} enablePanDownToClose={false} backgroundStyle={styles.sheetBackground} handleIndicatorStyle={styles.sheetIndicator}>
+        <BottomSheet ref={bottomSheetRef} index={0} snapPoints={snapPoints} onChange={setSheetIndex} enablePanDownToClose={false} backgroundStyle={styles.sheetBackground} handleIndicatorStyle={styles.sheetIndicator}>
           <BottomSheetScrollView
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={[styles.sheetContent, styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 220, 220) }]}
@@ -99,16 +112,18 @@ export function OptimusMapScreen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: "#E7EBE8" },
+  root: { flex: 1, minHeight: 0, overflow: "hidden", position: "relative", backgroundColor: "#E7EBE8" },
   centerMarker: { position: "absolute", top: "50%", left: "50%", width: 44, height: 58, marginLeft: -22, marginTop: -53, zIndex: 10, alignItems: "center", justifyContent: "flex-start" },
   centerMarkerPin: { width: 34, height: 34, marginTop: 1, borderRadius: 19, borderBottomRightRadius: 5, backgroundColor: "#24755E", borderWidth: 3, borderColor: "#FFFFFF", transform: [{ rotate: "45deg" }], shadowColor: "#000000", shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
   centerMarkerDot: { width: 10, height: 10, marginTop: 9, marginLeft: 9, borderRadius: 5, backgroundColor: "#FFFFFF", transform: [{ rotate: "-45deg" }] },
+  topActions: { position: "absolute", flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", zIndex: 30 },
+  topActionsGroup: { flexDirection: "row", gap: 8 },
   floatingLayer: { position: "absolute", gap: 10, alignItems: "center", zIndex: 20 },
-  floatingButton: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFFF2", shadowColor: "#0B1F17", shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
+  floatingButton: { width: 44, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFFF2", shadowColor: "#0B1F17", shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
-  sheetBackground: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, shadowColor: "#10231B", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: -5 }, elevation: 16 },
-  sheetIndicator: { backgroundColor: "#9BA8A2", width: 44 },
-  sheetContent: { paddingHorizontal: 16, paddingTop: 2 },
+  sheetBackground: { backgroundColor: "#FCFDFC", borderTopLeftRadius: 30, borderTopRightRadius: 30, shadowColor: "#10231B", shadowOpacity: 0.14, shadowRadius: 20, shadowOffset: { width: 0, height: -6 }, elevation: 14 },
+  sheetIndicator: { backgroundColor: "#83958D", width: 38, height: 4, borderRadius: 4, marginTop: 3 },
+  sheetContent: { paddingHorizontal: 18, paddingTop: 2 },
   scrollContent: { paddingBottom: 220 },
   sheetKeyboardAvoiding: { flex: 1 },
   webSheet: { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "72%", backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 16, paddingTop: 8, shadowColor: "#10231B", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: -5 }, elevation: 16 },

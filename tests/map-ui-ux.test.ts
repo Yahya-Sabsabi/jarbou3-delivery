@@ -7,6 +7,7 @@ const app = root("components/jarbou3-app.tsx");
 const mapScreen = root("components/optimus-map-screen.tsx");
 const loader = root("components/hama-map-loader.tsx");
 const maplibre = root("components/hama-map-maplibre.native.tsx");
+const premiumSheet = root("components/premium-order-sheet.tsx");
 
 describe("OPTIMUS X MapLibre map UI/UX contract", () => {
   it("keeps map controls below the status bar and sheet content above the navigation bar", () => {
@@ -62,8 +63,21 @@ describe("OPTIMUS X MapLibre map UI/UX contract", () => {
     expect(mapScreen).toContain('testID="center-selection-pin"');
     expect(mapScreen).toContain("sheetIndex < snapPoints.length - 1");
     expect(mapScreen).toContain("onChange={setSheetIndex}");
+    expect(mapScreen).toContain("index={0}");
     expect(mapScreen).toContain("centerMarkerDot");
     expect(mapScreen).not.toContain("centerMarkerPin: { width: 34, height: 34, borderRadius: 18");
+  });
+
+  it("exposes the Premium order sheet, floating options and customer navigation", () => {
+    expect(premiumSheet).toContain("جاهز لتحديد رحلتك");
+    expect(premiumSheet).toContain("إضافة كود خصم");
+    expect(premiumSheet).toContain("العناوين المفضلة");
+    expect(premiumSheet).toContain("الرئيسية");
+    expect(premiumSheet).toContain("الطلبات");
+    expect(premiumSheet).toContain("الحساب");
+    expect(premiumSheet).toContain("testID=\"premium-more-menu\"");
+    expect(app).toContain("PremiumCustomerNav");
+    expect(app).toContain('type CustomerPage = "home" | "order" | "orders"');
   });
 
   it("keeps the bottom sheet keyboard-safe and fully scrollable", () => {
@@ -77,7 +91,8 @@ describe("OPTIMUS X MapLibre map UI/UX contract", () => {
     expect(app).toContain("KeyboardAvoidingView");
     expect(app).toContain('keyboardShouldPersistTaps="handled"');
     expect(app).toContain('keyboardDismissMode="on-drag"');
-    expect(app).toContain("paddingBottom: Math.max(insets.bottom + 220, 220)");
+    expect(mapScreen).toContain("paddingBottom: Math.max(insets.bottom + 220, 220)");
+    expect(premiumSheet).toContain("confirmButton");
     expect(app).toContain("signIn");
   });
 

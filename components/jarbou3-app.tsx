@@ -1,5 +1,6 @@
 import { Image } from "expo-image";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActivityIndicator, Alert, Animated, AppState, BackHandler, KeyboardAvoidingView, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from "react-native";
@@ -8,6 +9,7 @@ import { trpc } from "@/lib/trpc";
 import { jarbou3Session } from "@/lib/jarbou3-session";
 import { DEFAULT_DELIVERY_PRICING, HAMA_CENTER, estimateDeliveryPrice, formatSyp, type MapPoint } from "@/shared/jarbou3";
 import { HamaMap } from "@/components/hama-map-loader";
+import { PremiumCustomerNav, PremiumFavoritesMenu, PremiumMoreMenu, PremiumOrderSheet } from "@/components/premium-order-sheet";
 import { OptimusMapScreen } from "@/components/optimus-map-screen";
 import { SwipeStartButton } from "@/components/swipe-start-button";
 import { getCurrentHamaLocation, watchHamaLocation } from "@/lib/jarbou3-location";
@@ -23,7 +25,7 @@ import Constants from "expo-constants";
 import * as SplashScreen from "expo-splash-screen";
 
 type Role = "customer" | "driver";
-type CustomerPage = "home" | "order" | "track" | "otp" | "profile";
+type CustomerPage = "home" | "order" | "orders" | "track" | "otp" | "profile";
 type DriverPage = "home" | "verify" | "drive" | "deliver";
 type DriverOrderPreview = { id: string; source_address: string; source_lat: number | string; source_lng: number | string; destination_address: string; destination_lat: number | string; destination_lng: number | string; estimated_price: number; payment_method: "cash" | "sham_cash"; distance_m: number; distance_to_pickup_m?: number | string; offer_expires_at?: string | null; offer_round?: number };
 type DriverTripMetrics = { actual_distance_m: number | string; moving_seconds: number | string; elapsed_seconds: number | string; last_recorded_at: string };
@@ -153,6 +155,9 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
   const [favoriteLabel, setFavoriteLabel] = useState("");
   const [discountCode, setDiscountCode] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState<{ discountAmount: number; finalPrice: number } | null>(null);
+  const [moreMenuVisible, setMoreMenuVisible] = useState(false);
+  const [favoritesMenuVisible, setFavoritesMenuVisible] = useState(false);
+  const [discountExpanded, setDiscountExpanded] = useState(false);
   const createOrder = trpc.jarbou3.createOrder.useMutation({ onSuccess: async (order) => {
     await jarbou3Session.saveActiveTrip({ role: "customer", orderId: order.id, sourceAddress: "نقطة الاستلام المحددة على الخريطة، حماة", sourceLat: source?.latitude ?? 0, sourceLng: source?.longitude ?? 0, destinationAddress: "وجهة التسليم المحددة على الخريطة، حماة", destinationLat: destination?.latitude ?? 0, destinationLng: destination?.longitude ?? 0, distanceM: route?.distanceM ?? 0, savedAt: new Date().toISOString() });
     onTripActivity(true);
@@ -352,6 +357,8 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
 
   if (page === "profile") return <View style={[styles.fill, styles.profilePage]}><ProfilePanel name={name} phone={phone} onBack={() => setPage("home")} onLogout={onLogout} /></View>;
 
+  if (page === "orders") return <View style={styles.fill}><ScrollView contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom + 30, 42) }]}><View style={styles.hero}><View><Text style={styles.eyebrow}>سجل النشاط</Text><Text style={styles.heroTitle}>الطلبات</Text><Text style={styles.copy}>تابع طلباتك الحالية والسابقة من مكان واحد.</Text></View><MaterialIcons name="receipt-long" size={30} color="#24755E" /></View><View style={styles.empty}><Text style={styles.emptyText}>لا توجد طلبات محفوظة للعرض حالياً.</Text></View></ScrollView><PremiumCustomerNav active="orders" onHome={() => setPage("home")} onOrders={() => setPage("orders")} onProfile={() => setPage("profile")} /></View>;
+
   if (page === "order") return (
     <OptimusMapScreen
       source={source}
@@ -366,34 +373,45 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
       onLocate={useMyLocation}
       locating={locating}
       onProfile={() => setPage("profile")}
+      onHome={() => setPage("home")}
+      onMore={() => setMoreMenuVisible((value) => !value)}
+      moreMenu={<><PremiumMoreMenu visible={moreMenuVisible && !favoritesMenuVisible} onClose={() => setMoreMenuVisible(false)} onDiscount={() => { setMoreMenuVisible(false); setDiscountExpanded(true); }} onFavorites={() => { setMoreMenuVisible(false); setFavoritesMenuVisible(true); }} /><PremiumFavoritesMenu visible={favoritesMenuVisible} favorites={(favoriteAddresses.data ?? []) as Array<{ id: string; label: string; address: string; latitude: number | string; longitude: number | string }>} onClose={() => setFavoritesMenuVisible(false)} onChoose={(favorite) => { chooseFavorite(favorite); setFavoritesMenuVisible(false); }} onDelete={(id) => accessToken && deleteFavorite.mutate({ accessToken, favoriteId: id })} onAdd={() => { setFavoritesMenuVisible(false); setDiscountExpanded(false); }} /></>}
     >
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardAvoiding}><ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.sheetScroll, { paddingBottom: Math.max(insets.bottom + 220, 220) }]} showsVerticalScrollIndicator={false}>
-        <Top title="طلب توصيل" back={() => setPage("home")} />
-        {locationNotice ? <Pressable onPress={() => setLocationNotice(null)} style={styles.locationNotice}><Text style={styles.locationNoticeText}>{locationNotice}</Text></Pressable> : null}
-        <View style={styles.mapModeRow}>
-          <Pressable onPress={() => setSelecting("source")} style={[styles.mapMode, selecting === "source" && styles.mapModeActive]}><Text style={[styles.mapModeText, selecting === "source" && styles.mapModeTextActive]}>١. دبوس الاستلام</Text></Pressable>
-          <Pressable onPress={() => setSelecting("destination")} style={[styles.mapMode, selecting === "destination" && styles.mapModeActive]}><Text style={[styles.mapModeText, selecting === "destination" && styles.mapModeTextActive]}>٢. دبوس الوجهة</Text></Pressable>
-        </View>
-        <View style={styles.addressSearch}>
-          <TextInput value={addressQuery} onChangeText={(value) => { setAddressQuery(value); setAddressResults([]); setSearchingAddress(value.trim().length >= 2); }} onSubmitEditing={searchAddress} returnKeyType="search" placeholder="اكتب بداية اسم حي أو شارع أو متجر" placeholderTextColor="#8D8D8D" style={styles.addressSearchInput} textAlign="right" />
-          <Pressable onPress={searchAddress} style={styles.addressSearchButton}><Text style={styles.addressSearchButtonText}>{searchingAddress ? "…" : "بحث"}</Text></Pressable>
-        </View>
-        <View style={styles.searchFilters}>{([{ key: "all", label: "الكل" }, { key: "shops", label: "متاجر" }, { key: "streets", label: "شوارع" }] as const).map((filter) => <Pressable key={filter.key} onPress={() => { setSearchFilter(filter.key); setAddressResults([]); }} style={[styles.searchFilter, searchFilter === filter.key && styles.searchFilterActive]}><Text style={[styles.searchFilterText, searchFilter === filter.key && styles.searchFilterTextActive]}>{filter.label}</Text></Pressable>)}</View>
-        {addressResults.length ? <View style={styles.addressResults}>{addressResults.map((result) => <Pressable key={`${result.latitude}-${result.longitude}`} onPress={() => chooseAddress(result)} style={styles.addressResult}><Text numberOfLines={2} style={styles.addressResultText}>{result.label}</Text><Text style={styles.resultKind}>{result.kind === "shop" ? "متجر" : result.kind === "street" ? "شارع" : "مكان"}</Text><Text style={styles.addressResultAction}>وضع الدبوس</Text></Pressable>)}</View> : addressQuery.trim().length >= 2 && !searchingAddress ? <Text style={styles.searchEmpty}>لا توجد اقتراحات مطابقة داخل حماة. جرّب كلمة أقصر أو اسم الحي.</Text> : null}
-        <View style={styles.card}>
-          <Heading eyebrow="تحديد حر داخل حماة" title="اختر نقاط الرحلة" />
-          <Text style={styles.mapHint}>حرّك اللوحة للأعلى، أو اضغط الخريطة لوضع دبوس الاستلام والوجهة. ستتمركز الخريطة بسلاسة على آخر نقطة مختارة.</Text>
-          <View style={styles.favoriteSection}>
-            <Text style={styles.favoriteTitle}>عناويني المفضلة</Text>
-            {accessToken ? <><View style={styles.favoriteRow}>{(favoriteAddresses.data ?? []).length ? favoriteAddresses.data?.map((favorite) => <Pressable key={favorite.id} onPress={() => chooseFavorite(favorite)} style={styles.favoriteChip}><Text numberOfLines={1} style={styles.favoriteChipText}>{favorite.label}</Text><Pressable onPress={() => deleteFavorite.mutate({ accessToken, favoriteId: favorite.id })} hitSlop={8}><Text style={styles.favoriteDelete}>×</Text></Pressable></Pressable>) : <Text style={styles.favoriteEmpty}>احفظ الدبوس الحالي ليظهر هنا.</Text>}</View><View style={styles.saveFavoriteRow}><TextInput value={favoriteLabel} onChangeText={setFavoriteLabel} placeholder="اسم اختياري، مثل المنزل" placeholderTextColor="#909090" style={styles.favoriteInput} textAlign="right" /><Pressable onPress={saveCurrentFavorite} style={styles.saveFavoriteButton}><Text style={styles.saveFavoriteButtonText}>{saveFavorite.isPending ? "…" : "حفظ"}</Text></Pressable></View></> : <Text style={styles.favoriteEmpty}>سجّل الدخول لحفظ العناوين واستعمالها في الطلبات القادمة.</Text>}
-          </View>
-          <View style={styles.quote}><View><Text style={styles.quoteLabel}>{appliedDiscount ? "السعر بعد الخصم" : "السعر التقديري"}</Text><Text style={styles.quoteValue}>{route ? formatSyp(appliedDiscount?.finalPrice ?? route.price) : "—"}</Text>{appliedDiscount ? <Text style={styles.discountSaving}>وفّرت {formatSyp(appliedDiscount.discountAmount)}</Text> : null}</View><View style={styles.quoteLine} /><View><Text style={styles.quoteLabel}>المسافة والوقت</Text><Text style={styles.quoteValueSmall}>{routeLoading ? "يُحسب المسار…" : route ? `${(route.distanceM / 1000).toFixed(1)} كم · ${Math.max(1, Math.round(route.durationSeconds / 60))} دقيقة` : "اختر الدبوسين"}</Text></View></View>
-          <View style={styles.discountBox}><Text style={styles.discountTitle}>رمز الخصم</Text><View style={styles.discountRow}><TextInput value={discountCode} onChangeText={(value) => { setDiscountCode(value.toUpperCase()); setAppliedDiscount(null); }} autoCapitalize="characters" placeholder="مثال: JARBOU3" placeholderTextColor="#909090" style={styles.discountInput} textAlign="right" /><Pressable onPress={verifyDiscount} style={styles.discountButton}><Text style={styles.discountButtonText}>{discountPreview.isFetching ? "…" : "تحقق"}</Text></Pressable></View><Text style={styles.discountHint}>اختياري، ويُراجع من الخادم قبل إنشاء الطلب.</Text></View>
-          <Text style={styles.label}>طريقة الدفع</Text>
-          <View style={styles.paymentRow}>{(["نقدي", "شام كاش"] as const).map((method) => <Pressable key={method} onPress={() => setPayment(method)} style={[styles.payment, payment === method && styles.paymentSelected]}><Text style={styles.paymentText}>{method}</Text></Pressable>)}</View>
-          <Action title={createOrder.isPending ? "جارٍ إنشاء الطلب…" : `تأكيد الطلب · ${route ? formatSyp(appliedDiscount?.finalPrice ?? route.price) : "—"}`} onPress={submitOrder} />
-        </View>
-      </ScrollView></KeyboardAvoidingView>
+      <PremiumOrderSheet
+        source={source}
+        destination={destination}
+        selecting={selecting}
+        onSelectMode={setSelecting}
+        locationNotice={locationNotice}
+        onDismissNotice={() => setLocationNotice(null)}
+        addressQuery={addressQuery}
+        onAddressQueryChange={(value) => { setAddressQuery(value); setAddressResults([]); setSearchingAddress(value.trim().length >= 2); }}
+        searchingAddress={searchingAddress}
+        onSearch={searchAddress}
+        addressResults={addressResults}
+        onChooseAddress={chooseAddress}
+        favoriteAddresses={(favoriteAddresses.data ?? []) as Array<{ id: string; label: string; address: string; latitude: number | string; longitude: number | string }>}
+        onChooseFavorite={chooseFavorite}
+        onDeleteFavorite={(id) => accessToken && deleteFavorite.mutate({ accessToken, favoriteId: id })}
+        favoriteLabel={favoriteLabel}
+        onFavoriteLabelChange={setFavoriteLabel}
+        onSaveFavorite={saveCurrentFavorite}
+        savingFavorite={saveFavorite.isPending}
+        discountCode={discountCode}
+        onDiscountCodeChange={(value) => { setDiscountCode(value.toUpperCase()); setAppliedDiscount(null); }}
+        onVerifyDiscount={verifyDiscount}
+        discountFetching={discountPreview.isFetching}
+        discountExpanded={discountExpanded}
+        onToggleDiscount={() => setDiscountExpanded((value) => !value)}
+        onOpenFavorites={() => setFavoritesMenuVisible(true)}
+        appliedDiscount={appliedDiscount}
+        route={route}
+        routeLoading={routeLoading}
+        payment={payment}
+        onPaymentChange={setPayment}
+        onSubmit={submitOrder}
+        submitting={createOrder.isPending}
+      />
     </OptimusMapScreen>
   );
 
@@ -413,7 +431,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
 
   if (page === "otp") return <View style={styles.fill}><Top title="تأكيد الاستلام" back={() => setPage("track")} /><View style={styles.centered}><View style={styles.otpBadge}><Text style={styles.otpBadgeText}>OTP</Text></View><Text style={styles.centerTitle}>أدخل رمز الاستلام</Text><Text style={styles.centerCopy}>يشاركك السائق الرمز عند وصول الطلب. لا تؤكده قبل الاستلام.</Text><TextInput style={styles.otp} value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={4} placeholder="••••" placeholderTextColor="#AAA" textAlign="center" /><Action title="تأكيد الرمز" onPress={() => otp.length === 4 ? Alert.alert("تم التأكيد", "سيطلب من السائق الآن تصوير إثبات التسليم.") : Alert.alert("الرمز غير مكتمل", "أدخل أربعة أرقام.")} /><View style={styles.proofNotice}><Text style={styles.proofNoticeIcon}>▧</Text><View style={styles.flex}><Text style={styles.proofNoticeTitle}>صورة إثبات التسليم</Text><Text style={styles.proofNoticeCopy}>ستظهر هنا فور رفعها من السائق.</Text></View></View></View></View>;
 
-  return <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom + 30, 42) }]}><View style={styles.hero}><View><Text style={styles.eyebrow}>OPTIMUS X في حماة</Text><Text style={styles.heroTitle}>أهلاً، {name}</Text><Text style={styles.copy}>توصيل قريب وواضح وبالليرة السورية الجديدة.</Text></View><Mark /></View><View style={styles.space}><Heading eyebrow="الخدمة متاحة" title="إلى أين نوصلك اليوم؟" /><Action title="إنشاء طلب توصيل" onPress={() => setPage("order")} /><View style={styles.note}><Text style={styles.noteIcon}>↗</Text><View style={styles.flex}><Text style={styles.noteTitle}>الخريطة الكاملة داخل إنشاء الطلب</Text><Text style={styles.noteCopy}>اضغط إنشاء طلب توصيل لتحديد الاستلام والوجهة على خريطة حماة التفاعلية.</Text></View></View><Heading eyebrow="آخر الطلبات" title="لا توجد طلبات نشطة" aside="عرض السجل" /><View style={styles.empty}><Text style={styles.emptyText}>ستظهر حالة طلبك وتفاصيل السفير هنا فور التأكيد.</Text></View></View></ScrollView>;
+  return <View style={styles.fill}><ScrollView contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom + 108, 120) }]}><View style={styles.hero}><View><Text style={styles.eyebrow}>OPTIMUS X في حماة</Text><Text style={styles.heroTitle}>أهلاً، {name}</Text><Text style={styles.copy}>توصيل قريب وواضح وبالليرة السورية الجديدة.</Text></View><Mark /></View><View style={styles.space}><Heading eyebrow="الخدمة متاحة" title="إلى أين نوصلك اليوم؟" /><Action title="إنشاء طلب توصيل" onPress={() => setPage("order")} /><View style={styles.note}><Text style={styles.noteIcon}>↗</Text><View style={styles.flex}><Text style={styles.noteTitle}>الخريطة الكاملة داخل إنشاء الطلب</Text><Text style={styles.noteCopy}>اضغط إنشاء طلب توصيل لتحديد الاستلام والوجهة على خريطة حماة التفاعلية.</Text></View></View><Heading eyebrow="آخر الطلبات" title="لا توجد طلبات نشطة" aside="عرض السجل" /><View style={styles.empty}><Text style={styles.emptyText}>ستظهر حالة طلبك وتفاصيل السفير هنا فور التأكيد.</Text></View></View></ScrollView><PremiumCustomerNav active="home" onHome={() => setPage("home")} onOrders={() => setPage("orders")} onProfile={() => setPage("profile")} /></View>;
 }
 
 function Driver({ name, onTripActivity }: { name: string; onTripActivity: (active: boolean) => void }) {
