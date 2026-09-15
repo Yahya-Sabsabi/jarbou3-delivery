@@ -66,7 +66,6 @@ const config: ExpoConfig = {
       backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/android-icon-monochrome.png",
     },
-    edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
     permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
@@ -97,6 +96,17 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    [
+      "expo-navigation-bar",
+      {
+        visibility: "hidden",
+        behavior: "overlay-swipe",
+        position: "absolute",
+        backgroundColor: "",
+        borderColor: "",
+        barStyle: "light",
+      },
+    ],
     "@maplibre/maplibre-react-native",
     "expo-asset",
     "expo-font",

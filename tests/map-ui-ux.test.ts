@@ -110,7 +110,7 @@ describe("OPTIMUS X MapLibre map UI/UX contract", () => {
     expect(premiumProfile).toContain("الدعم والمساعدة");
     expect(premiumProfile).toContain("تسجيل الخروج");
     expect(premiumProfile).toContain('active="profile"');
-    expect(tabsLayout).toContain('tabBarStyle: { display: "none" }');
+    expect(tabsLayout).toContain('tabBarStyle: { display: "none", height: 0, borderTopWidth: 0 }');
     expect(tabsLayout).not.toContain('title: "Home"');
   });
 

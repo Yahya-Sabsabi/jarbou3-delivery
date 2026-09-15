@@ -6,6 +6,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Platform } from "react-native";
+import * as NavigationBar from "expo-navigation-bar";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
 import {
@@ -35,6 +36,24 @@ export default function RootLayout() {
 
   const [insets, setInsets] = useState<EdgeInsets>(initialInsets);
   const [frame, setFrame] = useState<Rect>(initialFrame);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    let active = true;
+    void (async () => {
+      try {
+        await NavigationBar.setBehaviorAsync("overlay-swipe");
+        await NavigationBar.setPositionAsync("absolute").catch(() => undefined);
+        await NavigationBar.setButtonStyleAsync("light").catch(() => undefined);
+        if (active) await NavigationBar.setVisibilityAsync("hidden");
+      } catch (error) {
+        console.warn("[system-ui] unable to hide Android navigation bar", error);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Initialize Manus runtime for cookie injection from parent container
   useEffect(() => {

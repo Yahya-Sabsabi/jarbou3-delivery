@@ -5,13 +5,15 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { display: "none" },
+        tabBarStyle: { display: "none", height: 0, borderTopWidth: 0 },
+        tabBarItemStyle: { display: "none" },
+        tabBarShowLabel: false,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "OPTIMUS X",
+          title: "",
         }}
       />
     </Tabs>
