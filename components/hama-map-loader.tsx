@@ -1,5 +1,5 @@
 import { Component, useEffect, useState, type ReactNode } from "react";
-import { ActivityIndicator, Pressable, Platform, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
 
 import type { HamaMapProps } from "@/components/hama-map-fallback";
 
@@ -32,19 +32,22 @@ function MapStatus({ fullScreen, failed }: { fullScreen?: boolean; failed?: bool
   );
 }
 
-/** Android map path: Leaflet + OpenStreetMap in WebView, never the old static map. */
+/** Native devices use MapLibre Native; web keeps the existing browser map implementation. */
 export function HamaMap(props: HamaMapProps) {
   const [MapComponent, setMapComponent] = useState<LoadedMap | null>(null);
   const [failedToLoad, setFailedToLoad] = useState(false);
 
   useEffect(() => {
     let active = true;
-    import("@/components/hama-map-open")
+    const modulePromise = Platform.OS === "web"
+      ? import("@/components/hama-map-open")
+      : import("@/components/hama-map-maplibre.native");
+    modulePromise
       .then((module) => {
         if (active) setMapComponent(() => module.HamaMap as LoadedMap);
       })
       .catch((error) => {
-        console.warn("[hama-map] open-source map failed to load", error);
+        console.warn("[hama-map] native map failed to load", error);
         if (active) setFailedToLoad(true);
       });
     return () => { active = false; };

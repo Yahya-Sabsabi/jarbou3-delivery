@@ -833,3 +833,11 @@
 - [x] إضافة minZoom وmaxZoom وقيود camera bounds تمنع الفراغ والقص أثناء Zoom وPan.
 - [x] إعادة تحجيم الخريطة عند onLayout وظهور اللوحة السفلية وتغيير الاتجاه مع تحميل البلاطات مسبقاً.
 - [x] موازنة Safe Area وارتفاع Bottom Sheet وإضافة اختبارات ثم بناء APK دون تغيير المصادقة.
+
+## سجل متابعة جديد — استبدال الخرائط بـ MapLibre Native
+- [x] فحص سبب المناطق الفارغة وتوافق MapLibre Native مع Expo SDK 54 وReact Native 0.81.
+- [x] إزالة مسار WebView/Leaflet وGoogle Maps من مسار Android/iOS واستبداله بـ MapLibre Native وOpenFreeMap Liberty، مع إبقاء توافق الويب منفصلاً.
+- [x] بناء حاوية MapLibre كاملة المساحة مع gestures ودورة layout Native وحدود Zoom/Pan وحالات loading/error/retry.
+- [x] فصل GPS عن rendering وإضافة موقع العميل والسائق والتحديث الحي دون إعادة تحميل الخريطة.
+- [x] إعادة ضبط تكامل الخريطة مع Safe Area وBottom Sheet، والاعتماد على cache Native، ومعالجة الشبكة وإسناد Attribution.
+- [x] إضافة اختبارات regression وتشغيل TypeScript والاختبارات وبناء APK دون تغيير المصادقة.

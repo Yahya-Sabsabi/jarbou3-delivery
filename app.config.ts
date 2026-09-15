@@ -97,6 +97,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "@maplibre/maplibre-react-native",
     "expo-asset",
     "expo-font",
     "expo-web-browser",
