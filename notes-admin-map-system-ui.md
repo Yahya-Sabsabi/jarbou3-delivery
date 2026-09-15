@@ -27,3 +27,9 @@
 بعد إضافة fallback إلى smoke test بقيت الحالة `جارٍ التحميل` ولم تظهر خريطة Leaflet؛ لا توجد أخطاء console ظاهرة. هذا يشير إلى أن صفحة الاختبار لا تصل إلى فرع fallback أو أن أصول Leaflet المحلية لا تُخدم في smoke server، وسأتحقق من وجود `window.L` قبل تعديل بوابة الإدارة نهائياً.
 
 بعد تعديل فحص WebGL ليستخدم canvas مباشرة، نجح smoke test في Chromium: ظهرت خريطة حماة فعلياً، وعناوين OpenFreeMap/OpenMapTiles/OpenStreetMap، وأصبح مسار تحميل الخريطة صالحاً. الخلل كان أن نسخة MapLibre المحلية لا تملك `maplibregl.supported`، فكان غياب الدالة يُفسّر خطأً كدعم WebGL؛ تم تصحيح ذلك وتفعيل fallback عند غياب WebGL.
+
+## مراجعة صورة Google Drive وإصلاح مصدر البلاطات — 2026-09-16
+- الصورة `Annotation 2026-09-16 023816.png` من مجلد `Optimus X` أظهرت مربعات متكررة برسالة `403 Access blocked` من `osm.wiki/Blocked`، مع نص أن التطبيق لا يتبع سياسة استخدام خوادم OpenStreetMap المتطوعين.
+- السبب الجذري ليس MapLibre أو حاوية الخريطة؛ fallback كان يستخدم `tile.openstreetmap.org` مباشرة، لذلك حُظرت البلاطات.
+- فحص بلاطة حماة عند z12 أعاد HTTP 200 من Carto Voyager وEsri World Street Map.
+- smoke test بعد التعديل أظهر خريطة حماة فعلياً مع Liberty/MapLibre بلا 403. أصبح fallback يستخدم Carto Voyager، وينتقل إلى Esri تلقائياً عند tileerror، مع بقاء GPS والعلامات والتحديث الحي.

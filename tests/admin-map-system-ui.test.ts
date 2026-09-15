@@ -22,14 +22,17 @@ const customerApp = read("components/jarbou3-app.tsx");
     expect(adminMap).toContain("drivers");
     expect(adminApp).toContain('id="places-map"');
     expect(adminMap).toContain("ADMIN_LEAFLET_TILE_URL");
+    expect(adminMap).toContain("ADMIN_ESRI_TILE_URL");
     expect(adminMap).toContain("window.L");
+    expect(adminMap).not.toContain("tile.openstreetmap.org");
   });
 
   it("falls back to an interactive raster map when WebGL is unavailable", () => {
     expect(adminIndex).toContain("leaflet/leaflet.css");
     expect(adminIndex).toContain("leaflet/leaflet.js");
     expect(adminMap).toContain("maplibregl.supported");
-    expect(adminMap).toContain("tile.openstreetmap.org");
+    expect(adminMap).toContain("basemaps.cartocdn.com/rastertiles/voyager");
+    expect(adminMap).toContain("ArcGIS/rest/services/World_Street_Map");
     expect(adminMap).toContain("map.locate");
     expect(adminMap).toContain("installLeafletFleetMap");
   });

@@ -1,5 +1,6 @@
 const ADMIN_LIBERTY_STYLE = "https://tiles.openfreemap.org/styles/liberty";
-const ADMIN_LEAFLET_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const ADMIN_LEAFLET_TILE_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+const ADMIN_ESRI_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
 const ADMIN_HAMA_CENTER = [36.76, 35.13];
 const ADMIN_HAMA_BOUNDS = [[36.60, 35.04], [36.91, 35.23]];
 let fleetOperationsMap = null;
@@ -58,7 +59,11 @@ function createAdminMap(target, onLoad, onFailure) {
 function createAdminLeafletMap(target, onLoad) {
   if (!leafletReady()) return null;
   const map = window.L.map(target, { zoomControl: false, attributionControl: true, minZoom: 11, maxZoom: 19, maxBounds: [[35.04, 36.60], [35.23, 36.91]], maxBoundsViscosity: 1, doubleClickZoom: true }).setView([ADMIN_HAMA_CENTER[1], ADMIN_HAMA_CENTER[0]], 12);
-  window.L.tileLayer(ADMIN_LEAFLET_TILE_URL, { maxZoom: 19, subdomains: ["a", "b", "c"], updateWhenIdle: true, keepBuffer: 2, attribution: "© OpenStreetMap contributors" }).addTo(map);
+  const cartoLayer = window.L.tileLayer(ADMIN_LEAFLET_TILE_URL, { maxZoom: 19, subdomains: ["a", "b", "c", "d"], tileSize: 256, zoomOffset: 0, updateWhenIdle: true, keepBuffer: 2, attribution: "© OpenStreetMap contributors © CARTO" });
+  const esriLayer = window.L.tileLayer(ADMIN_ESRI_TILE_URL, { maxZoom: 19, updateWhenIdle: true, keepBuffer: 2, attribution: "Tiles © Esri — Source: Esri, OpenStreetMap contributors" });
+  let rasterBackupActivated = false;
+  cartoLayer.on("tileerror", () => { if (rasterBackupActivated) return; rasterBackupActivated = true; if (map.hasLayer(cartoLayer)) map.removeLayer(cartoLayer); esriLayer.addTo(map); });
+  cartoLayer.addTo(map);
   window.L.control.zoom({ position: "topright" }).addTo(map);
   const locate = window.L.control({ position: "topright" });
   locate.onAdd = () => { const button = document.createElement("button"); button.type = "button"; button.className = "leaflet-control-locate"; button.title = "موقعي الحالي"; button.textContent = "⌖"; window.L.DomEvent.on(button, "click", (event) => { window.L.DomEvent.stop(event); map.locate({ setView: true, maxZoom: 16, enableHighAccuracy: true }); }); return button; };

@@ -937,3 +937,9 @@
 - [x] إصلاح طبقة تحميل الخريطة: MapLibre/Liberty عند توفر WebGL، وLeaflet محلي مع OSM وinvalidateSize عند غيابه أو فشل التحميل، مع cache-busting.
 - [x] التحقق من ظهور خريطة حماة في Chromium عبر smoke test، ووجود GPS والعلامات والمسارات والتحديث الحي في العقد البرمجية.
 - [x] تشغيل TypeScript وفحوص JavaScript و21 اختباراً مستهدفاً وgit diff --check، وحفظ checkpoint وتسليم النسخة المصححة.
+
+## سجل متابعة جديد — مراجعة صورة خريطة الإدارة من Google Drive
+- [x] تشغيل فحص Google Drive وتحديد مجلد Optimus X والصورة المرجعية `Annotation 2026-09-16 023816.png`.
+- [x] تنزيل الصورة قراءة فقط وتحليلها؛ أظهرت البلاطات 403 Access blocked من خادم OSM المباشر، وهو نفس سبب الصورة.
+- [x] توثيق التشخيص: المشكلة في مصدر البلاطات لا في MapLibre أو الحاوية أو بيانات العملاء والسائقين؛ Carto Voyager وEsri أعادا 200 لبلاطة حماة.
+- [x] تطبيق الإصلاح وإبلاغ المستخدم بالنتيجة: fallback يستخدم Carto Voyager وEsri الاحتياطي، مع بقاء Liberty/MapLibre المسار الأساسي.
