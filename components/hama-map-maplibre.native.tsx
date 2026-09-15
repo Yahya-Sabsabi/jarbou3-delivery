@@ -143,7 +143,6 @@ export function HamaMap({
         {driverLocation ? <Marker lngLat={[driverLocation.longitude, driverLocation.latitude]} anchor="bottom"><MapMarker kind="driver" label="س" /></Marker> : null}
       </Map>
 
-      {!readOnly && selecting ? <View pointerEvents="none" style={styles.centerPin}><View style={styles.pinHead} /><View style={styles.pinStem} /></View> : null}
       <View pointerEvents="none" style={styles.attribution}><Text style={styles.attributionText}>© OpenFreeMap · © OpenMapTiles · © OpenStreetMap</Text></View>
       {onLocate ? <Pressable accessibilityLabel="موقعي الحالي" onPress={onLocate} style={styles.locateButton}><Text style={styles.locateIcon}>⌖</Text></Pressable> : null}
       {mapState === "loading" ? <View style={styles.overlay}><ActivityIndicator size="small" color="#24755E" /><Text style={styles.overlayText}>جارٍ تحميل الخريطة…</Text></View> : null}
@@ -161,9 +160,6 @@ const styles = StyleSheet.create({
   destinationMarker: { backgroundColor: "#2F7A62" },
   driverMarker: { backgroundColor: "#252525", minWidth: 40, height: 40, borderRadius: 20 },
   markerLabel: { color: "#FFFFFF", fontSize: 10, fontWeight: "900" },
-  centerPin: { position: "absolute", top: "50%", left: "50%", width: 38, height: 54, marginLeft: -19, marginTop: -48, alignItems: "center" },
-  pinHead: { width: 25, height: 25, borderRadius: 15, backgroundColor: "#24755E", borderWidth: 4, borderColor: "#FFFFFF", shadowColor: "#000000", shadowOpacity: 0.22, shadowRadius: 5, elevation: 4 },
-  pinStem: { width: 3, height: 20, backgroundColor: "#24755E", marginTop: -2 },
   attribution: { position: "absolute", right: 9, bottom: 10, backgroundColor: "#FFFFFFD9", borderRadius: 5, paddingHorizontal: 6, paddingVertical: 3 },
   attributionText: { color: "#44514A", fontSize: 9, fontWeight: "600" },
   locateButton: { position: "absolute", right: 16, bottom: 52, width: 46, height: 46, borderRadius: 23, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", shadowColor: "#000000", shadowOpacity: 0.16, shadowRadius: 6, elevation: 5 },

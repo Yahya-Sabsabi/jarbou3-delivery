@@ -34,7 +34,7 @@ describe("OPTIMUS X MapLibre map UI/UX contract", () => {
     expect(maplibre).toContain("minZoom={11}");
     expect(maplibre).toContain("maxZoom={19}");
     expect(maplibre).toContain("onRegionDidChange={syncCenter}");
-    expect(maplibre).toContain("styles.centerPin");
+    expect(maplibre).not.toContain("styles.centerPin");
     expect(maplibre).toContain("mapRef.current.getCenter()");
   });
 
@@ -56,6 +56,14 @@ describe("OPTIMUS X MapLibre map UI/UX contract", () => {
   it("keeps the compact map preview removed from customer home", () => {
     expect(app).not.toContain("<HamaMap compact source={source}");
     expect(app).toContain("الخريطة الكاملة داخل إنشاء الطلب");
+  });
+
+  it("renders a geographic pin and hides it when the bottom sheet is expanded", () => {
+    expect(mapScreen).toContain('testID="center-selection-pin"');
+    expect(mapScreen).toContain("sheetIndex < snapPoints.length - 1");
+    expect(mapScreen).toContain("onChange={setSheetIndex}");
+    expect(mapScreen).toContain("centerMarkerDot");
+    expect(mapScreen).not.toContain("centerMarkerPin: { width: 34, height: 34, borderRadius: 18");
   });
 
   it("keeps the bottom sheet keyboard-safe and fully scrollable", () => {
