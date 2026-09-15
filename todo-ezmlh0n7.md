@@ -930,3 +930,10 @@
 - [x] توحيد خريطة الأسطول وخريطة الأماكن مع أسلوب MapLibre/OpenFreeMap وطبقات GPS والعلامات دون تغيير بيانات الإدارة.
 - [x] إزالة شريط Android النظامي الظاهر افتراضياً عبر expo-navigation-bar hidden + overlay-swipe، وتحصين إزالة Footer/Router bar والشعار السفلي من المصدر.
 - [x] تشغيل TypeScript و20 اختباراً مستهدفاً وفحص JavaScript وExpo config والتحقق البصري من بوابة الإدارة وحفظ checkpoint؛ تعذر بناء APK محلياً فقط لأن Android SDK/adb غير مثبتين في بيئة البناء.
+
+## سجل متابعة جديد — فشل تحميل خريطة الإدارة
+- [x] تحديد سبب فشل الخريطة: متصفح الإدارة بلا WebGL، ونسخة MapLibre المحلية لا تعرّف `supported`؛ style وsprite وglyphs وtiles نفسها تستجيب 200.
+- [x] إضافة اختبار regression يثبت fallback التفاعلي عند غياب WebGL مع بقاء GPS والعلامات والتحديث الحي؛ 21 اختباراً مستهدفاً نجحت.
+- [x] إصلاح طبقة تحميل الخريطة: MapLibre/Liberty عند توفر WebGL، وLeaflet محلي مع OSM وinvalidateSize عند غيابه أو فشل التحميل، مع cache-busting.
+- [x] التحقق من ظهور خريطة حماة في Chromium عبر smoke test، ووجود GPS والعلامات والمسارات والتحديث الحي في العقد البرمجية.
+- [x] تشغيل TypeScript وفحوص JavaScript و21 اختباراً مستهدفاً وgit diff --check، وحفظ checkpoint وتسليم النسخة المصححة.

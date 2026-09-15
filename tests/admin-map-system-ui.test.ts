@@ -21,16 +21,24 @@ const customerApp = read("components/jarbou3-app.tsx");
     expect(adminMap).toContain("customers");
     expect(adminMap).toContain("drivers");
     expect(adminApp).toContain('id="places-map"');
-    expect(adminMap).not.toContain("tile.openstreetmap.org");
-    expect(adminMap).not.toContain("window.L");
+    expect(adminMap).toContain("ADMIN_LEAFLET_TILE_URL");
+    expect(adminMap).toContain("window.L");
   });
 
+  it("falls back to an interactive raster map when WebGL is unavailable", () => {
+    expect(adminIndex).toContain("leaflet/leaflet.css");
+    expect(adminIndex).toContain("leaflet/leaflet.js");
+    expect(adminMap).toContain("maplibregl.supported");
+    expect(adminMap).toContain("tile.openstreetmap.org");
+    expect(adminMap).toContain("map.locate");
+    expect(adminMap).toContain("installLeafletFleetMap");
+  });
   it("keeps live GPS markers and route updates without recreating the map instance", () => {
     expect(adminMap).toContain("refreshFleetOperationsMap");
     expect(adminMap).toContain("setData");
     expect(adminMap).toContain("setLngLat");
     expect(adminMap).toContain("map.resize()");
-    expect(adminMap).not.toContain("map.remove()");
+    expect(adminMap).toContain("destroyVectorFleetMap");
   });
 
   it("hides Android system navigation by default and reveals it with a bottom swipe", () => {
