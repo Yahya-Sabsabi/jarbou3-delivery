@@ -15,6 +15,10 @@ describe("keyboard and text input UX", () => {
     expect(keyboard).toContain("Keyboard.metrics?.()?.height");
     expect(keyboard).toContain("UIManager.measureInWindow");
     expect(keyboard).toContain("scrollTo({ y: nextOffset, animated: true })");
+    expect(keyboard).toContain("keyboardDidChangeFrame");
+    expect(keyboard).toContain("focusedTargetRef");
+    expect(keyboard).toContain("originOffsetRef");
+    expect(keyboard).toContain("scrollTo({ y: originOffset, animated: true })");
     expect(keyboard).not.toContain("paddingBottom: 300");
     expect(keyboard).not.toContain("translateY: -300");
   });
@@ -22,7 +26,10 @@ describe("keyboard and text input UX", () => {
   it("covers auth, order BottomSheet, search, discount, and favorite fields", () => {
     expect(auth).toContain("KeyboardAwareScrollView");
     expect(mapScreen).toContain("KeyboardAwareFocusView");
-    expect(mapScreen).toContain("automaticallyAdjustKeyboardInsets");
+    expect(mapScreen).not.toContain("automaticallyAdjustKeyboardInsets");
+    expect(mapScreen).toContain('keyboardBehavior="interactive"');
+    expect(mapScreen).toContain('keyboardBlurBehavior="restore"');
+    expect(mapScreen).toContain('android_keyboardInputMode="adjustResize"');
     expect(app).toContain("stage === \"recoveryRequest\") return <AuthShell>");
     expect(app).toContain("stage === \"recoveryCode\") return <AuthShell>");
     expect(app).toContain("<KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1");

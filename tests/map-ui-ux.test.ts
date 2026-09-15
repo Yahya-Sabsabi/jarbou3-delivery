@@ -83,8 +83,12 @@ describe("OPTIMUS X MapLibre map UI/UX contract", () => {
   });
 
   it("keeps the bottom sheet keyboard-safe and fully scrollable", () => {
-    expect(mapScreen).toContain("KeyboardAvoidingView");
+    expect(mapScreen).toContain("KeyboardAwareFocusView");
     expect(mapScreen).toContain("BottomSheetScrollView");
+    expect(mapScreen).toContain('keyboardBehavior="interactive"');
+    expect(mapScreen).toContain('keyboardBlurBehavior="restore"');
+    expect(mapScreen).toContain('android_keyboardInputMode="adjustResize"');
+    expect(mapScreen).not.toContain("automaticallyAdjustKeyboardInsets");
     expect(mapScreen).toContain('keyboardShouldPersistTaps="handled"');
     expect(mapScreen).toContain("paddingBottom: Math.max(insets.bottom + 220, 220)");
   });

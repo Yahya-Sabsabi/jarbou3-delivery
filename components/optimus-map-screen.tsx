@@ -1,7 +1,7 @@
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useMemo, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { ReactNode } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -104,11 +104,10 @@ export function OptimusMapScreen({
           </KeyboardAwareFocusView>
         </View>
       ) : (
-        <BottomSheet ref={bottomSheetRef} index={0} snapPoints={snapPoints} onChange={setSheetIndex} enablePanDownToClose={false} backgroundStyle={styles.sheetBackground} handleIndicatorStyle={styles.sheetIndicator}>
+        <BottomSheet ref={bottomSheetRef} index={0} snapPoints={snapPoints} onChange={setSheetIndex} enablePanDownToClose={false} keyboardBehavior="interactive" keyboardBlurBehavior="restore" android_keyboardInputMode="adjustResize" backgroundStyle={styles.sheetBackground} handleIndicatorStyle={styles.sheetIndicator}>
           <BottomSheetScrollView
             ref={nativeScrollRef}
             onScroll={(event) => { nativeScrollOffsetRef.current = event.nativeEvent.contentOffset.y; }}
-            automaticallyAdjustKeyboardInsets
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             contentContainerStyle={[styles.sheetContent, styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 220, 220) }]}
