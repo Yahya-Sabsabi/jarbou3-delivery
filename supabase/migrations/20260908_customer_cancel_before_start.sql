@@ -1,4 +1,6 @@
 -- OPTIMUS X: customer cancellation is allowed only before the trip starts.
+-- Compare the future started state as text so this migration remains compatible
+-- with databases that have not yet applied the trip-start enum migration.
 
 create or replace function public.cancel_order_by_customer(p_order_id uuid)
 returns public.orders
@@ -17,7 +19,7 @@ begin
   returning * into cancelled_order;
 
   if cancelled_order.id is null then
-    if exists (select 1 from public.orders where id = p_order_id and customer_id = auth.uid() and status = 'started') then
+    if exists (select 1 from public.orders where id = p_order_id and customer_id = auth.uid() and status::text = 'started') then
       raise exception 'CANNOT_CANCEL_STARTED_TRIP';
     end if;
     raise exception 'ORDER_NOT_CANCELLABLE';
@@ -27,4 +29,5 @@ begin
 end;
 $$;
 
+revoke all on function public.cancel_order_by_customer(uuid) from public, anon;
 grant execute on function public.cancel_order_by_customer(uuid) to authenticated;

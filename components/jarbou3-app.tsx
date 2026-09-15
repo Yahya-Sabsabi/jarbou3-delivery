@@ -143,7 +143,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
     onTripActivity(true);
     setPage("track");
   }, onError: (error) => Alert.alert("تعذر إنشاء الطلب", error.message === "DISCOUNT_NOT_AVAILABLE" ? "هذا الرمز مخصص لحساب آخر ولا يمكن استخدامه لهذا العميل." : error.message) });
-  const cancelCustomerOrder = trpc.jarbou3.cancelCustomerOrder.useMutation({ onSuccess: async () => { await jarbou3Session.clearActiveTrip(); onTripActivity(false); setPage("home"); Alert.alert("تم إلغاء الطلب", "أُلغي الطلب قبل بدء الرحلة."); }, onError: (error) => Alert.alert("تعذر إلغاء الطلب", error.message === "CANNOT_CANCEL_STARTED_TRIP" ? "بدأت الرحلة، لذلك لم يعد الإلغاء متاحاً. يمكنك إرسال بلاغ أو متابعة السفير." : error.message) });
+  const cancelCustomerOrder = trpc.jarbou3.cancelCustomerOrder.useMutation({ onSuccess: async () => { await jarbou3Session.clearActiveTrip(); onTripActivity(false); setPage("home"); Alert.alert("تم إلغاء الطلب", "أُلغي الطلب قبل بدء الرحلة."); }, onError: (error) => { const message = error.message === "CANNOT_CANCEL_STARTED_TRIP" ? "بدأت الرحلة، لذلك لم يعد الإلغاء متاحاً. يمكنك إرسال بلاغ أو متابعة السفير." : error.message === "ORDER_NOT_CANCELLABLE" ? "لم يعد هذا الطلب قابلاً للإلغاء." : error.message; Alert.alert("تعذر إلغاء الطلب", message); } });
   // Realtime is the primary transport; slow polling remains only as a recovery fallback.
   const pricingSettings = trpc.jarbou3.pricingSettings.useQuery(undefined, { staleTime: 60_000, retry: 1 });
   const currentTracking = trpc.jarbou3.currentCustomerTracking.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: page === "track" && Boolean(accessToken), refetchInterval: 30_000 });

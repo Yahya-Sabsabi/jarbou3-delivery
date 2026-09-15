@@ -916,3 +916,10 @@
 - [x] إصلاح دورة حياة التنقل بإزالة LayoutAnimation من navigateCustomer دون تغيير MapLibre/OpenFreeMap أو GPS.
 - [x] تشغيل TypeScript والاختبارات وبناء APK Release والتحقق من الإصلاح؛ 23 اختباراً مستهدفاً نجحت، وAPK بحجم 73,687,853 بايت.
 - [x] تسليم checkpoint وAPK وطلب اختبار مسار الرئيسية/الطلبات/الحساب.
+
+## سجل متابعة جديد — إلغاء طلب العميل قبل بدء الرحلة
+- [x] تتبع استدعاء cancelCustomerOrder والدالة العامة في Supabase وتحديد سبب خطأ schema cache؛ الدالة كانت غائبة من المشروع الإنتاجي.
+- [x] إضافة اختبارات regression تثبت عقد الإلغاء ورسالة الخطأ والانتقال بعد نجاح الإلغاء؛ نجحت 3 اختبارات العقد.
+- [x] إنشاء/إصلاح public.cancel_order_by_customer(p_order_id) مع التحقق من ملكية العميل ومنع إلغاء الرحلة بعد بدئها، وقصر EXECUTE على authenticated.
+- [x] تطبيق ترحيل قاعدة البيانات والتحقق من الإلغاء عبر اختبارات التطبيق والاستعلامات الآمنة؛ function موجودة، authenticated_execute=true وanon_execute=false.
+- [x] بناء APK Release وحفظ checkpoint وتسليم نسخة الإصلاح؛ APK بحجم 73,687,945 بايت ورابط CDN متحقق.
