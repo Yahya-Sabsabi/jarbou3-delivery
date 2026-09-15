@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ActivityIndicator, Alert, Animated, AppState, BackHandler, KeyboardAvoidingView, LayoutAnimation, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, AppState, BackHandler, KeyboardAvoidingView, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from "react-native";
 
 import { trpc } from "@/lib/trpc";
 import { jarbou3Session } from "@/lib/jarbou3-session";
@@ -109,7 +109,7 @@ function ProfilePanel({ name, phone, onBack, onLogout, onOrders }: { name: strin
 function Customer({ name, phone, onTripActivity, onLogout }: { name: string; phone?: string; onTripActivity: (active: boolean) => void; onLogout: () => void }) {
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState<CustomerPage>("home");
-  const navigateCustomer = (next: CustomerPage) => { if (next === page) return; LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setPage(next); };
+  const navigateCustomer = (next: CustomerPage) => { if (next === page) return; setPage(next); };
   const [source, setSource] = useState<MapPoint | null>(null);
   const [destination, setDestination] = useState<MapPoint | null>(null);
   const [selecting, setSelecting] = useState<"source" | "destination">("source");

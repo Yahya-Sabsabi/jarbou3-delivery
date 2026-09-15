@@ -20,4 +20,9 @@ describe("Optimus MapScreen", () => {
     expect(appSource).toContain("onLocate={useMyLocation}");
     expect(appSource).toContain("onSelect={setMapPoint}");
   });
+
+  it("does not animate customer page replacement around the native MapLibre surface", () => {
+    expect(appSource).toContain('const navigateCustomer = (next: CustomerPage) => { if (next === page) return; setPage(next); };');
+    expect(appSource).not.toContain("LayoutAnimation.configureNext");
+  });
 });
