@@ -1,7 +1,8 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Image } from "expo-image";
 import { PropsWithChildren } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
+import { KeyboardAwareScrollView } from "@/components/keyboard-aware";
 
 const COLORS = {
   accent: "#24755E",
@@ -17,13 +18,7 @@ const COLORS = {
 type IconName = React.ComponentProps<typeof MaterialIcons>["name"];
 
 export function AuthShell({ children }: PropsWithChildren) {
-  return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {children}
-      </ScrollView>
-    </KeyboardAvoidingView>
-  );
+  return <KeyboardAwareScrollView contentContainerStyle={styles.scroll}>{children}</KeyboardAwareScrollView>;
 }
 
 export function AuthHeader({ title, onBack }: { title: string; onBack: () => void }) {

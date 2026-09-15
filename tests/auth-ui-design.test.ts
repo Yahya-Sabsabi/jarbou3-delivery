@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const app = readFileSync(resolve(process.cwd(), "components/jarbou3-app.tsx"), "utf8");
 const design = readFileSync(resolve(process.cwd(), "components/auth-design-system.tsx"), "utf8");
 const tabs = readFileSync(resolve(process.cwd(), "app/(tabs)/_layout.tsx"), "utf8");
+const keyboard = readFileSync(resolve(process.cwd(), "components/keyboard-aware.tsx"), "utf8");
 
 describe("OPTIMUS X authentication UI design contract", () => {
   it("shares one RTL-safe authentication design system", () => {
@@ -13,10 +14,9 @@ describe("OPTIMUS X authentication UI design contract", () => {
     expect(app).toContain("<AuthIntro");
     expect(app).toContain("<AuthInput");
     expect(app).toContain("<AuthPrimaryButton");
-    expect(design).toContain("KeyboardAvoidingView");
-    expect(design).toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
+    expect(design).toContain("KeyboardAwareScrollView");
     expect(design).toContain("flexDirection: \"row-reverse\"");
-    expect(design).toContain("keyboardShouldPersistTaps=\"handled\"");
+    expect(keyboard).toContain("keyboardShouldPersistTaps");
   });
 
   it("keeps customer and driver registration fields and document flows", () => {

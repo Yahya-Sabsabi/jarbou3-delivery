@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HamaMap } from "@/components/hama-map-loader";
+import { KeyboardAwareFocusView } from "@/components/keyboard-aware";
 import type { MapPoint } from "@/shared/jarbou3";
 
 export function OptimusMapScreen({
@@ -47,6 +48,10 @@ export function OptimusMapScreen({
 }) {
   const insets = useSafeAreaInsets();
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const webScrollRef = useRef<ScrollView>(null);
+  const nativeScrollRef = useRef<ScrollView>(null);
+  const webScrollOffsetRef = useRef(0);
+  const nativeScrollOffsetRef = useRef(0);
   const snapPoints = useMemo(() => ["24%", "56%", "84%"], []);
   const [sheetIndex, setSheetIndex] = useState(0);
   const centerPinVisible = Boolean(selecting) && sheetIndex < snapPoints.length - 1;
@@ -85,26 +90,32 @@ export function OptimusMapScreen({
       {moreMenu}
       {Platform.OS === "web" ? (
         <View style={[styles.webSheet, { paddingBottom: Math.max(insets.bottom + 24, 24) }]}>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 220, 220) }]}
-          >
-          <View style={styles.handle} />
-          <KeyboardAvoidingView behavior="height" style={styles.sheetKeyboardAvoiding}>
-            {children}
-          </KeyboardAvoidingView>
-          </ScrollView>
+          <KeyboardAwareFocusView scrollRef={webScrollRef} scrollOffsetRef={webScrollOffsetRef} style={styles.sheetKeyboardAvoiding}>
+            <ScrollView
+              ref={webScrollRef}
+              onScroll={(event) => { webScrollOffsetRef.current = event.nativeEvent.contentOffset.y; }}
+              scrollEventThrottle={16}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 220, 220) }]}
+            >
+              <View style={styles.handle} />
+              {children}
+            </ScrollView>
+          </KeyboardAwareFocusView>
         </View>
       ) : (
         <BottomSheet ref={bottomSheetRef} index={0} snapPoints={snapPoints} onChange={setSheetIndex} enablePanDownToClose={false} backgroundStyle={styles.sheetBackground} handleIndicatorStyle={styles.sheetIndicator}>
-          <BottomSheetScrollView
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[styles.sheetContent, styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 220, 220) }]}
-          >
-            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.sheetKeyboardAvoiding}>
+          <KeyboardAwareFocusView scrollRef={nativeScrollRef} scrollOffsetRef={nativeScrollOffsetRef} style={styles.sheetKeyboardAvoiding}>
+            <BottomSheetScrollView
+              ref={nativeScrollRef}
+              onScroll={(event) => { nativeScrollOffsetRef.current = event.nativeEvent.contentOffset.y; }}
+              automaticallyAdjustKeyboardInsets
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={[styles.sheetContent, styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 220, 220) }]}
+            >
               {children}
-            </KeyboardAvoidingView>
-          </BottomSheetScrollView>
+            </BottomSheetScrollView>
+          </KeyboardAwareFocusView>
         </BottomSheet>
       )}
     </View>
