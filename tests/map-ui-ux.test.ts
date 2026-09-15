@@ -58,7 +58,7 @@ describe("OPTIMUS X MapLibre map UI/UX contract", () => {
 
   it("keeps the compact map preview removed from customer home", () => {
     expect(app).not.toContain("<HamaMap compact source={source}");
-    expect(app).toContain("الخريطة الكاملة داخل إنشاء الطلب");
+    expect(app).toContain("الخريطة الكاملة داخل الطلب");
   });
 
   it("renders a geographic pin and hides it when the bottom sheet is expanded", () => {
@@ -108,6 +108,18 @@ describe("OPTIMUS X MapLibre map UI/UX contract", () => {
     expect(premiumProfile).toContain('active="profile"');
     expect(tabsLayout).toContain('tabBarStyle: { display: "none" }');
     expect(tabsLayout).not.toContain('title: "Home"');
+  });
+
+  it("keeps the account-choice onboarding and home screen within the shared premium design", () => {
+    expect(app).toContain("ابدأ طلبك بثقة");
+    expect(app).toContain("أنا عميل");
+    expect(app).toContain("أنا سفير");
+    expect(app).toContain("roleOption");
+    expect(app).toContain("homeHeader");
+    expect(app).toContain("إلى أين نوصلك اليوم؟");
+    expect(app).toContain("createOrderButton");
+    expect(app).toContain("recentEmpty");
+    expect(app).not.toContain('title: "Home"');
   });
 
   it("opens a real profile panel and keeps location feedback inline", () => {
