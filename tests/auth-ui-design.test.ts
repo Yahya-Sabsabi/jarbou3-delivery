@@ -31,7 +31,7 @@ describe("OPTIMUS X authentication UI design contract", () => {
 
   it("does not expose application bottom navigation during auth", () => {
     expect(app).toContain('stage === "workspace"');
-    expect(tabs).toContain('tabBarStyle: { display: "none" }');
+    expect(tabs).toContain('tabBarStyle: { display: "none", height: 0, borderTopWidth: 0 }');
     expect(app).not.toContain("<PremiumCustomerNav active=\"home\" onHome={() => setStage");
   });
 });

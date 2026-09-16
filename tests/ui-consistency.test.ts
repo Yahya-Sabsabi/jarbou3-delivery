@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const app = readFileSync(resolve(process.cwd(), "components/jarbou3-app.tsx"), "utf8");
 const dialog = readFileSync(resolve(process.cwd(), "components/premium-empty-results-dialog.tsx"), "utf8");
+const profile = readFileSync(resolve(process.cwd(), "components/premium-profile-panel.tsx"), "utf8");
 
 describe("OPTIMUS X shared UI consistency", () => {
   it("uses the shared auth system for password recovery", () => {
@@ -19,6 +20,12 @@ describe("OPTIMUS X shared UI consistency", () => {
     expect(app).not.toContain('<Text style={styles.accessButtonText}>تسجيل الخروج</Text>');
     expect(app).toContain("OPTIMUS X");
     expect(app).toContain("<ProblemReportButton accessToken={savedToken} />");
+  });
+
+  it("removes legacy product branding from the customer profile surface", () => {
+    expect(profile).not.toContain("مستخدم OPTIMUS X");
+    expect(profile).not.toContain("عميل OPTIMUS X");
+    expect(profile).toContain("<Text style={styles.role}>عميل</Text>");
   });
 
   it("uses an in-app RTL empty-results dialog instead of the default Alert", () => {

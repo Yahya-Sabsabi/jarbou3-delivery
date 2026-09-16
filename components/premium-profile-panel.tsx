@@ -22,7 +22,7 @@ export function PremiumProfilePanel({ name, phone, onBack, onLogout, onOrders, o
       <View style={styles.hero}>
         <View style={styles.heroGlow} />
         <View style={styles.avatar}><Text style={styles.avatarText}>{name.trim().charAt(0) || "م"}</Text></View>
-        <View style={styles.identity}><Text numberOfLines={1} style={styles.name}>{name || "مستخدم OPTIMUS X"}</Text><Text numberOfLines={1} style={styles.contact}>{phone || "رقم الهاتف محفوظ في الحساب"}</Text><Text style={styles.role}>عميل OPTIMUS X</Text></View>
+        <View style={styles.identity}><Text numberOfLines={1} style={styles.name}>{name || "مستخدم"}</Text><Text numberOfLines={1} style={styles.contact}>{phone || "رقم الهاتف محفوظ في الحساب"}</Text><Text style={styles.role}>عميل</Text></View>
         <Pressable accessibilityLabel="تعديل الملف الشخصي" onPress={onPolicy} style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}><MaterialIcons name="edit" size={17} color="#24755E" /></Pressable>
       </View>
       <View style={styles.statsRow}><Stat value="—" label="الطلبات" /><View style={styles.statDivider} /><Stat value="—" label="مكتملة" /><View style={styles.statDivider} /><Stat value="—" label="التقييم" /></View>
