@@ -32,4 +32,13 @@ describe("خريطة بوابة الإدارة", () => {
     expect(adminApp).toContain("/admin/api/fleet-map");
     expect(liveMap).not.toContain("tile.openstreetmap.org");
   });
+
+  it("يثبت DOM والخريطة عند إعادة فتح Fleet أو وصول تحديث حي", () => {
+    expect(adminApp).toContain('state.currentView === view');
+    expect(adminApp).toContain('document.querySelector("#fleet-map")');
+    expect(adminApp).toContain('window.refreshFleetOperationsMap?.();');
+    expect(adminApp).toContain('if (state.currentView === "fleet" && document.querySelector("#fleet-map"))');
+    expect(liveMap).toContain('if (!fleetOperationsMap || fleetMapTarget !== target)');
+    expect(liveMap).toContain('syncFleetMarkers(drivers, fleetDriverMarkers, "driver")');
+  });
 });
