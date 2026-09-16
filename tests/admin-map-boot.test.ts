@@ -35,10 +35,14 @@ describe("admin map boot contract", () => {
 
   it("ships the current map bundle and approved raster sources", () => {
     const html = readProjectFile("admin-site/index.html");
-    expect(html).toContain("live-map.js?v=admin-map-20260916-3");
+    expect(html).toContain("live-map.js?v=admin-map-20260916-5");
     const liveMap = readProjectFile("admin-site/live-map.js");
     expect(liveMap).toContain("basemaps.cartocdn.com/rastertiles/voyager");
     expect(liveMap).toContain("ArcGIS/rest/services/World_Street_Map");
     expect(liveMap).not.toContain("tile.openstreetmap.org");
+    const server = readProjectFile("server/_core/index.ts");
+    expect(server).toContain("https://tiles.openfreemap.org");
+    expect(server).toContain("https://*.basemaps.cartocdn.com");
+    expect(server).toContain("https://server.arcgisonline.com");
   });
 });
