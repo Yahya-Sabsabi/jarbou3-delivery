@@ -3,6 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import path from "path";
+import { readFileSync } from "node:fs";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerAdminWebRoutes } from "../admin-web";
 import { registerOAuthRoutes } from "./oauth";
@@ -101,6 +102,24 @@ async function startServer() {
     next();
   });
   registerAdminWebRoutes(app);
+  app.get("/admin/", (_req, res, next) => {
+    try {
+      const html = readFileSync(path.resolve(process.cwd(), "admin-site/index.html"), "utf8");
+      res.setHeader("Cache-Control", "no-store, max-age=0, must-revalidate");
+      res.type("html").send(html);
+    } catch {
+      next();
+    }
+  });
+  app.get("/admin/index.html", (_req, res, next) => {
+    try {
+      const html = readFileSync(path.resolve(process.cwd(), "admin-site/index.html"), "utf8");
+      res.setHeader("Cache-Control", "no-store, max-age=0, must-revalidate");
+      res.type("html").send(html);
+    } catch {
+      next();
+    }
+  });
   app.use("/admin/vendor/leaflet", express.static(path.resolve(process.cwd(), "node_modules/leaflet/dist")));
   app.use("/admin", express.static(path.resolve(process.cwd(), "admin-site"), {
     index: "index.html",
