@@ -25,17 +25,20 @@ describe("admin map boot contract", () => {
     expect(app).toContain('if (view === "fleet") renderFleetMap();');
     expect(app).toContain('fleet:"خريطة الأسطول"');
     expect(liveMap).toContain('const target = document.querySelector("#fleet-map");');
-    expect(liveMap).toContain("window.installFleetOperationsMap(payload)");
-    expect(liveMap).toContain("if (!window.L) {");
-    expect(liveMap).toContain("window.L.tileLayer(\"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png\"");
+    expect(app).toContain("scheduleAdminMapInstall");
+    expect(liveMap).toContain("window.installFleetOperationsMap?.(fleetPayload)");
+    expect(liveMap).toContain("if (!leafletReady())");
+    expect(liveMap).toContain("ADMIN_LEAFLET_TILE_URL");
+    expect(liveMap).toContain("ADMIN_ESRI_TILE_URL");
     expect(liveMap).toContain("window.refreshFleetOperationsMap");
   });
 
-  it("allows OpenStreetMap tiles through the admin CSP", () => {
-    const server = readProjectFile("server/_core/index.ts");
-    expect(server).toContain("connect-src 'self' https://*.tile.openstreetmap.org https://tile.openstreetmap.org");
-    expect(server).toContain("img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org");
+  it("ships the current map bundle and approved raster sources", () => {
     const html = readProjectFile("admin-site/index.html");
-    expect(html).toContain("live-map.js?v=admin-map-20260906-3");
+    expect(html).toContain("live-map.js?v=admin-map-20260916-3");
+    const liveMap = readProjectFile("admin-site/live-map.js");
+    expect(liveMap).toContain("basemaps.cartocdn.com/rastertiles/voyager");
+    expect(liveMap).toContain("ArcGIS/rest/services/World_Street_Map");
+    expect(liveMap).not.toContain("tile.openstreetmap.org");
   });
 });

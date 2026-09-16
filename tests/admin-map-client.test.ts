@@ -19,13 +19,15 @@ describe("خريطة بوابة الإدارة", () => {
     expect(liveMap).toContain("driver-marker-dot");
     expect(liveMap).toContain("last_location_lat");
     expect(liveMap).toContain("window.refreshFleetOperationsMap");
-    expect(liveMap).toContain('!target.classList.contains("leaflet-container")');
-    expect(liveMap).toContain("window.L.map(target).setView([35.13, 36.76], 12)");
-    expect(liveMap).toContain('window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19');
-    expect(liveMap).toContain("تعذر تحميل بلاطات الخريطة");
+    expect(liveMap).toContain("createAdminLeafletMap(target");
+    expect(liveMap).toContain("setView([ADMIN_HAMA_CENTER[1], ADMIN_HAMA_CENTER[0]], 12)");
+    expect(liveMap).toContain("ADMIN_LEAFLET_TILE_URL");
+    expect(liveMap).toContain("ADMIN_ESRI_TILE_URL");
+    expect(liveMap).toContain("map.invalidateSize()");
   });
 
-  it("يسمح بطلب صور بلاطات OpenStreetMap عبر CSP الإدارة", () => {
-    expect(serverEntry).toContain("img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org");
+  it("يحافظ على مسار خريطة الإدارة دون فرض مصدر بلاطات OSM المباشر", () => {
+    expect(adminApp).toContain("/admin/api/fleet-map");
+    expect(liveMap).not.toContain("tile.openstreetmap.org");
   });
 });

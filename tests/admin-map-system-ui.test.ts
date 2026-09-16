@@ -21,6 +21,8 @@ const customerApp = read("components/jarbou3-app.tsx");
     expect(adminMap).toContain("customers");
     expect(adminMap).toContain("drivers");
     expect(adminApp).toContain('id="places-map"');
+    expect(adminApp).toContain("scheduleAdminMapInstall");
+    expect(adminApp).toContain("disposeAdminMaps");
     expect(adminMap).toContain("ADMIN_LEAFLET_TILE_URL");
     expect(adminMap).toContain("ADMIN_ESRI_TILE_URL");
     expect(adminMap).toContain("window.L");
@@ -35,6 +37,9 @@ const customerApp = read("components/jarbou3-app.tsx");
     expect(adminMap).toContain("ArcGIS/rest/services/World_Street_Map");
     expect(adminMap).toContain("map.locate");
     expect(adminMap).toContain("installLeafletFleetMap");
+    expect(adminMap).toContain("window.installFleetOperationsMap?.");
+    expect(adminMap).toContain("window.installPlacesMap?.");
+    expect(adminMap).toContain("map.invalidateSize()");
   });
   it("keeps live GPS markers and route updates without recreating the map instance", () => {
     expect(adminMap).toContain("refreshFleetOperationsMap");
