@@ -33,3 +33,8 @@
 - السبب الجذري ليس MapLibre أو حاوية الخريطة؛ fallback كان يستخدم `tile.openstreetmap.org` مباشرة، لذلك حُظرت البلاطات.
 - فحص بلاطة حماة عند z12 أعاد HTTP 200 من Carto Voyager وEsri World Street Map.
 - smoke test بعد التعديل أظهر خريطة حماة فعلياً مع Liberty/MapLibre بلا 403. أصبح fallback يستخدم Carto Voyager، وينتقل إلى Esri تلقائياً عند tileerror، مع بقاء GPS والعلامات والتحديث الحي.
+
+## تحقق النشر بعد إصلاح دورة الحياة — 2026-09-16
+- بعد checkpoint `3d253cc1` فُتح الملف المنشور `/admin/live-map.js?v=admin-map-20260916-3`.
+- الاستجابة المنشورة ما زالت تعرض نسخة قديمة: لا يظهر فيها `mapReadyMessage` أو `map-mode-leaflet` أو `window.disposeAdminMaps`، رغم وجود Carto وEsri.
+- لذلك لم أعتبر الإصلاح واصلاً للمستخدم، ويجب مزامنة/إعادة تشغيل النشر قبل التسليم النهائي.
