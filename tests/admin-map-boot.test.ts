@@ -35,7 +35,7 @@ describe("admin map boot contract", () => {
 
   it("ships the current map bundle and approved raster sources", () => {
     const html = readProjectFile("admin-site/index.html");
-    expect(html).toContain("live-map.js?v=admin-map-20260916-7");
+    expect(html).toContain("live-map.js?v=admin-map-20260916-8");
     const liveMap = readProjectFile("admin-site/live-map.js");
     expect(liveMap).toContain("basemaps.cartocdn.com/rastertiles/voyager");
     expect(liveMap).toContain("ArcGIS/rest/services/World_Street_Map");
