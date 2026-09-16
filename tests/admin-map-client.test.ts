@@ -19,11 +19,13 @@ describe("خريطة بوابة الإدارة", () => {
     expect(liveMap).toContain("driver-marker-dot");
     expect(liveMap).toContain("last_location_lat");
     expect(liveMap).toContain("window.refreshFleetOperationsMap");
-    expect(liveMap).toContain("createAdminLeafletMap(target");
-    expect(liveMap).toContain("setView([ADMIN_HAMA_CENTER[1], ADMIN_HAMA_CENTER[0]], 12)");
-    expect(liveMap).toContain("ADMIN_LEAFLET_TILE_URL");
-    expect(liveMap).toContain("ADMIN_ESRI_TILE_URL");
-    expect(liveMap).toContain("map.invalidateSize()");
+    expect(liveMap).toContain("ADMIN_LIBERTY_STYLE");
+    expect(liveMap).toContain("new window.maplibregl.Map");
+    expect(liveMap).toContain("GeolocateControl");
+    expect(liveMap).toContain("map.resize()");
+    expect(liveMap).not.toContain("createAdminLeafletMap");
+    expect(liveMap).not.toContain("ADMIN_LEAFLET_TILE_URL");
+    expect(liveMap).not.toContain("ADMIN_ESRI_TILE_URL");
   });
 
   it("يحافظ على مسار خريطة الإدارة دون فرض مصدر بلاطات OSM المباشر", () => {

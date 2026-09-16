@@ -23,30 +23,28 @@ const customerApp = read("components/jarbou3-app.tsx");
     expect(adminApp).toContain('id="places-map"');
     expect(adminApp).toContain("scheduleAdminMapInstall");
     expect(adminApp).toContain("disposeAdminMaps");
-    expect(adminMap).toContain("ADMIN_LEAFLET_TILE_URL");
-    expect(adminMap).toContain("ADMIN_ESRI_TILE_URL");
-    expect(adminMap).toContain("window.L");
+    expect(adminMap).not.toContain("ADMIN_LEAFLET_TILE_URL");
+    expect(adminMap).not.toContain("ADMIN_ESRI_TILE_URL");
+    expect(adminMap).not.toContain("window.L");
     expect(adminMap).not.toContain("tile.openstreetmap.org");
   });
 
-  it("falls back to an interactive raster map when WebGL is unavailable", () => {
-    expect(adminIndex).toContain("leaflet/leaflet.css");
-    expect(adminIndex).toContain("leaflet/leaflet.js");
+  it("uses the native MapLibre vector map without the legacy raster fallback", () => {
+    expect(adminIndex).not.toContain("leaflet/leaflet.css");
+    expect(adminIndex).not.toContain("leaflet/leaflet.js");
     expect(adminMap).toContain("maplibregl.supported");
-    expect(adminMap).toContain("basemaps.cartocdn.com/rastertiles/voyager");
-    expect(adminMap).toContain("ArcGIS/rest/services/World_Street_Map");
-    expect(adminMap).toContain("map.locate");
-    expect(adminMap).toContain("installLeafletFleetMap");
-    expect(adminMap).toContain("window.installFleetOperationsMap?.");
-    expect(adminMap).toContain("window.installPlacesMap?.");
-    expect(adminMap).toContain("map.invalidateSize()");
+    expect(adminMap).toContain("ADMIN_LIBERTY_STYLE");
+    expect(adminMap).toContain("GeolocateControl");
+    expect(adminMap).toContain("window.installFleetOperationsMap");
+    expect(adminMap).toContain("window.installPlacesMap");
+    expect(adminMap).toContain("map.resize()");
   });
   it("keeps live GPS markers and route updates without recreating the map instance", () => {
     expect(adminMap).toContain("refreshFleetOperationsMap");
     expect(adminMap).toContain("setData");
     expect(adminMap).toContain("setLngLat");
     expect(adminMap).toContain("map.resize()");
-    expect(adminMap).toContain("destroyVectorFleetMap");
+    expect(adminMap).toContain("destroyFleetMap");
   });
 
   it("hides Android system navigation by default and reveals it with a bottom swipe", () => {

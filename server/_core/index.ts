@@ -98,7 +98,7 @@ async function startServer() {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "same-origin");
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self' https://tiles.openfreemap.org https://*.basemaps.cartocdn.com https://server.arcgisonline.com https://*.tile.openstreetmap.org https://tile.openstreetmap.org; style-src 'self'; script-src 'self'; img-src 'self' data: blob: https://tiles.openfreemap.org https://*.basemaps.cartocdn.com https://server.arcgisonline https://*.tile.openstreetmap.org https://tile.openstreetmap.org; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+    res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self' https://tiles.openfreemap.org; style-src 'self'; script-src 'self'; img-src 'self' data: blob: https://tiles.openfreemap.org; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     next();
   });
   registerAdminWebRoutes(app);
