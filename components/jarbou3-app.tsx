@@ -194,7 +194,12 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
       }
       if (!active) { starting = false; return; }
       try {
-        const subscription = await watchHamaLocation(sendPoint, () => undefined);
+        const subscription = await watchHamaLocation(sendPoint, () => undefined, () => {
+          if (!active) return;
+          stopTracking();
+          clearSharedLocation();
+          setLocationNotice("تم إيقاف GPS؛ لن يظهر موقعك في لوحة الإدارة حتى تعيد تشغيله.");
+        });
         if (active) remove = () => subscription.remove(); else subscription.remove();
       } catch {
         if (active) setLocationNotice("تعذر استمرار مشاركة موقعك؛ اترك GPS والاتصال مفعّلين.");

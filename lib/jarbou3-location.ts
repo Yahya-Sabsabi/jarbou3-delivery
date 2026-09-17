@@ -18,7 +18,7 @@ export async function getCurrentHamaLocation(): Promise<MapPoint> {
   return point;
 }
 
-export async function watchHamaLocation(onLocation: (point: MapPoint) => void, onQuality?: (quality: GpsQuality) => void) {
+export async function watchHamaLocation(onLocation: (point: MapPoint) => void, onQuality?: (quality: GpsQuality) => void, onError?: (error: unknown) => void) {
   const permission = await Location.requestForegroundPermissionsAsync();
   if (permission.status !== "granted") throw new Error("LOCATION_PERMISSION_DENIED");
   if (!(await Location.hasServicesEnabledAsync())) throw new Error("LOCATION_SERVICES_DISABLED");
@@ -34,5 +34,6 @@ export async function watchHamaLocation(onLocation: (point: MapPoint) => void, o
         onLocation({ latitude: sample.latitude, longitude: sample.longitude });
       }
     },
+    onError,
   );
 }
