@@ -295,6 +295,7 @@ function normalizeJarbou3Phone(value: string) {
 
 async function listFleetMap() {
   const service = asService();
+  const customerLocationCutoff = Date.now() - 30_000;
   const [{ data: driverRows, error: driverError }, { data: customerRows, error: customerError }] = await Promise.all([
     service.from("users").select("id,name,last_location_lat,last_location_lng,last_location_at").eq("role", "driver").eq("is_active", true).order("last_location_at", { ascending: false, nullsFirst: false }).limit(100),
     service.from("users").select("id,name,last_location_lat,last_location_lng,last_location_at").eq("role", "customer").eq("is_active", true).is("deleted_at", null).order("last_location_at", { ascending: false, nullsFirst: false }).limit(250),
@@ -302,7 +303,11 @@ async function listFleetMap() {
   if (driverError || customerError) throw new Error(driverError?.message ?? customerError?.message ?? "FLEET_MAP_UNAVAILABLE");
   const drivers = driverRows ?? [];
   const driverIds = drivers.map((driver) => driver.id);
-  if (!driverIds.length) return { generatedAt: new Date().toISOString(), drivers: [], customers: customerRows ?? [] };
+  if (!driverIds.length) return { generatedAt: new Date().toISOString(), drivers: [], customers: (customerRows ?? []).map((customer) => {
+    const lastLocationMs = customer.last_location_at ? new Date(customer.last_location_at).getTime() : 0;
+    const isFresh = Number.isFinite(lastLocationMs) && lastLocationMs >= customerLocationCutoff;
+    return { id: customer.id, name: customer.name, latitude: isFresh && customer.last_location_lat != null ? Number(customer.last_location_lat) : null, longitude: isFresh && customer.last_location_lng != null ? Number(customer.last_location_lng) : null, lastLocationAt: isFresh ? customer.last_location_at : null };
+  }) };
 
   const [ordersResult, metricsResult] = await Promise.all([
     service.from("orders").select("id,driver_id,status,source_address,source_lat,source_lng,destination_address,destination_lat,destination_lng,estimated_price,final_price,accepted_at,updated_at").in("driver_id", driverIds).in("status", ["accepted", "arriving", "awaiting_otp"]).order("updated_at", { ascending: false }).limit(200),
@@ -325,7 +330,11 @@ async function listFleetMap() {
     const order = activeOrderByDriver.get(driver.id);
     const metrics = order ? metricsByOrder.get(order.id) : null;
     return { id: driver.id, name: driver.name, latitude: driver.last_location_lat == null ? null : Number(driver.last_location_lat), longitude: driver.last_location_lng == null ? null : Number(driver.last_location_lng), lastLocationAt: driver.last_location_at, activeOrder: order ? { id: order.id, status: order.status, sourceAddress: order.source_address, source: { latitude: Number(order.source_lat), longitude: Number(order.source_lng) }, destinationAddress: order.destination_address, destination: { latitude: Number(order.destination_lat), longitude: Number(order.destination_lng) }, estimatedPrice: Number(order.final_price ?? order.estimated_price ?? 0), acceptedAt: order.accepted_at, actualDistanceM: Number(metrics?.actual_distance_m ?? 0), movingSeconds: Number(metrics?.moving_seconds ?? 0), startedAt: metrics?.started_at ?? order.accepted_at, route: pointsByOrder.get(order.id) ?? [] } : null };
-  }) , customers: (customerRows ?? []).map((customer) => ({ id: customer.id, name: customer.name, latitude: customer.last_location_lat == null ? null : Number(customer.last_location_lat), longitude: customer.last_location_lng == null ? null : Number(customer.last_location_lng), lastLocationAt: customer.last_location_at })) };
+  }) , customers: (customerRows ?? []).map((customer) => {
+    const lastLocationMs = customer.last_location_at ? new Date(customer.last_location_at).getTime() : 0;
+    const isFresh = Number.isFinite(lastLocationMs) && lastLocationMs >= customerLocationCutoff;
+    return { id: customer.id, name: customer.name, latitude: isFresh && customer.last_location_lat != null ? Number(customer.last_location_lat) : null, longitude: isFresh && customer.last_location_lng != null ? Number(customer.last_location_lng) : null, lastLocationAt: isFresh ? customer.last_location_at : null };
+  }) };
 }
 
 export function registerAdminWebRoutes(app: Express) {

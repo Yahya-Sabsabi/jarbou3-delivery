@@ -9,7 +9,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { asPublic, asService, asUser, assertHamaPoint, createOtpHash, decodeDataUrl, getAuthenticatedUser, getUserProfile } from "./jarbou3-supabase";
 import { recordDriverLocation } from "./jarbou3-driver-location";
-import { recordCustomerLocation } from "./jarbou3-customer-location";
+import { clearCustomerLocation, recordCustomerLocation } from "./jarbou3-customer-location";
 import { JARBOU3_PRIVACY_POLICY_VERSION } from "../shared/jarbou3-privacy";
 import { AcceptRequestedOrder } from "../application/use-cases/accept-requested-order";
 import { StartAcceptedTrip } from "../application/use-cases/start-accepted-trip";
@@ -710,6 +710,10 @@ export const appRouter = router({
     updateCustomerLocation: publicProcedure
       .input(tokenInput.extend({ location: pointInput.extend({ accuracy: z.number().min(0).max(80).nullable().optional() }) }))
       .mutation(async ({ input }) => ({ location: await recordCustomerLocation(input.accessToken, input.location) })),
+
+    clearCustomerLocation: publicProcedure
+      .input(tokenInput)
+      .mutation(async ({ input }) => clearCustomerLocation(input.accessToken)),
 
     activeDriverTripMetrics: publicProcedure
       .input(tokenInput)

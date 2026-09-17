@@ -156,6 +156,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
   const deleteFavorite = trpc.jarbou3.deleteFavoriteAddress.useMutation({ onSuccess: () => favoriteAddresses.refetch() });
   const registerPushToken = trpc.jarbou3.registerPushToken.useMutation();
   const updateCustomerLocation = trpc.jarbou3.updateCustomerLocation.useMutation({ onError: () => setLocationNotice("تعذر إرسال موقعك إلى لوحة الإدارة؛ تحقق من GPS والاتصال."), onSuccess: () => setLocationNotice(null) });
+  const clearCustomerLocation = trpc.jarbou3.clearCustomerLocation.useMutation();
 
   useEffect(() => { jarbou3Session.getAccessToken().then(setAccessToken); }, []);
   useEffect(() => {
@@ -167,6 +168,10 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
     if (!accessToken) return;
     let active = true;
     let remove: (() => void) | undefined;
+    let appStateSubscription: ReturnType<typeof AppState.addEventListener> | undefined;
+    const clearSharedLocation = () => {
+      void clearCustomerLocation.mutateAsync({ accessToken }).catch(() => undefined);
+    };
     const sendPoint = (point: MapPoint) => {
       if (!active) return;
       setSource((current) => current ?? point);
@@ -187,7 +192,14 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
         if (active) setLocationNotice("تعذر استمرار مشاركة موقعك؛ اترك GPS والاتصال مفعّلين.");
       }
     })();
-    return () => { active = false; remove?.(); };
+    appStateSubscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active") {
+        remove?.();
+        remove = undefined;
+        clearSharedLocation();
+      }
+    });
+    return () => { active = false; remove?.(); appStateSubscription?.remove(); clearSharedLocation(); };
   }, [accessToken]);
   useEffect(() => {
     if (Platform.OS !== "android") return;

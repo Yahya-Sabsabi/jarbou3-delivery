@@ -27,3 +27,18 @@ export async function recordCustomerLocation(accessToken: string, location: Cust
   if (!data) throw new Error("CUSTOMER_LOCATION_NOT_SAVED");
   return { id: data.id, latitude: Number(data.last_location_lat), longitude: Number(data.last_location_lng), lastLocationAt: data.last_location_at };
 }
+
+export async function clearCustomerLocation(accessToken: string) {
+  const authUser = await getAuthenticatedUser(accessToken);
+  const profile = await getUserProfile(authUser.id);
+  if (!profile.is_active || profile.role !== "customer") throw new Error("JARBOU3_FORBIDDEN");
+
+  const { error } = await asService()
+    .from("users")
+    .update({ last_location_lat: null, last_location_lng: null, last_location_at: null })
+    .eq("id", authUser.id)
+    .eq("role", "customer")
+    .is("deleted_at", null);
+  if (error) throw new Error(error.message);
+  return { cleared: true };
+}
