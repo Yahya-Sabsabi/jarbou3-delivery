@@ -5,9 +5,10 @@ import { resolve } from "node:path";
 describe("customer location visibility and admin zoom", () => {
   it("records customer GPS through the protected customer mutation", () => {
     const source = readFileSync(resolve(process.cwd(), "components/jarbou3-app.tsx"), "utf8");
-    expect(source).toContain("trpc.jarbou3.updateCustomerLocation.useMutation()");
+    expect(source).toContain("trpc.jarbou3.updateCustomerLocation.useMutation");
     expect(source).toContain("updateCustomerLocation.mutate({ accessToken, location: point })");
-    expect(source).toContain("page === \"home\" || page === \"order\" || page === \"track\"");
+    expect(source).toContain("const point = await getCurrentHamaLocation()");
+    expect(source).toContain("watchHamaLocation(sendPoint");
   });
 
   it("keeps the source maxzoom for MapLibre overzoom and permits deeper camera zoom", () => {

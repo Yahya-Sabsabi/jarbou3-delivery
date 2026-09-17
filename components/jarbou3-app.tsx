@@ -155,7 +155,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
   const saveFavorite = trpc.jarbou3.saveFavoriteAddress.useMutation({ onSuccess: () => { favoriteAddresses.refetch(); setFavoriteLabel(""); Alert.alert("تم الحفظ", "أصبح العنوان ضمن عناوينك المفضلة."); }, onError: (error) => Alert.alert("تعذر الحفظ", error.message) });
   const deleteFavorite = trpc.jarbou3.deleteFavoriteAddress.useMutation({ onSuccess: () => favoriteAddresses.refetch() });
   const registerPushToken = trpc.jarbou3.registerPushToken.useMutation();
-  const updateCustomerLocation = trpc.jarbou3.updateCustomerLocation.useMutation();
+  const updateCustomerLocation = trpc.jarbou3.updateCustomerLocation.useMutation({ onError: () => setLocationNotice("تعذر إرسال موقعك إلى لوحة الإدارة؛ تحقق من GPS والاتصال."), onSuccess: () => setLocationNotice(null) });
 
   useEffect(() => { jarbou3Session.getAccessToken().then(setAccessToken); }, []);
   useEffect(() => {
@@ -164,17 +164,31 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
     });
   }, []);
   useEffect(() => {
-    const shouldTrackCustomer = Boolean(accessToken) && (page === "home" || page === "order" || page === "track");
-    if (!shouldTrackCustomer || !accessToken) return;
+    if (!accessToken) return;
     let active = true;
     let remove: (() => void) | undefined;
-    watchHamaLocation((point) => {
+    const sendPoint = (point: MapPoint) => {
       if (!active) return;
       setSource((current) => current ?? point);
       updateCustomerLocation.mutate({ accessToken, location: point });
-    }, () => undefined).then((subscription) => { if (active) remove = () => subscription.remove(); else subscription.remove(); }).catch(() => undefined);
+    };
+    void (async () => {
+      try {
+        const point = await getCurrentHamaLocation();
+        sendPoint(point);
+      } catch {
+        if (active) setLocationNotice("لم نتمكن من قراءة موقعك الحالي؛ فعّل GPS واسمح بالموقع.");
+      }
+      if (!active) return;
+      try {
+        const subscription = await watchHamaLocation(sendPoint, () => undefined);
+        if (active) remove = () => subscription.remove(); else subscription.remove();
+      } catch {
+        if (active) setLocationNotice("تعذر استمرار مشاركة موقعك؛ اترك GPS والاتصال مفعّلين.");
+      }
+    })();
     return () => { active = false; remove?.(); };
-  }, [accessToken, page]);
+  }, [accessToken]);
   useEffect(() => {
     if (Platform.OS !== "android") return;
     let previousBackAt = 0;
