@@ -1,6 +1,7 @@
 import { Image } from "expo-image";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActivityIndicator, Alert, Animated, AppState, BackHandler, KeyboardAvoidingView, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, View } from "react-native";
@@ -101,9 +102,9 @@ function RoleSwitch({ role, onSelect }: { role: Role; onSelect: (role: Role) => 
   return <View style={styles.roleSwitch}>{(["customer", "driver"] as Role[]).map((option) => <Pressable key={option} onPress={() => onSelect(option)} style={[styles.role, role === option && styles.roleSelected]}><Text style={[styles.roleText, role === option && styles.roleTextSelected]}>{option === "customer" ? "عميل" : "سائق"}</Text></Pressable>)}</View>;
 }
 
-function ProfilePanel({ name, phone, onBack, onLogout, onOrders }: { name: string; phone?: string; onBack: () => void; onLogout: () => void; onOrders: () => void }) {
+function ProfilePanel({ name, phone, couponCode, onCouponChange, onBack, onLogout, onOrders }: { name: string; phone?: string; couponCode: string; onCouponChange: (value: string) => void; onBack: () => void; onLogout: () => void; onOrders: () => void }) {
   const [policyVisible, setPolicyVisible] = useState(false);
-  return <><PremiumProfilePanel name={name} phone={phone} onBack={onBack} onLogout={onLogout} onOrders={onOrders} onHome={onBack} onPolicy={() => setPolicyVisible(true)} /><PrivacyPolicySheet visible={policyVisible} onClose={() => setPolicyVisible(false)} /></>;
+  return <><PremiumProfilePanel name={name} phone={phone} couponCode={couponCode} onCouponChange={onCouponChange} onBack={onBack} onLogout={onLogout} onOrders={onOrders} onHome={onBack} onPolicy={() => setPolicyVisible(true)} /><PrivacyPolicySheet visible={policyVisible} onClose={() => setPolicyVisible(false)} /></>;
 }
 
 function Customer({ name, phone, onTripActivity, onLogout }: { name: string; phone?: string; onTripActivity: (active: boolean) => void; onLogout: () => void }) {
@@ -157,6 +158,8 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
   const registerPushToken = trpc.jarbou3.registerPushToken.useMutation();
   const updateCustomerLocation = trpc.jarbou3.updateCustomerLocation.useMutation({ onError: () => setLocationNotice("تعذر إرسال موقعك إلى لوحة الإدارة؛ تحقق من GPS والاتصال."), onSuccess: () => setLocationNotice(null) });
   const clearCustomerLocation = trpc.jarbou3.clearCustomerLocation.useMutation();
+  useEffect(() => { AsyncStorage.getItem("jarbou3_saved_discount_code").then((value) => { if (value) setDiscountCode(value); }).catch(() => undefined); }, []);
+  useEffect(() => { AsyncStorage.setItem("jarbou3_saved_discount_code", discountCode.trim()).catch(() => undefined); }, [discountCode]);
 
   useEffect(() => { jarbou3Session.getAccessToken().then(setAccessToken); }, []);
   useEffect(() => {
@@ -392,7 +395,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
     }
   };
 
-  if (page === "profile") return <View style={[styles.fill, styles.profilePage]}><ProfilePanel name={name} phone={phone} onBack={() => navigateCustomer("home")} onLogout={onLogout} onOrders={() => navigateCustomer("orders")} /></View>;
+  if (page === "profile") return <View style={[styles.fill, styles.profilePage]}><ProfilePanel name={name} phone={phone} couponCode={discountCode} onCouponChange={setDiscountCode} onBack={() => navigateCustomer("home")} onLogout={onLogout} onOrders={() => navigateCustomer("orders")} /></View>;
 
   if (page === "orders") return <View style={styles.fill}><ScrollView contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom + 30, 42) }]}><View style={styles.hero}><View><Text style={styles.eyebrow}>سجل النشاط</Text><Text style={styles.heroTitle}>الطلبات</Text><Text style={styles.copy}>تابع طلباتك الحالية والسابقة من مكان واحد.</Text></View><MaterialIcons name="receipt-long" size={30} color="#24755E" /></View><View style={styles.empty}><Text style={styles.emptyText}>لا توجد طلبات محفوظة للعرض حالياً.</Text></View></ScrollView><PremiumCustomerNav active="orders" onHome={() => navigateCustomer("home")} onOrders={() => navigateCustomer("orders")} onProfile={() => navigateCustomer("profile")} /></View>;
 

@@ -80,13 +80,23 @@ export function discountIsAvailableForCustomer(recipientCustomerIds: string[], c
 async function resolveActiveDiscount(code: string | undefined, preDiscountPrice: number, customerId?: string | null) {
   if (!code?.trim()) return { discountCodeId: null, discountAmount: 0, finalPrice: preDiscountPrice };
   const normalized = code.trim().toUpperCase();
-  const { data, error } = await asService().from("discount_codes").select("id,discount_type,discount_value,starts_at,ends_at,is_active").eq("code", normalized).maybeSingle();
+  const { data, error } = await asService().from("discount_codes").select("id,discount_type,discount_value,starts_at,ends_at,is_active,max_uses_per_customer,max_total_uses").eq("code", normalized).maybeSingle();
   if (error) throw new Error(error.message);
   const now = Date.now();
   if (!data || !data.is_active || (data.starts_at && new Date(data.starts_at).getTime() > now) || (data.ends_at && new Date(data.ends_at).getTime() <= now)) throw new Error("DISCOUNT_CODE_INVALID");
   const recipients = await asService().from("discount_code_recipients").select("customer_id").eq("discount_code_id", data.id).limit(250);
   if (recipients.error) throw new Error(recipients.error.message);
   if (!discountIsAvailableForCustomer((recipients.data ?? []).map((row) => row.customer_id), customerId)) throw new Error("DISCOUNT_NOT_AVAILABLE");
+  if (customerId && data.max_uses_per_customer) {
+    const { count, error: usageError } = await asService().from("discount_code_redemptions").select("id", { count: "exact", head: true }).eq("discount_code_id", data.id).eq("customer_id", customerId);
+    if (usageError) throw new Error(usageError.message);
+    if ((count ?? 0) >= data.max_uses_per_customer) throw new Error("DISCOUNT_USAGE_LIMIT_REACHED");
+  }
+  if (data.max_total_uses) {
+    const { count, error: usageError } = await asService().from("discount_code_redemptions").select("id", { count: "exact", head: true }).eq("discount_code_id", data.id);
+    if (usageError) throw new Error(usageError.message);
+    if ((count ?? 0) >= data.max_total_uses) throw new Error("DISCOUNT_TOTAL_USAGE_LIMIT_REACHED");
+  }
   const rawAmount = data.discount_type === "percentage" ? Math.floor(preDiscountPrice * Number(data.discount_value) / 100) : Math.floor(Number(data.discount_value));
   const discountAmount = Math.max(0, Math.min(preDiscountPrice, rawAmount));
   return { discountCodeId: data.id, discountAmount, finalPrice: Math.max(0, preDiscountPrice - discountAmount) };
@@ -643,6 +653,13 @@ export const appRouter = router({
         const { hash } = await createOtpHash();
         const { data, error } = await asUser(input.accessToken).from("orders").insert({ customer_id: authUser.id, source_address: input.sourceAddress, source_lat: input.source.latitude, source_lng: input.source.longitude, destination_address: input.destinationAddress, destination_lat: input.destination.latitude, destination_lng: input.destination.longitude, estimated_price: serverEstimatedPrice, pre_discount_price: serverEstimatedPrice, discount_amount: discount.discountAmount, discount_code_id: discount.discountCodeId, final_price: discount.finalPrice, payment_method: input.paymentMethod, distance_m: input.distanceM, estimated_duration_seconds: input.durationSeconds, status: "requested", delivery_otp_hash: hash }).select("id,status,created_at,final_price,discount_amount").single();
         if (error) throw new Error(error.message);
+        if (discount.discountCodeId) {
+          const { error: redemptionError } = await asService().from("discount_code_redemptions").insert({ discount_code_id: discount.discountCodeId, customer_id: authUser.id, order_id: data.id });
+          if (redemptionError) {
+            await asService().from("orders").delete().eq("id", data.id).eq("customer_id", authUser.id);
+            throw new Error(redemptionError.message);
+          }
+        }
         try {
           const offer = await assignNextDriverOffer(data.id);
           return { ...data, offerExpiresAt: offer?.offer_expires_at ?? null };

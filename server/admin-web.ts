@@ -256,7 +256,7 @@ async function listRecoveryRequests() {
 const loginSchema = z.object({ password: z.string().min(16).max(512) });
 const siteSetupSchema = z.object({ password: z.string().min(16).max(512), confirmation: z.string().min(16).max(512) }).refine((value) => value.password === value.confirmation, { message: "PASSWORD_CONFIRMATION_MISMATCH" });
 const generateReportSchema = z.object({ reportMonth: z.string() });
-const discountSchema = z.object({ code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,32}$/), discountType: z.enum(["fixed", "percentage"]), discountValue: z.number().positive(), startsAt: z.string().datetime().nullable().optional(), endsAt: z.string().datetime().nullable().optional(), audience: z.enum(["public", "selected"]).default("public"), customerIds: z.array(z.string().uuid()).max(50).default([]) }).superRefine((value, context) => {
+const discountSchema = z.object({ code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,32}$/), discountType: z.enum(["fixed", "percentage"]), discountValue: z.number().positive(), startsAt: z.string().datetime().nullable().optional(), endsAt: z.string().datetime().nullable().optional(), maxUsesPerCustomer: z.number().int().positive().max(1_000_000).nullable().optional(), maxTotalUses: z.number().int().positive().max(10_000_000).nullable().optional(), audience: z.enum(["public", "selected"]).default("public"), customerIds: z.array(z.string().uuid()).max(50).default([]) }).superRefine((value, context) => {
   if (value.discountType === "percentage" && value.discountValue > 100) context.addIssue({ code: "custom", message: "PERCENTAGE_TOO_HIGH" });
   if (value.endsAt && value.startsAt && new Date(value.endsAt).getTime() <= new Date(value.startsAt).getTime()) context.addIssue({ code: "custom", message: "INVALID_DISCOUNT_WINDOW" });
   if (value.audience === "selected" && value.customerIds.length === 0) context.addIssue({ code: "custom", message: "DISCOUNT_RECIPIENTS_REQUIRED" });
@@ -735,6 +735,39 @@ export function registerAdminWebRoutes(app: Express) {
     }
   });
 
+  app.post("/admin/api/wallets/:driverId/adjustments", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const driverId = z.string().uuid().safeParse(req.params.driverId);
+      const parsed = z.object({ amountSigned: z.number().int().refine((value) => value !== 0).refine((value) => Math.abs(value) <= 1_000_000_000), note: z.string().trim().max(500).optional() }).safeParse(req.body);
+      if (!driverId.success || !parsed.success) return res.status(400).json({ error: "INVALID_WALLET_ADJUSTMENT" });
+      const { data, error } = await asService().rpc("record_driver_wallet_adjustment", { p_driver_id: driverId.data, p_amount_signed: parsed.data.amountSigned, p_note: parsed.data.note ?? null });
+      if (error || !data) throw new Error(error?.message ?? "WALLET_ADJUSTMENT_FAILED");
+      res.status(201).json({ wallet: data });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "WALLET_ADJUSTMENT_FAILED" });
+    }
+  });
+
+  app.post("/admin/api/wallets/bulk-deposits", async (req, res) => {
+    if (rejectForeignOrigin(req, res)) return;
+    try {
+      requireSiteSession(req);
+      const parsed = z.object({ amount: z.number().int().positive().max(1_000_000_000), note: z.string().trim().max(500).optional() }).safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "INVALID_BULK_WALLET_DEPOSIT" });
+      const { data: drivers, error: driversError } = await asService().from("users").select("id").eq("role", "driver").eq("is_active", true).limit(500);
+      if (driversError) throw new Error(driversError.message);
+      for (const driver of drivers ?? []) {
+        const result = await asService().rpc("record_driver_wallet_deposit", { p_driver_id: driver.id, p_amount: parsed.data.amount, p_note: parsed.data.note ?? "إضافة جماعية للسفراء" });
+        if (result.error) throw new Error(result.error.message);
+      }
+      res.status(201).json({ count: drivers?.length ?? 0 });
+    } catch (error) {
+      res.status(siteErrorStatus(error)).json({ error: error instanceof Error ? error.message : "BULK_WALLET_DEPOSIT_FAILED" });
+    }
+  });
+
   app.get("/admin/api/places", async (req, res) => {
     try {
       requireSiteSession(req);
@@ -990,7 +1023,7 @@ export function registerAdminWebRoutes(app: Express) {
       requireSiteSession(req);
       const service = asService();
       const [codesResult, recipientResult] = await Promise.all([
-        service.from("discount_codes").select("id,code,discount_type,discount_value,starts_at,ends_at,is_active,deactivated_at,created_at").order("created_at", { ascending: false }).limit(100),
+        service.from("discount_codes").select("id,code,discount_type,discount_value,starts_at,ends_at,max_uses_per_customer,max_total_uses,is_active,deactivated_at,created_at").order("created_at", { ascending: false }).limit(100),
         service.from("discount_code_recipients").select("discount_code_id,customer_id").limit(500),
       ]);
       if (codesResult.error || recipientResult.error) throw new Error(codesResult.error?.message ?? recipientResult.error?.message ?? "DISCOUNTS_UNAVAILABLE");
@@ -1025,7 +1058,7 @@ export function registerAdminWebRoutes(app: Express) {
         if (customerError) throw new Error(customerError.message);
         if ((customers ?? []).length !== recipientCustomerIds.length) return res.status(400).json({ error: "DISCOUNT_RECIPIENT_NOT_AVAILABLE" });
       }
-      const { data, error } = await service.from("discount_codes").insert({ code: parsed.data.code, discount_type: parsed.data.discountType, discount_value: parsed.data.discountValue, starts_at: parsed.data.startsAt ?? null, ends_at: parsed.data.endsAt ?? null, is_active: true }).select("id,code,discount_type,discount_value,starts_at,ends_at,is_active,deactivated_at,created_at").single();
+      const { data, error } = await service.from("discount_codes").insert({ code: parsed.data.code, discount_type: parsed.data.discountType, discount_value: parsed.data.discountValue, starts_at: parsed.data.startsAt ?? null, ends_at: parsed.data.endsAt ?? null, max_uses_per_customer: parsed.data.maxUsesPerCustomer ?? null, max_total_uses: parsed.data.maxTotalUses ?? null, is_active: true }).select("id,code,discount_type,discount_value,starts_at,ends_at,max_uses_per_customer,max_total_uses,is_active,deactivated_at,created_at").single();
       if (error || !data) throw new Error(error?.message ?? "DISCOUNT_CREATE_FAILED");
       if (recipientCustomerIds.length) {
         const { error: recipientError } = await service.from("discount_code_recipients").insert(recipientCustomerIds.map((customerId) => ({ discount_code_id: data.id, customer_id: customerId })));
