@@ -66,4 +66,3 @@ window.installPlacesMap = function installPlacesMap(places = []) { const target 
 window.disposeAdminMaps = function disposeAdminMaps() { destroyFleetMap(); destroyPlacesMap(); };
 window.addEventListener("resize", () => { if (fleetOperationsMap?._optimusLoaded) fleetOperationsMap.resize(); if (placesMap?._optimusLoaded) placesMap.resize(); });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState !== "visible") return; window.setTimeout(() => { if (fleetOperationsMap?._optimusLoaded) fleetOperationsMap.resize(); if (placesMap?._optimusLoaded) placesMap.resize(); }, 80); });
-setInterval(() => { if (!adminView.hidden) refreshDashboard(); }, 10000);

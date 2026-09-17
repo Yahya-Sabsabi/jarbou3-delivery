@@ -40,5 +40,6 @@ describe("خريطة بوابة الإدارة", () => {
     expect(adminApp).toContain('if (state.currentView === "fleet" && document.querySelector("#fleet-map"))');
     expect(liveMap).toContain('if (!fleetOperationsMap || fleetMapTarget !== target)');
     expect(liveMap).toContain('syncFleetMarkers(drivers, fleetDriverMarkers, "driver")');
+    expect(liveMap).not.toContain('refreshDashboard(); }, 10000');
   });
 });
