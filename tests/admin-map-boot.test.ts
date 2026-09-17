@@ -36,7 +36,7 @@ describe("admin map boot contract", () => {
 
   it("ships the current MapLibre bundle and Liberty style", () => {
     const html = readProjectFile("admin-site/index.html");
-    expect(html).toContain("live-map.js?v=admin-map-20260916-10");
+    expect(html).toContain("live-map.js?v=admin-map-20260917-11");
     const liveMap = readProjectFile("admin-site/live-map.js");
     expect(liveMap).toContain("https://tiles.openfreemap.org/styles/liberty");
     expect(liveMap).not.toContain("tile.openstreetmap.org");
