@@ -98,7 +98,7 @@ async function startServer() {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "same-origin");
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self' https://tiles.openfreemap.org; style-src 'self'; script-src 'self'; img-src 'self' data: blob: https://tiles.openfreemap.org; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+    res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self' https://tiles.openfreemap.org; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob: https://tiles.openfreemap.org; font-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; child-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     next();
   });
   registerAdminWebRoutes(app);

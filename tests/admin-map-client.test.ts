@@ -33,6 +33,12 @@ describe("خريطة بوابة الإدارة", () => {
     expect(liveMap).not.toContain("tile.openstreetmap.org");
   });
 
+  it("يسمح لـMapLibre Worker وخطوط OpenFreeMap بالعمل داخل CSP", () => {
+    expect(serverEntry).toContain("worker-src 'self' blob:");
+    expect(serverEntry).toContain("font-src 'self' https://tiles.openfreemap.org");
+    expect(serverEntry).toContain("child-src 'self' blob:");
+  });
+
   it("يثبت DOM والخريطة عند إعادة فتح Fleet أو وصول تحديث حي", () => {
     expect(adminApp).toContain('state.currentView === view');
     expect(adminApp).toContain('document.querySelector("#fleet-map")');
