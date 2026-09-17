@@ -169,37 +169,49 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
     let active = true;
     let remove: (() => void) | undefined;
     let appStateSubscription: ReturnType<typeof AppState.addEventListener> | undefined;
+    let starting = false;
     const clearSharedLocation = () => {
       void clearCustomerLocation.mutateAsync({ accessToken }).catch(() => undefined);
+    };
+    const stopTracking = () => {
+      remove?.();
+      remove = undefined;
     };
     const sendPoint = (point: MapPoint) => {
       if (!active) return;
       setSource((current) => current ?? point);
       updateCustomerLocation.mutate({ accessToken, location: point });
     };
-    void (async () => {
+    const startTracking = async () => {
+      if (!active || starting || remove) return;
+      starting = true;
       try {
         const point = await getCurrentHamaLocation();
+        if (!active) return;
         sendPoint(point);
       } catch {
         if (active) setLocationNotice("لم نتمكن من قراءة موقعك الحالي؛ فعّل GPS واسمح بالموقع.");
       }
-      if (!active) return;
+      if (!active) { starting = false; return; }
       try {
         const subscription = await watchHamaLocation(sendPoint, () => undefined);
         if (active) remove = () => subscription.remove(); else subscription.remove();
       } catch {
         if (active) setLocationNotice("تعذر استمرار مشاركة موقعك؛ اترك GPS والاتصال مفعّلين.");
+      } finally {
+        starting = false;
       }
-    })();
+    };
+    void startTracking();
     appStateSubscription = AppState.addEventListener("change", (nextState) => {
       if (nextState !== "active") {
-        remove?.();
-        remove = undefined;
+        stopTracking();
         clearSharedLocation();
+      } else {
+        void startTracking();
       }
     });
-    return () => { active = false; remove?.(); appStateSubscription?.remove(); clearSharedLocation(); };
+    return () => { active = false; stopTracking(); appStateSubscription?.remove(); clearSharedLocation(); };
   }, [accessToken]);
   useEffect(() => {
     if (Platform.OS !== "android") return;
