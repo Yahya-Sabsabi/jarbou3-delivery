@@ -37,6 +37,25 @@ export function resolveRuntimeTrpcUrl(url: RequestInfo | URL): string {
   }
 }
 
+async function fetchWithNetworkRecovery(url: RequestInfo | URL, options?: RequestInit): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const response = await fetch(url, { ...options, signal: options?.signal ?? controller.signal });
+      clearTimeout(timeout);
+      return response;
+    } catch (error) {
+      clearTimeout(timeout);
+      if (options?.signal?.aborted) throw error;
+      lastError = error;
+      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("NETWORK_REQUEST_FAILED");
+}
+
 /**
  * Creates the tRPC client with proper configuration.
  * Call this once in your app's root layout.
@@ -54,7 +73,7 @@ export function createTRPCClient() {
         },
         // Custom fetch to include credentials for cookie-based auth
         fetch(url, options) {
-          return fetch(resolveRuntimeTrpcUrl(url), {
+          return fetchWithNetworkRecovery(resolveRuntimeTrpcUrl(url), {
             ...options,
             credentials: "include",
           });

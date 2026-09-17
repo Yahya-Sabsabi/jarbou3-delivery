@@ -637,7 +637,9 @@ function appErrorCode(error: { message?: string }): string {
     "SIGN_IN_IDENTITY_MIGRATION_FAILED",
     "SIGN_IN_ACCOUNT_NOT_FOUND",
     "SIGN_IN_PROFILE_LOOKUP_FAILED",
+    "NETWORK_REQUEST_FAILED",
   ];
+  if (/network request failed|network error|failed to fetch|aborterror|timeout/i.test(message)) return "NETWORK_REQUEST_FAILED";
   return knownCodes.find((code) => message === code || message.includes(code)) ?? message;
 }
 
@@ -892,7 +894,9 @@ export function Jarbou3App() {
     },
     onError: (error) => {
       const code = appErrorCode(error);
-      const copy = code === "INVALID_PHONE"
+      const copy = code === "NETWORK_REQUEST_FAILED"
+        ? "تعذر الوصول إلى الخادم. بدّل بين بيانات الهاتف والواي فاي، وأعد المحاولة بعد لحظات؛ لم تتغير كلمة المرور أو الحساب."
+        : code === "INVALID_PHONE"
         ? "أدخل رقم WhatsApp صحيحاً، مثل 09xxxxxxxx أو +9639xxxxxxxx."
         : code === "SIGN_IN_PASSWORD_INVALID"
           ? "كلمة المرور غير مطابقة لهذا الحساب. استخدم «نسيت كلمة المرور؟» لإعادة تعيينها."
