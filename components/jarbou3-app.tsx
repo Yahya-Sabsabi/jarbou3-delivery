@@ -493,6 +493,7 @@ function Driver({ name, onTripActivity }: { name: string; onTripActivity: (activ
       await jarbou3Session.saveQueuedLocation({ ...variables.location, capturedAt: new Date().toISOString() });
     },
   });
+  const clearLocation = trpc.jarbou3.clearDriverLocation.useMutation();
   const submitVerification = trpc.jarbou3.submitDriverVerification.useMutation({
     onSuccess: () => { setPage("home"); Alert.alert("تم إرسال الوثائق", "تم إرسال الصورة الشخصية وصورة الهوية للمراجعة."); },
     onError: (error) => Alert.alert("تعذر إرسال الوثائق", error.message),
@@ -585,9 +586,16 @@ function Driver({ name, onTripActivity }: { name: string; onTripActivity: (activ
       if (!active) return;
       setLivePoint(point);
       if (!backgroundStarted) updateLocation.mutate({ accessToken, location: point });
-    }, (quality) => setGpsQuality(quality === "good" ? "GPS عالي الدقة متصل" : quality === "poor_accuracy" ? "إشارة GPS ضعيفة؛ لا نرسل قراءة غير دقيقة" : quality === "mocked" ? "تم رفض موقع غير موثوق" : quality === "unrealistic_jump" ? "تم رفض قفزة موقع غير واقعية" : "الموقع خارج نطاق حماة")).then((subscription) => { remove = () => subscription.remove(); }).catch(() => Alert.alert("تعذر مشاركة الموقع", "فعّل خدمات الموقع واسمح بالتحديد أثناء استخدام التطبيق لمتابعة الرحلة داخل حماة."));
-    return () => { active = false; remove?.(); void stopBackground?.().catch(() => undefined); };
+    }, (quality) => setGpsQuality(quality === "good" ? "GPS عالي الدقة متصل" : quality === "poor_accuracy" ? "إشارة GPS ضعيفة؛ لا نرسل قراءة غير دقيقة" : quality === "mocked" ? "تم رفض موقع غير موثوق" : quality === "unrealistic_jump" ? "تم رفض قفزة موقع غير واقعية" : "الموقع خارج نطاق حماة")).then((subscription) => { remove = () => subscription.remove(); }).catch(() => { if (!activeOrder) clearLocation.mutate({ accessToken }); Alert.alert("تعذر مشاركة الموقع", "فعّل خدمات الموقع واسمح بالتحديد أثناء استخدام التطبيق لمتابعة الرحلة داخل حماة."); });
+    return () => { active = false; remove?.(); void stopBackground?.().catch(() => undefined); if (!activeOrder) clearLocation.mutate({ accessToken }); };
   }, [page, accessToken, driverIsApproved, activeOrder?.id]);
+  useEffect(() => {
+    if (!accessToken || activeOrder) return;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") clearLocation.mutate({ accessToken });
+    });
+    return () => subscription.remove();
+  }, [accessToken, activeOrder?.id]);
   const locateDriver = async () => {
     try {
       const point = await getCurrentHamaLocation();

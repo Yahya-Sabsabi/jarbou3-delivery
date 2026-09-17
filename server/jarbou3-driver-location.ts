@@ -42,3 +42,15 @@ export async function recordDriverLocation(accessToken: string, location: Driver
 
   return { location: data, tripMetrics };
 }
+
+export async function clearDriverLocation(accessToken: string) {
+  const authUser = await getAuthenticatedUser(accessToken);
+  const profile = await getUserProfile(authUser.id);
+  if (!profile.is_active || profile.role !== "driver") throw new Error("JARBOU3_FORBIDDEN");
+  const { error } = await asService()
+    .from("users")
+    .update({ last_location_lat: null, last_location_lng: null, last_location_at: null })
+    .eq("id", authUser.id);
+  if (error) throw new Error(error.message);
+  return { cleared: true };
+}

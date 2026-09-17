@@ -8,7 +8,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { asPublic, asService, asUser, assertHamaPoint, createOtpHash, decodeDataUrl, getAuthenticatedUser, getUserProfile } from "./jarbou3-supabase";
-import { recordDriverLocation } from "./jarbou3-driver-location";
+import { clearDriverLocation, recordDriverLocation } from "./jarbou3-driver-location";
 import { clearCustomerLocation, recordCustomerLocation } from "./jarbou3-customer-location";
 import { JARBOU3_PRIVACY_POLICY_VERSION } from "../shared/jarbou3-privacy";
 import { AcceptRequestedOrder } from "../application/use-cases/accept-requested-order";
@@ -706,6 +706,10 @@ export const appRouter = router({
         const offer = waitingOrder ? await assignNextDriverOffer(waitingOrder.id) : null;
         return { ...locationUpdate, offerDispatched: Boolean(offer?.driver_id) };
       }),
+
+    clearDriverLocation: publicProcedure
+      .input(tokenInput)
+      .mutation(async ({ input }) => clearDriverLocation(input.accessToken)),
 
     updateCustomerLocation: publicProcedure
       .input(tokenInput.extend({ location: pointInput.extend({ accuracy: z.number().min(0).max(80).nullable().optional() }) }))
