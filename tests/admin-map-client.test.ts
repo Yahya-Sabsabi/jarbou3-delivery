@@ -20,6 +20,8 @@ describe("خريطة بوابة الإدارة", () => {
     expect(liveMap).toContain("last_location_lat");
     expect(liveMap).toContain("window.refreshFleetOperationsMap");
     expect(liveMap).toContain("ADMIN_LIBERTY_STYLE");
+    expect(liveMap).toContain("loadAdminLibertyStyle");
+    expect(liveMap).toContain("delete source.url");
     expect(liveMap).toContain("new window.maplibregl.Map");
     expect(liveMap).toContain("GeolocateControl");
     expect(liveMap).toContain("map.resize()");
