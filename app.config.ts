@@ -38,7 +38,7 @@ const env = {
   iosBundleId: bundleId,
   androidPackage: bundleId,
   // عنوان عام فقط، ويُضمّن في Android حتى لا يحاول التطبيق استدعاء /api/trpc محلياً.
-  apiBaseUrl: "https://jarbou-deliv-xoohmte2.manus.space",
+  apiBaseUrl: "https://optimus-x-wifi-test.yahyacard715.workers.dev",
 };
 
 const config: ExpoConfig = {
