@@ -13,12 +13,16 @@ export async function readRuntimeReadiness(): Promise<RuntimeReadiness> {
   const online = Boolean(network.isConnected) && network.isInternetReachable !== false;
   if (Platform.OS === "web") return { online, gpsEnabled: true, locationGranted: true };
   const permission = await Location.getForegroundPermissionsAsync();
-  // Avoid hasServicesEnabledAsync in this post-permission gate. On some
-  // Android vendor builds the native provider query can terminate the process
-  // immediately after the permission dialog closes. The active trip watcher
-  // remains responsible for validating the provider when tracking is needed.
   const locationGranted = permission.status === "granted";
-  return { online, gpsEnabled: locationGranted, locationGranted };
+  if (!locationGranted) return { online, gpsEnabled: false, locationGranted: false };
+  let gpsEnabled = false;
+  try {
+    gpsEnabled = await Location.hasServicesEnabledAsync();
+  } catch {
+    // Keep GPS unavailable if a vendor ROM rejects the provider query.
+    gpsEnabled = false;
+  }
+  return { online, gpsEnabled, locationGranted };
 }
 
 export async function requestRuntimeLocationPermission() {
