@@ -104,8 +104,9 @@ async function startServer() {
   registerAdminWebRoutes(app);
   app.get("/admin/", (_req, res, next) => {
     try {
-      const html = readFileSync(path.resolve(process.cwd(), "admin-site/index.html"), "utf8");
+      const html = readFileSync(path.resolve(process.cwd(), "admin-site/index.html"), "utf8").replaceAll("admin-portal-20260916-10", "admin-portal-20260917-11").replaceAll("admin-map-20260916-10", "admin-map-20260917-11");
       res.setHeader("Cache-Control", "no-store, max-age=0, must-revalidate");
+      res.setHeader("X-Admin-Revision", "20260917-11");
       res.type("html").send(html);
     } catch {
       next();
@@ -113,8 +114,9 @@ async function startServer() {
   });
   app.get("/admin/index.html", (_req, res, next) => {
     try {
-      const html = readFileSync(path.resolve(process.cwd(), "admin-site/index.html"), "utf8");
+      const html = readFileSync(path.resolve(process.cwd(), "admin-site/index.html"), "utf8").replaceAll("admin-portal-20260916-10", "admin-portal-20260917-11").replaceAll("admin-map-20260916-10", "admin-map-20260917-11");
       res.setHeader("Cache-Control", "no-store, max-age=0, must-revalidate");
+      res.setHeader("X-Admin-Revision", "20260917-11");
       res.type("html").send(html);
     } catch {
       next();
