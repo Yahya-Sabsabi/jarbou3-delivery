@@ -36,7 +36,7 @@ function loadAdminLibertyStyle() {
         const tileJsonResponse = await fetch(source.url);
         if (!tileJsonResponse.ok) throw new Error(`LIBERTY_TILEJSON_${tileJsonResponse.status}`);
         const tileJson = await tileJsonResponse.json();
-        if (Array.isArray(tileJson.tiles) && tileJson.tiles.length) { source.tiles = tileJson.tiles; delete source.url; }
+        if (Array.isArray(tileJson.tiles) && tileJson.tiles.length) { source.tiles = tileJson.tiles; source.minzoom = Number.isFinite(Number(tileJson.minzoom)) ? Number(tileJson.minzoom) : 0; source.maxzoom = Number.isFinite(Number(tileJson.maxzoom)) ? Number(tileJson.maxzoom) : 14; delete source.url; }
       }
       return style;
     });
@@ -51,7 +51,7 @@ function createAdminMap(target, style, onLoad, onFailure) {
   let map;
   const fail = () => { if (settled) return; settled = true; if (failureTimer) window.clearTimeout(failureTimer); try { map?.remove(); } catch {} onFailure?.(); };
   try {
-    map = new window.maplibregl.Map({ container: target, style, center: ADMIN_HAMA_CENTER, zoom: 12, minZoom: 11, maxZoom: 19, maxBounds: ADMIN_HAMA_BOUNDS, attributionControl: true, dragRotate: false, touchPitch: false, doubleClickZoom: true });
+    map = new window.maplibregl.Map({ container: target, style, center: ADMIN_HAMA_CENTER, zoom: 12, minZoom: 11, maxZoom: 21, maxBounds: ADMIN_HAMA_BOUNDS, attributionControl: true, dragRotate: false, touchPitch: false, doubleClickZoom: true });
     map.addControl(new window.maplibregl.NavigationControl({ showCompass: true }), "top-right");
     map.addControl(new window.maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserHeading: true }), "top-right");
     map.once("load", () => { settled = true; if (failureTimer) window.clearTimeout(failureTimer); map._optimusLoaded = true; map.resize(); onLoad?.(map); });

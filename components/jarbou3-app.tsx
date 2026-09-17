@@ -155,6 +155,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
   const saveFavorite = trpc.jarbou3.saveFavoriteAddress.useMutation({ onSuccess: () => { favoriteAddresses.refetch(); setFavoriteLabel(""); Alert.alert("تم الحفظ", "أصبح العنوان ضمن عناوينك المفضلة."); }, onError: (error) => Alert.alert("تعذر الحفظ", error.message) });
   const deleteFavorite = trpc.jarbou3.deleteFavoriteAddress.useMutation({ onSuccess: () => favoriteAddresses.refetch() });
   const registerPushToken = trpc.jarbou3.registerPushToken.useMutation();
+  const updateCustomerLocation = trpc.jarbou3.updateCustomerLocation.useMutation();
 
   useEffect(() => { jarbou3Session.getAccessToken().then(setAccessToken); }, []);
   useEffect(() => {
@@ -162,6 +163,18 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
       if (trip?.role === "customer") setPage("track");
     });
   }, []);
+  useEffect(() => {
+    const shouldTrackCustomer = Boolean(accessToken) && (page === "home" || page === "order" || page === "track");
+    if (!shouldTrackCustomer || !accessToken) return;
+    let active = true;
+    let remove: (() => void) | undefined;
+    watchHamaLocation((point) => {
+      if (!active) return;
+      setSource((current) => current ?? point);
+      updateCustomerLocation.mutate({ accessToken, location: point });
+    }, () => undefined).then((subscription) => { if (active) remove = () => subscription.remove(); else subscription.remove(); }).catch(() => undefined);
+    return () => { active = false; remove?.(); };
+  }, [accessToken, page]);
   useEffect(() => {
     if (Platform.OS !== "android") return;
     let previousBackAt = 0;
