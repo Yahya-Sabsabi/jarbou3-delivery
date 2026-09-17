@@ -12,7 +12,7 @@ import { DEFAULT_DELIVERY_PRICING, HAMA_CENTER, estimateDeliveryPrice, formatSyp
 import { HamaMap } from "@/components/hama-map-loader";
 import { PremiumCustomerNav, PremiumFavoritesMenu, PremiumMoreMenu, PremiumOrderSheet } from "@/components/premium-order-sheet";
 import { KeyboardAwareScrollView } from "@/components/keyboard-aware";
-import { PremiumProfilePanel } from "@/components/premium-profile-panel";
+import { PremiumProfilePanel, type DiscountUsage } from "@/components/premium-profile-panel";
 import { OptimusMapScreen } from "@/components/optimus-map-screen";
 import { PremiumEmptyResultsDialog } from "@/components/premium-empty-results-dialog";
 import { SwipeStartButton } from "@/components/swipe-start-button";
@@ -102,9 +102,9 @@ function RoleSwitch({ role, onSelect }: { role: Role; onSelect: (role: Role) => 
   return <View style={styles.roleSwitch}>{(["customer", "driver"] as Role[]).map((option) => <Pressable key={option} onPress={() => onSelect(option)} style={[styles.role, role === option && styles.roleSelected]}><Text style={[styles.roleText, role === option && styles.roleTextSelected]}>{option === "customer" ? "عميل" : "سائق"}</Text></Pressable>)}</View>;
 }
 
-function ProfilePanel({ name, phone, couponCode, onCouponChange, onBack, onLogout, onOrders }: { name: string; phone?: string; couponCode: string; onCouponChange: (value: string) => void; onBack: () => void; onLogout: () => void; onOrders: () => void }) {
+function ProfilePanel({ name, phone, couponCode, onCouponChange, discountUsage, onBack, onLogout, onOrders }: { name: string; phone?: string; couponCode: string; onCouponChange: (value: string) => void; discountUsage: DiscountUsage[]; onBack: () => void; onLogout: () => void; onOrders: () => void }) {
   const [policyVisible, setPolicyVisible] = useState(false);
-  return <><PremiumProfilePanel name={name} phone={phone} couponCode={couponCode} onCouponChange={onCouponChange} onBack={onBack} onLogout={onLogout} onOrders={onOrders} onHome={onBack} onPolicy={() => setPolicyVisible(true)} /><PrivacyPolicySheet visible={policyVisible} onClose={() => setPolicyVisible(false)} /></>;
+  return <><PremiumProfilePanel name={name} phone={phone} couponCode={couponCode} onCouponChange={onCouponChange} discountUsage={discountUsage} onBack={onBack} onLogout={onLogout} onOrders={onOrders} onHome={onBack} onPolicy={() => setPolicyVisible(true)} /><PrivacyPolicySheet visible={policyVisible} onClose={() => setPolicyVisible(false)} /></>;
 }
 
 function Customer({ name, phone, onTripActivity, onLogout }: { name: string; phone?: string; onTripActivity: (active: boolean) => void; onLogout: () => void }) {
@@ -152,6 +152,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
   const addressSearch = trpc.jarbou3.searchHamaAddresses.useQuery({ query: addressQuery.trim().length >= 2 ? addressQuery.trim() : "حماة", filter: searchFilter }, { enabled: false });
   const localPlaces = trpc.jarbou3.listJarbou3Places.useQuery({ accessToken: accessToken ?? "pending-session-token-000", query: addressQuery.trim().length >= 2 ? addressQuery.trim() : undefined }, { enabled: Boolean(accessToken) && addressQuery.trim().length >= 2, retry: false });
   const discountPreview = trpc.jarbou3.previewDiscount.useQuery({ code: discountCode.trim() || "---", preDiscountPrice: route?.price ?? 0, accessToken: accessToken ?? undefined }, { enabled: false, retry: false });
+  const discountUsage = trpc.jarbou3.discountUsageHistory.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: page === "profile" && Boolean(accessToken), retry: false });
   const favoriteAddresses = trpc.jarbou3.listFavoriteAddresses.useQuery({ accessToken: accessToken ?? "pending-session-token-000" }, { enabled: Boolean(accessToken) });
   const saveFavorite = trpc.jarbou3.saveFavoriteAddress.useMutation({ onSuccess: () => { favoriteAddresses.refetch(); setFavoriteLabel(""); Alert.alert("تم الحفظ", "أصبح العنوان ضمن عناوينك المفضلة."); }, onError: (error) => Alert.alert("تعذر الحفظ", error.message) });
   const deleteFavorite = trpc.jarbou3.deleteFavoriteAddress.useMutation({ onSuccess: () => favoriteAddresses.refetch() });
@@ -395,7 +396,7 @@ function Customer({ name, phone, onTripActivity, onLogout }: { name: string; pho
     }
   };
 
-  if (page === "profile") return <View style={[styles.fill, styles.profilePage]}><ProfilePanel name={name} phone={phone} couponCode={discountCode} onCouponChange={setDiscountCode} onBack={() => navigateCustomer("home")} onLogout={onLogout} onOrders={() => navigateCustomer("orders")} /></View>;
+  if (page === "profile") return <View style={[styles.fill, styles.profilePage]}><ProfilePanel name={name} phone={phone} couponCode={discountCode} onCouponChange={setDiscountCode} discountUsage={(discountUsage.data ?? []) as DiscountUsage[]} onBack={() => navigateCustomer("home")} onLogout={onLogout} onOrders={() => navigateCustomer("orders")} /></View>;
 
   if (page === "orders") return <View style={styles.fill}><ScrollView contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom + 30, 42) }]}><View style={styles.hero}><View><Text style={styles.eyebrow}>سجل النشاط</Text><Text style={styles.heroTitle}>الطلبات</Text><Text style={styles.copy}>تابع طلباتك الحالية والسابقة من مكان واحد.</Text></View><MaterialIcons name="receipt-long" size={30} color="#24755E" /></View><View style={styles.empty}><Text style={styles.emptyText}>لا توجد طلبات محفوظة للعرض حالياً.</Text></View></ScrollView><PremiumCustomerNav active="orders" onHome={() => navigateCustomer("home")} onOrders={() => navigateCustomer("orders")} onProfile={() => navigateCustomer("profile")} /></View>;
 

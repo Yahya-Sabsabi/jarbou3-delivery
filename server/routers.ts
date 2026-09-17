@@ -218,6 +218,25 @@ export const appRouter = router({
         return resolveActiveDiscount(input.code, input.preDiscountPrice, customerId);
       }),
 
+    discountUsageHistory: publicProcedure
+      .input(tokenInput)
+      .query(async ({ input }) => {
+        const { authUser } = await requireRole(input.accessToken, ["customer"]);
+        const { data: redemptions, error: redemptionError } = await asService().from("discount_code_redemptions").select("discount_code_id,redeemed_at").eq("customer_id", authUser.id).order("redeemed_at", { ascending: false }).limit(100);
+        if (redemptionError) throw new Error(redemptionError.message);
+        const ids = [...new Set((redemptions ?? []).map((row) => row.discount_code_id))];
+        if (!ids.length) return [];
+        const { data: codes, error: codeError } = await asService().from("discount_codes").select("id,code,discount_type,discount_value,max_uses_per_customer,max_total_uses,is_active,ends_at").in("id", ids).limit(100);
+        if (codeError) throw new Error(codeError.message);
+        const { data: allUsage, error: allUsageError } = await asService().from("discount_code_redemptions").select("discount_code_id").in("discount_code_id", ids).limit(10000);
+        if (allUsageError) throw new Error(allUsageError.message);
+        const ownCounts = new Map<string, number>();
+        const totalCounts = new Map<string, number>();
+        for (const row of redemptions ?? []) ownCounts.set(row.discount_code_id, (ownCounts.get(row.discount_code_id) ?? 0) + 1);
+        for (const row of allUsage ?? []) totalCounts.set(row.discount_code_id, (totalCounts.get(row.discount_code_id) ?? 0) + 1);
+        return (codes ?? []).map((code) => ({ ...code, usedByCustomer: ownCounts.get(code.id) ?? 0, remainingForCustomer: code.max_uses_per_customer ? Math.max(0, code.max_uses_per_customer - (ownCounts.get(code.id) ?? 0)) : null, totalUsed: totalCounts.get(code.id) ?? 0, remainingTotal: code.max_total_uses ? Math.max(0, code.max_total_uses - (totalCounts.get(code.id) ?? 0)) : null, lastUsedAt: (redemptions ?? []).find((row) => row.discount_code_id === code.id)?.redeemed_at ?? null }));
+      }),
+
     searchHamaAddresses: publicProcedure
       .input(z.object({ query: z.string().trim().min(2).max(80), filter: z.enum(["all", "shops", "streets"]).default("all") }))
       .query(async ({ input }) => searchHamaAddresses(input.query, input.filter)),

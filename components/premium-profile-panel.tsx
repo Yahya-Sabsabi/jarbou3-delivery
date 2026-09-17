@@ -1,13 +1,22 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { DiscountQrScanner } from "@/components/discount-qr-scanner";
 import { PremiumCustomerNav } from "@/components/premium-order-sheet";
 
 type ProfileAction = { icon: keyof typeof MaterialIcons.glyphMap; title: string; description: string; onPress?: () => void; disabled?: boolean };
+export type DiscountUsage = { id: string; code: string; discount_type: string; discount_value: number; remainingForCustomer: number | null; remainingTotal: number | null; usedByCustomer: number; totalUsed: number; lastUsedAt: string | null };
 
-export function PremiumProfilePanel({ name, phone, couponCode, onCouponChange, onBack, onLogout, onOrders, onHome, onPolicy }: { name: string; phone?: string; couponCode: string; onCouponChange: (value: string) => void; onBack: () => void; onLogout: () => void; onOrders: () => void; onHome: () => void; onPolicy: () => void }) {
+export function PremiumProfilePanel({ name, phone, couponCode, onCouponChange, discountUsage, onBack, onLogout, onOrders, onHome, onPolicy }: { name: string; phone?: string; couponCode: string; onCouponChange: (value: string) => void; discountUsage: DiscountUsage[]; onBack: () => void; onLogout: () => void; onOrders: () => void; onHome: () => void; onPolicy: () => void }) {
   const insets = useSafeAreaInsets();
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const applyScannedValue = (raw: string) => {
+    let value = raw.trim();
+    try { const parsed = new URL(value); value = parsed.searchParams.get("code") || parsed.searchParams.get("coupon") || value; } catch { /* QR may contain the code directly. */ }
+    onCouponChange(value.replace(/\s+/g, "").toUpperCase().slice(0, 32));
+  };
   const actions: ProfileAction[] = [
     { icon: "receipt-long", title: "طلباتي", description: "عرض سجل طلباتك", onPress: onOrders },
     { icon: "bookmark-border", title: "العناوين المفضلة", description: "منزلك وعناوينك المحفوظة", disabled: true },
@@ -28,9 +37,10 @@ export function PremiumProfilePanel({ name, phone, couponCode, onCouponChange, o
       <View style={styles.statsRow}><Stat value="—" label="الطلبات" /><View style={styles.statDivider} /><Stat value="—" label="مكتملة" /><View style={styles.statDivider} /><Stat value="—" label="التقييم" /></View>
       <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>مساحتك</Text><Text style={styles.sectionHint}>إدارة سريعة</Text></View>
       <View style={styles.menuGroup}>{actions.map((action, index) => <Pressable key={action.title} disabled={action.disabled} onPress={action.onPress} style={({ pressed }) => [styles.menuRow, action.disabled && styles.menuRowDisabled, pressed && !action.disabled && styles.menuPressed]}><View style={styles.menuIcon}><MaterialIcons name={action.icon} size={20} color={action.disabled ? "#AAB5AF" : "#24755E"} /></View><View style={styles.menuCopy}><Text style={[styles.menuTitle, action.disabled && styles.disabledText]}>{action.title}</Text><Text style={[styles.menuDescription, action.disabled && styles.disabledText]}>{action.description}</Text></View>{action.disabled ? <Text style={styles.soon}>قريباً</Text> : <MaterialIcons name="chevron-left" size={20} color="#A6B1AB" />}</Pressable>)}</View>
-      <View style={styles.couponBox}><View style={styles.couponHeading}><MaterialIcons name="local-offer" size={19} color="#24755E" /><Text style={styles.couponTitle}>رمز الخصم</Text></View><TextInput value={couponCode} onChangeText={(value) => onCouponChange(value.toUpperCase())} autoCapitalize="characters" placeholder="اكتب الكود هنا" placeholderTextColor="#9AA59F" style={styles.couponInput} textAlign="right" /><View style={styles.couponActions}><Pressable onPress={() => onCouponChange(couponCode.trim())} style={styles.couponSave}><Text style={styles.couponSaveText}>حفظ الرمز</Text></Pressable><Pressable onPress={() => onCouponChange("")} style={styles.couponClear}><Text style={styles.couponClearText}>مسح</Text></Pressable></View><Text style={styles.couponHint}>سيُطبّق الرمز تلقائياً عند إنشاء الطلب إذا كان صالحاً.</Text></View>
+      <View style={styles.couponBox}><View style={styles.couponHeading}><MaterialIcons name="local-offer" size={19} color="#24755E" /><Text style={styles.couponTitle}>رمز الخصم</Text></View><TextInput value={couponCode} onChangeText={(value) => onCouponChange(value.toUpperCase())} autoCapitalize="characters" placeholder="اكتب الكود هنا" placeholderTextColor="#9AA59F" style={styles.couponInput} textAlign="right" /><View style={styles.couponActions}><Pressable onPress={() => onCouponChange(couponCode.trim())} style={styles.couponSave}><Text style={styles.couponSaveText}>حفظ الرمز</Text></Pressable><Pressable onPress={() => setScannerVisible(true)} style={styles.qrButton}><MaterialIcons name="qr-code-scanner" size={17} color="#24755E" /><Text style={styles.qrButtonText}>مسح QR</Text></Pressable><Pressable onPress={() => onCouponChange("")} style={styles.couponClear}><Text style={styles.couponClearText}>مسح</Text></Pressable></View><Text style={styles.couponHint}>سيُطبّق الرمز تلقائياً عند إنشاء الطلب إذا كان صالحاً.</Text></View>
+      <View style={styles.historyBox}><View style={styles.sectionHeading}><Text style={styles.sectionTitle}>سجل استخدام الأكواد</Text><Text style={styles.sectionHint}>{discountUsage.length ? `${discountUsage.length} رمز` : "لا يوجد استخدام بعد"}</Text></View>{discountUsage.map((item) => <View key={item.id} style={styles.historyRow}><View style={styles.menuCopy}><Text style={styles.menuTitle}>{item.code}</Text><Text style={styles.menuDescription}>استُخدم {item.usedByCustomer} مرة · إجمالي الاستخدام {item.totalUsed}</Text></View><Text style={styles.remaining}>{item.remainingForCustomer === null ? "غير محدود" : `متبقٍ ${item.remainingForCustomer}`}</Text></View>)}</View>
       <View style={styles.accountSection}><Text style={styles.sectionTitle}>الحساب</Text><Pressable onPress={onLogout} style={({ pressed }) => [styles.logoutRow, pressed && styles.menuPressed]}><View style={styles.logoutIcon}><MaterialIcons name="logout" size={19} color="#B42318" /></View><View style={styles.menuCopy}><Text style={styles.logoutTitle}>تسجيل الخروج</Text><Text style={styles.menuDescription}>مسح الجلسة من هذا الجهاز</Text></View><MaterialIcons name="chevron-left" size={20} color="#D1A19C" /></Pressable></View>
-    </ScrollView>
+    </ScrollView><DiscountQrScanner visible={scannerVisible} onClose={() => setScannerVisible(false)} onScanned={applyScannedValue} />
     <PremiumCustomerNav active="profile" onHome={onHome} onOrders={onOrders} onProfile={() => undefined} />
   </View>;
 }
@@ -82,7 +92,12 @@ const styles = StyleSheet.create({
   couponSaveText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" },
   couponClear: { width: 76, minHeight: 42, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#FFF1EF" },
   couponClearText: { color: "#B42318", fontSize: 12, fontWeight: "900" },
+  qrButton: { minHeight: 42, borderRadius: 13, paddingHorizontal: 12, flexDirection: "row-reverse", alignItems: "center", justifyContent: "center", gap: 5, backgroundColor: "#EAF5EF" },
+  qrButtonText: { color: "#24755E", fontSize: 11, fontWeight: "900" },
   couponHint: { color: "#87958E", fontSize: 10, textAlign: "right" },
+  historyBox: { borderRadius: 19, backgroundColor: "#FFFFFF", padding: 14, gap: 10 },
+  historyRow: { minHeight: 54, flexDirection: "row-reverse", alignItems: "center", gap: 10, borderTopWidth: 1, borderTopColor: "#EEF2EF", paddingTop: 9 },
+  remaining: { color: "#24755E", fontSize: 10, fontWeight: "900" },
   accountSection: { gap: 10, marginTop: 2 },
   logoutRow: { minHeight: 63, flexDirection: "row-reverse", alignItems: "center", gap: 11, paddingHorizontal: 13, borderRadius: 18, backgroundColor: "#FFF8F7" },
   logoutIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#FDEAE7" },

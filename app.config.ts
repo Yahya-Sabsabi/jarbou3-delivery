@@ -135,6 +135,14 @@ const config: ExpoConfig = {
       },
     ],
     [
+      "expo-camera",
+      {
+        cameraPermission: "اسمح لتطبيق OPTIMUS X باستخدام الكاميرا لمسح رمز الخصم.",
+        recordAudioAndroid: false,
+        barcodeScannerEnabled: true,
+      },
+    ],
+    [
       "expo-notifications",
       {
         color: "#4A4A4A",
