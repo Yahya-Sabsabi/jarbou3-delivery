@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 describe("خريطة بوابة الإدارة", () => {
   const liveMap = readFileSync(resolve(process.cwd(), "admin-site/live-map.js"), "utf8");
   const serverEntry = readFileSync(resolve(process.cwd(), "server/_core/index.ts"), "utf8");
+  const adminWeb = readFileSync(resolve(process.cwd(), "server/admin-web.ts"), "utf8");
   const adminApp = readFileSync(resolve(process.cwd(), "admin-site/app.js"), "utf8");
 
   it("لا يهيئ خريطة في نظرة عامة", () => {
@@ -33,6 +34,12 @@ describe("خريطة بوابة الإدارة", () => {
   it("يحافظ على مسار خريطة الإدارة دون فرض مصدر بلاطات OSM المباشر", () => {
     expect(adminApp).toContain("/admin/api/fleet-map");
     expect(liveMap).not.toContain("tile.openstreetmap.org");
+  });
+
+  it("لا يعرض موقع السفير بعد انتهاء مهلة GPS", () => {
+    expect(adminWeb).toContain("const driverLocationCutoff = Date.now() - 30_000;");
+    expect(adminWeb).toContain("const isFresh = Number.isFinite(lastLocationMs) && lastLocationMs >= driverLocationCutoff;");
+    expect(adminWeb).toContain("latitude: isFresh && driver.last_location_lat != null");
   });
 
   it("يسمح لـMapLibre Worker وخطوط OpenFreeMap بالعمل داخل CSP", () => {

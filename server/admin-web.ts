@@ -295,6 +295,7 @@ function normalizeJarbou3Phone(value: string) {
 
 async function listFleetMap() {
   const service = asService();
+  const driverLocationCutoff = Date.now() - 30_000;
   const customerLocationCutoff = Date.now() - 30_000;
   const [{ data: driverRows, error: driverError }, { data: customerRows, error: customerError }] = await Promise.all([
     service.from("users").select("id,name,last_location_lat,last_location_lng,last_location_at").eq("role", "driver").eq("is_active", true).order("last_location_at", { ascending: false, nullsFirst: false }).limit(100),
@@ -329,7 +330,9 @@ async function listFleetMap() {
   return { generatedAt: new Date().toISOString(), drivers: drivers.map((driver) => {
     const order = activeOrderByDriver.get(driver.id);
     const metrics = order ? metricsByOrder.get(order.id) : null;
-    return { id: driver.id, name: driver.name, latitude: driver.last_location_lat == null ? null : Number(driver.last_location_lat), longitude: driver.last_location_lng == null ? null : Number(driver.last_location_lng), lastLocationAt: driver.last_location_at, activeOrder: order ? { id: order.id, status: order.status, sourceAddress: order.source_address, source: { latitude: Number(order.source_lat), longitude: Number(order.source_lng) }, destinationAddress: order.destination_address, destination: { latitude: Number(order.destination_lat), longitude: Number(order.destination_lng) }, estimatedPrice: Number(order.final_price ?? order.estimated_price ?? 0), acceptedAt: order.accepted_at, actualDistanceM: Number(metrics?.actual_distance_m ?? 0), movingSeconds: Number(metrics?.moving_seconds ?? 0), startedAt: metrics?.started_at ?? order.accepted_at, route: pointsByOrder.get(order.id) ?? [] } : null };
+    const lastLocationMs = driver.last_location_at ? new Date(driver.last_location_at).getTime() : 0;
+    const isFresh = Number.isFinite(lastLocationMs) && lastLocationMs >= driverLocationCutoff;
+    return { id: driver.id, name: driver.name, latitude: isFresh && driver.last_location_lat != null ? Number(driver.last_location_lat) : null, longitude: isFresh && driver.last_location_lng != null ? Number(driver.last_location_lng) : null, lastLocationAt: isFresh ? driver.last_location_at : null, activeOrder: order ? { id: order.id, status: order.status, sourceAddress: order.source_address, source: { latitude: Number(order.source_lat), longitude: Number(order.source_lng) }, destinationAddress: order.destination_address, destination: { latitude: Number(order.destination_lat), longitude: Number(order.destination_lng) }, estimatedPrice: Number(order.final_price ?? order.estimated_price ?? 0), acceptedAt: order.accepted_at, actualDistanceM: Number(metrics?.actual_distance_m ?? 0), movingSeconds: Number(metrics?.moving_seconds ?? 0), startedAt: metrics?.started_at ?? order.accepted_at, route: pointsByOrder.get(order.id) ?? [] } : null };
   }) , customers: (customerRows ?? []).map((customer) => {
     const lastLocationMs = customer.last_location_at ? new Date(customer.last_location_at).getTime() : 0;
     const isFresh = Number.isFinite(lastLocationMs) && lastLocationMs >= customerLocationCutoff;
