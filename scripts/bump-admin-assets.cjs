@@ -1,0 +1,10 @@
+const fs = require('fs');
+const root = '/home/ubuntu/jarbou3-delivery/admin-site';
+const indexPath = `${root}/index.html`;
+let index = fs.readFileSync(indexPath, 'utf8');
+if (!index.includes('app.20260917-12.js') || !index.includes('live-map.20260917-12.js')) throw new Error('Expected admin asset version not found');
+index = index.replaceAll('app.20260917-12.js', 'app.20260921-13.js').replaceAll('live-map.20260917-12.js', 'live-map.20260921-13.js');
+fs.writeFileSync(indexPath, index);
+fs.copyFileSync(`${root}/app.20260917-12.js`, `${root}/app.20260921-13.js`);
+fs.copyFileSync(`${root}/live-map.20260917-12.js`, `${root}/live-map.20260921-13.js`);
+console.log('Bumped admin assets to cache-busted 20260921-13 versions.');
