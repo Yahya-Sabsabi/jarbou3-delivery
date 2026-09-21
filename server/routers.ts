@@ -25,6 +25,9 @@ type HamaSearchResult = { label: string; latitude: number; longitude: number; ki
 const hamaSearchCache = new Map<string, HamaSearchResult[]>();
 let lastHamaSearchAt = 0;
 const onboardingWindows = new Map<string, { count: number; startedAt: number }>();
+const loginWindows = new Map<string, { count: number; startedAt: number }>();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 5;
 const ONBOARDING_WINDOW_MS = 15 * 60 * 1000;
 const ONBOARDING_MAX_ATTEMPTS = 4;
 const CODE_MAX_ATTEMPTS = 3;
@@ -44,6 +47,27 @@ function assertOnboardingRateLimit(key: string) {
   current.count += 1;
 }
 
+function assertLoginRateLimit(ip: string, phone: string) {
+  const now = Date.now();
+  const keys = [`ip:${ip}`, `phone:${phone}`, `combined:${ip}:${phone}`];
+  for (const key of keys) {
+    const current = loginWindows.get(key);
+    if (current && now - current.startedAt <= LOGIN_WINDOW_MS && current.count >= LOGIN_MAX_ATTEMPTS) throw new Error("LOGIN_RATE_LIMITED");
+  }
+}
+function recordLoginFailure(ip: string, phone: string) {
+  const now = Date.now();
+  for (const key of [`ip:${ip}`, `phone:${phone}`, `combined:${ip}:${phone}`]) {
+    const current = loginWindows.get(key);
+    if (!current || now - current.startedAt > LOGIN_WINDOW_MS) loginWindows.set(key, { count: 1, startedAt: now });
+    else current.count += 1;
+  }
+}
+function clearLoginFailures(ip: string, phone: string) {
+  loginWindows.delete(`ip:${ip}`);
+  loginWindows.delete(`phone:${phone}`);
+  loginWindows.delete(`combined:${ip}:${phone}`);
+}
 function failOnboardingVerification(stage: "PROFILE_LOOKUP_FAILED" | "AUTH_ACCOUNT_UPDATE_FAILED" | "AUTH_ACCOUNT_CREATE_FAILED" | "PROFILE_UPDATE_FAILED" | "VERIFICATION_UPDATE_FAILED" | "SESSION_CREATE_FAILED"): never {
   // لا نسجل رقماً أو رمزاً أو تجزئة؛ يكفي اسم المرحلة ليعرف الدعم أين توقف المسار.
   console.error(`[Jarbou3] Onboarding verification failed at ${stage}`);
@@ -301,9 +325,11 @@ export const appRouter = router({
 
     signIn: publicProcedure
       .input(z.object({ phone: z.string().trim().min(8).max(24), password: z.string().min(1).max(72) }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const phone = normalizeJarbou3Phone(input.phone);
         if (!phone) throw new Error("INVALID_PHONE");
+        const requestIp = ctx.req.ip ?? "unknown";
+        assertLoginRateLimit(requestIp, phone);
         const canonicalEmail = authEmailForPhone(phone);
         const publicAuth = asPublic();
         let authResult = await publicAuth.auth.signInWithPassword({ email: canonicalEmail, password: input.password });
@@ -319,7 +345,7 @@ export const appRouter = router({
             console.error(`[Jarbou3] Sign-in profile lookup failed: ${profileError.code ?? "unknown"}`);
             throw new Error("SIGN_IN_PROFILE_LOOKUP_FAILED");
           }
-          if (!profile) throw new Error("SIGN_IN_ACCOUNT_NOT_FOUND");
+          if (!profile) { recordLoginFailure(requestIp, phone); throw new Error("SIGN_IN_ACCOUNT_NOT_FOUND"); }
           const { data: authRecord, error: authRecordError } = await service.auth.admin.getUserById(profile.id);
           if (authRecordError || !authRecord.user) throw new Error("SIGN_IN_IDENTITY_LOOKUP_FAILED");
           if (authRecord.user.email !== canonicalEmail) {
@@ -332,8 +358,10 @@ export const appRouter = router({
         const { data, error } = authResult;
         if (error || !data.session) {
           console.warn(`[Jarbou3] Sign-in rejected: ${error?.code ?? "NO_SESSION"}`);
+          if (error?.code === "invalid_credentials") recordLoginFailure(requestIp, phone);
           throw new Error(error?.code === "invalid_credentials" ? "SIGN_IN_PASSWORD_INVALID" : "SIGN_IN_FAILED");
         }
+        clearLoginFailures(requestIp, phone);
         const activeProfile = await getUserProfile(data.user.id);
         return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: { id: data.user.id, name: activeProfile.name, role: activeProfile.role } };
       }),
