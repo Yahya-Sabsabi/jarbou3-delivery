@@ -1,0 +1,1 @@
+const fs=require('fs'); const s=fs.readFileSync('/home/ubuntu/jarbou3-delivery/components/jarbou3-app.tsx','utf8'); console.log({first:s.indexOf('if (stage === "choose")'),last:s.lastIndexOf('if (stage === "choose")'),form:s.lastIndexOf('if (stage === "form")'),len:s.length});

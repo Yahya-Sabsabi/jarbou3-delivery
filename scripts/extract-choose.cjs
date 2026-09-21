@@ -1,0 +1,1 @@
+const fs=require('fs'); const s=fs.readFileSync('/home/ubuntu/jarbou3-delivery/components/jarbou3-app.tsx','utf8'); const start=s.indexOf('if (stage === "choose")'); fs.writeFileSync('/home/ubuntu/choose-snippet.txt', s.slice(start,start+2600)); console.log(start);
