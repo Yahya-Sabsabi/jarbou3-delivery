@@ -483,22 +483,22 @@ export const appRouter = router({
       }),
 
     submitOnboarding: publicProcedure
-      .input(z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().trim().min(8).max(24), requestedRole: z.enum(["customer", "driver"]), vehicleType: z.enum(["motorcycle", "electric_scooter"]).optional(), personalPhoto: imageInput.optional(), identityPhoto: imageInput.optional() }))
+      .input(z.object({ fullName: z.string().trim().min(2).max(100), phone: z.string().trim().min(8).max(24), requestedRole: z.enum(["customer", "driver"]), vehicleType: z.enum(["motorcycle", "electric_scooter"]).optional(), personalPhoto: imageInput.optional(), identityPhoto: imageInput.optional(), vehiclePhoto: imageInput.optional() }))
       .mutation(async ({ input, ctx }) => {
         const phone = normalizeJarbou3Phone(input.phone);
         if (!phone) throw new Error("INVALID_PHONE");
         assertOnboardingRateLimit(`submit:${ctx.req.ip ?? "unknown"}:${phone}`);
         if (input.requestedRole === "driver" && !input.vehicleType) throw new Error("VEHICLE_TYPE_REQUIRED");
-        if (input.requestedRole === "customer" && (input.personalPhoto || input.identityPhoto)) throw new Error("CUSTOMER_DOCUMENTS_NOT_ALLOWED");
+        if (input.requestedRole === "customer" && (input.personalPhoto || input.identityPhoto || input.vehiclePhoto)) throw new Error("CUSTOMER_DOCUMENTS_NOT_ALLOWED");
         const service = asService();
         const { data: teamInvite, error: teamInviteError } = input.requestedRole === "driver" ? await service.from("driver_registration_invites").select("id,full_name,is_active,claimed_at").eq("phone", phone).maybeSingle() : { data: null, error: null };
         if (teamInviteError) throw new Error(teamInviteError.message);
         const isPreapprovedTeamDriver = Boolean(teamInvite && teamInvite.is_active && !teamInvite.claimed_at && teamInvite.full_name.trim() === input.fullName.trim());
-        if (input.requestedRole === "driver" && !isPreapprovedTeamDriver && (!input.personalPhoto || !input.identityPhoto)) throw new Error("DRIVER_DOCUMENTS_REQUIRED");
+        if (input.requestedRole === "driver" && !isPreapprovedTeamDriver && (!input.personalPhoto || !input.identityPhoto || !input.vehiclePhoto)) throw new Error("DRIVER_DOCUMENTS_REQUIRED");
         const { data: registeredUser, error: registeredUserError } = await service.from("users").select("id").eq("phone", phone).maybeSingle();
         if (registeredUserError) throw new Error(registeredUserError.message);
         if (registeredUser) throw new Error("PHONE_ALREADY_REGISTERED");
-        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,full_name,status,requested_role,code_expires_at,retry_after,personal_photo_path,identity_photo_path").eq("phone", phone).maybeSingle();
+        const { data: existing, error: existingError } = await service.from("account_verification_requests").select("id,full_name,status,requested_role,code_expires_at,retry_after,personal_photo_path,identity_photo_path,vehicle_photo_path").eq("phone", phone).maybeSingle();
         if (existingError) throw new Error(existingError.message);
         if (existing && (existing.full_name.trim() !== input.fullName.trim() || existing.requested_role !== input.requestedRole)) throw new Error("PHONE_ALREADY_REGISTERED");
         if (existing?.status === "verified") throw new Error("ACCOUNT_ALREADY_VERIFIED");
@@ -513,18 +513,22 @@ export const appRouter = router({
             const { error: claimError } = await service.from("driver_registration_invites").update({ claimed_at: new Date().toISOString(), activation_request_id: existing.id, updated_at: new Date().toISOString() }).eq("id", teamInvite.id);
             if (claimError) throw new Error(claimError.message);
           }
-          if (input.requestedRole === "driver" && input.personalPhoto && input.identityPhoto && (!existing.personal_photo_path || !existing.identity_photo_path)) {
+          if (input.requestedRole === "driver" && input.personalPhoto && input.identityPhoto && input.vehiclePhoto && (!existing.personal_photo_path || !existing.identity_photo_path || !existing.vehicle_photo_path)) {
             const personal = decodeSmallPrivateImage(input.personalPhoto);
             const identity = decodeSmallPrivateImage(input.identityPhoto);
+            const vehicle = decodeSmallPrivateImage(input.vehiclePhoto);
             const prefix = `onboarding-documents/${existing.id}`;
-            const personalPath = `${prefix}/personal-${Date.now()}.${personal.contentType.endsWith("png") ? "png" : "jpg"}`;
-            const identityPath = `${prefix}/identity-${Date.now()}.${identity.contentType.endsWith("png") ? "png" : "jpg"}`;
-            const [personalUpload, identityUpload] = await Promise.all([
+            const timestamp = Date.now();
+            const personalPath = `${prefix}/personal-${timestamp}.${personal.contentType.endsWith("png") ? "png" : "jpg"}`;
+            const identityPath = `${prefix}/identity-${timestamp}.${identity.contentType.endsWith("png") ? "png" : "jpg"}`;
+            const vehiclePath = `${prefix}/vehicle-${timestamp}.${vehicle.contentType.endsWith("png") ? "png" : "jpg"}`;
+            const [personalUpload, identityUpload, vehicleUpload] = await Promise.all([
               service.storage.from("jarbou3-private").upload(personalPath, personal.buffer, { contentType: personal.contentType, upsert: false }),
               service.storage.from("jarbou3-private").upload(identityPath, identity.buffer, { contentType: identity.contentType, upsert: false }),
+              service.storage.from("jarbou3-private").upload(vehiclePath, vehicle.buffer, { contentType: vehicle.contentType, upsert: false }),
             ]);
-            if (personalUpload.error || identityUpload.error) throw new Error(personalUpload.error?.message ?? identityUpload.error?.message ?? "DOCUMENT_UPLOAD_FAILED");
-            const { error: documentUpdateError } = await service.from("account_verification_requests").update({ personal_photo_path: personalPath, identity_photo_path: identityPath }).eq("id", existing.id);
+            if (personalUpload.error || identityUpload.error || vehicleUpload.error) throw new Error(personalUpload.error?.message ?? identityUpload.error?.message ?? vehicleUpload.error?.message ?? "DOCUMENT_UPLOAD_FAILED");
+            const { error: documentUpdateError } = await service.from("account_verification_requests").update({ personal_photo_path: personalPath, identity_photo_path: identityPath, vehicle_photo_path: vehiclePath }).eq("id", existing.id);
             if (documentUpdateError) throw new Error(documentUpdateError.message);
           }
           return { requestId: existing.id, status: existing.status, requestedRole: existing.requested_role, codeExpiresAt: existing.code_expires_at, retryAfter: existing.retry_after };
@@ -532,18 +536,22 @@ export const appRouter = router({
         const { data, error } = await service.from("account_verification_requests").insert({ full_name: input.fullName, phone, requested_role: input.requestedRole, vehicle_type: input.requestedRole === "driver" ? input.vehicleType : null, preapproved_by_admin: isPreapprovedTeamDriver }).select("id,status,requested_role,code_expires_at,retry_after").single();
         if (error || !data) throw new Error(error?.message ?? "ONBOARDING_REQUEST_FAILED");
         if (input.requestedRole === "driver" && isPreapprovedTeamDriver) await service.from("driver_registration_invites").update({ claimed_at: new Date().toISOString(), activation_request_id: data.id, updated_at: new Date().toISOString() }).eq("id", teamInvite!.id);
-        if (input.requestedRole === "driver" && input.personalPhoto && input.identityPhoto) {
+        if (input.requestedRole === "driver" && input.personalPhoto && input.identityPhoto && input.vehiclePhoto) {
           const personal = decodeSmallPrivateImage(input.personalPhoto);
           const identity = decodeSmallPrivateImage(input.identityPhoto);
+          const vehicle = decodeSmallPrivateImage(input.vehiclePhoto);
           const prefix = `onboarding-documents/${data.id}`;
-          const personalPath = `${prefix}/personal-${Date.now()}.${personal.contentType.endsWith("png") ? "png" : "jpg"}`;
-          const identityPath = `${prefix}/identity-${Date.now()}.${identity.contentType.endsWith("png") ? "png" : "jpg"}`;
-          const [personalUpload, identityUpload] = await Promise.all([
+          const timestamp = Date.now();
+          const personalPath = `${prefix}/personal-${timestamp}.${personal.contentType.endsWith("png") ? "png" : "jpg"}`;
+          const identityPath = `${prefix}/identity-${timestamp}.${identity.contentType.endsWith("png") ? "png" : "jpg"}`;
+          const vehiclePath = `${prefix}/vehicle-${timestamp}.${vehicle.contentType.endsWith("png") ? "png" : "jpg"}`;
+          const [personalUpload, identityUpload, vehicleUpload] = await Promise.all([
             service.storage.from("jarbou3-private").upload(personalPath, personal.buffer, { contentType: personal.contentType, upsert: false }),
             service.storage.from("jarbou3-private").upload(identityPath, identity.buffer, { contentType: identity.contentType, upsert: false }),
+            service.storage.from("jarbou3-private").upload(vehiclePath, vehicle.buffer, { contentType: vehicle.contentType, upsert: false }),
           ]);
-          if (personalUpload.error || identityUpload.error) throw new Error(personalUpload.error?.message ?? identityUpload.error?.message ?? "DOCUMENT_UPLOAD_FAILED");
-          const { error: documentUpdateError } = await service.from("account_verification_requests").update({ personal_photo_path: personalPath, identity_photo_path: identityPath }).eq("id", data.id);
+          if (personalUpload.error || identityUpload.error || vehicleUpload.error) throw new Error(personalUpload.error?.message ?? identityUpload.error?.message ?? vehicleUpload.error?.message ?? "DOCUMENT_UPLOAD_FAILED");
+          const { error: documentUpdateError } = await service.from("account_verification_requests").update({ personal_photo_path: personalPath, identity_photo_path: identityPath, vehicle_photo_path: vehiclePath }).eq("id", data.id);
           if (documentUpdateError) throw new Error(documentUpdateError.message);
         }
         return { requestId: data.id, status: data.status, requestedRole: data.requested_role, codeExpiresAt: data.code_expires_at, retryAfter: data.retry_after };
@@ -615,7 +623,7 @@ export const appRouter = router({
         const authUser = await getAuthenticatedUser(input.accessToken);
         const service = asService();
         const { data: request, error } = await service.from("account_verification_requests")
-          .select("id,full_name,requested_role,vehicle_type,personal_photo_path,identity_photo_path")
+          .select("id,full_name,requested_role,vehicle_type,personal_photo_path,identity_photo_path,vehicle_photo_path")
           .eq("auth_user_id", authUser.id)
           .eq("status", "password_pending")
           .maybeSingle();
@@ -623,8 +631,8 @@ export const appRouter = router({
         const { error: passwordError } = await service.auth.admin.updateUserById(authUser.id, { password: input.password, email_confirm: true });
         if (passwordError) throw new Error(passwordError.message);
         if (request.requested_role === "driver") {
-          if (!request.personal_photo_path || !request.identity_photo_path) throw new Error("DRIVER_DOCUMENTS_REQUIRED");
-          const { error: driverVerificationError } = await service.from("drivers_verification").upsert({ user_id: authUser.id, personal_photo_path: request.personal_photo_path, id_photo_path: request.identity_photo_path, status: "pending", activation_code_hash: null, activated_at: null }, { onConflict: "user_id" });
+          if (!request.personal_photo_path || !request.identity_photo_path || !request.vehicle_photo_path) throw new Error("DRIVER_DOCUMENTS_REQUIRED");
+          const { error: driverVerificationError } = await service.from("drivers_verification").upsert({ user_id: authUser.id, personal_photo_path: request.personal_photo_path, id_photo_path: request.identity_photo_path, vehicle_photo_path: request.vehicle_photo_path, status: "pending", activation_code_hash: null, activated_at: null }, { onConflict: "user_id" });
           if (driverVerificationError) throw new Error("DRIVER_VERIFICATION_PREPARE_FAILED");
         }
         const { error: profileError } = await service.from("users").update({ is_active: true, role: request.requested_role, name: request.full_name, vehicle_type: request.requested_role === "driver" ? request.vehicle_type : null }).eq("id", authUser.id);

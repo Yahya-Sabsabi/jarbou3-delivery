@@ -1,0 +1,10 @@
+const fs = require('fs');
+const appPath = '/home/ubuntu/jarbou3-delivery/components/jarbou3-app.tsx';
+const routerPath = '/home/ubuntu/jarbou3-delivery/server/routers.ts';
+let app = fs.readFileSync(appPath, 'utf8');
+app = app.replace('(!onboardingPersonalPhoto || !onboardingIdentityPhoto))} /><AuthLink', '(!onboardingPersonalPhoto || !onboardingIdentityPhoto || !onboardingVehiclePhoto))} /><AuthLink');
+fs.writeFileSync(appPath, app);
+let router = fs.readFileSync(routerPath, 'utf8');
+router = router.replace('if (input.requestedRole === "customer" && (input.personalPhoto || input.identityPhoto))', 'if (input.requestedRole === "customer" && (input.personalPhoto || input.identityPhoto || input.vehiclePhoto))');
+fs.writeFileSync(routerPath, router);
+console.log('Fixed vehicle photo requirement and customer payload guard.');
