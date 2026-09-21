@@ -406,8 +406,9 @@ export function registerAdminWebRoutes(app: Express) {
       requireSiteSession(req);
       const now = new Date().toISOString();
       const passwordHash = await bcrypt.hash(parsed.data.password, 12);
-      const { error } = await asService().from("admin_site_settings").update({ password_hash: passwordHash, password_set_at: now, updated_at: now }).eq("singleton", true);
+      const { data: updatedSettings, error } = await asService().from("admin_site_settings").update({ password_hash: passwordHash, password_set_at: now, updated_at: now }).eq("singleton", true).select("singleton").maybeSingle();
       if (error) throw new Error(error.message);
+      if (!updatedSettings) throw new Error("SITE_PASSWORD_CONFIGURATION_ERROR");
       loginAttempts.clear();
       res.cookie(SITE_COOKIE, createSiteSession(), cookieOptions(req));
       res.json({ changed: true });

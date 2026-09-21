@@ -665,6 +665,7 @@ function appErrorCode(error: { message?: string }): string {
     "DOCUMENT_UPLOAD_FAILED",
     "SIGN_IN_PASSWORD_INVALID",
     "LOGIN_RATE_LIMITED",
+    "LOGIN_ACCOUNT_LOCKED",
     "SIGN_IN_IDENTITY_LOOKUP_FAILED",
     "SIGN_IN_IDENTITY_MIGRATION_FAILED",
     "SIGN_IN_ACCOUNT_NOT_FOUND",
@@ -932,6 +933,8 @@ export function Jarbou3App() {
         ? "تعذر الوصول إلى الخادم. بدّل بين بيانات الهاتف والواي فاي، وأعد المحاولة بعد لحظات؛ لم تتغير كلمة المرور أو الحساب."
         : code === "INVALID_PHONE"
         ? "أدخل رقم WhatsApp صحيحاً، مثل 09xxxxxxxx أو +9639xxxxxxxx."
+        : code === "LOGIN_ACCOUNT_LOCKED"
+          ? "تم حظر تسجيل الدخول لهذا الحساب بعد خمس محاولات غير صحيحة. استخدم «نسيت كلمة المرور؟» لإعادة تعيين كلمة المرور وفتح الحساب."
         : code === "LOGIN_RATE_LIMITED"
           ? "تم إيقاف محاولات تسجيل الدخول مؤقتاً بعد خمس محاولات غير صحيحة. انتظر 15 دقيقة ثم حاول مجدداً، أو استخدم «نسيت كلمة المرور؟»."
         : code === "SIGN_IN_PASSWORD_INVALID"

@@ -68,6 +68,24 @@ function clearLoginFailures(ip: string, phone: string) {
   loginWindows.delete(`phone:${phone}`);
   loginWindows.delete(`combined:${ip}:${phone}`);
 }
+async function assertPersistentLoginAllowed(phone: string) {
+  const { data, error } = await asService().from("account_login_security").select("failed_attempts,locked_at").eq("phone", phone).maybeSingle();
+  if (error) throw new Error("LOGIN_SECURITY_UNAVAILABLE");
+  if (data?.locked_at) throw new Error("LOGIN_ACCOUNT_LOCKED");
+}
+async function recordPersistentLoginFailure(phone: string) {
+  const service = asService();
+  const { data: current, error: readError } = await service.from("account_login_security").select("failed_attempts,locked_at").eq("phone", phone).maybeSingle();
+  if (readError) throw new Error("LOGIN_SECURITY_UNAVAILABLE");
+  const failedAttempts = Math.min(5, Number(current?.failed_attempts ?? 0) + 1);
+  const lockedAt = failedAttempts >= 5 ? current?.locked_at ?? new Date().toISOString() : null;
+  const { error } = await service.from("account_login_security").upsert({ phone, failed_attempts: failedAttempts, locked_at: lockedAt, updated_at: new Date().toISOString() }, { onConflict: "phone" });
+  if (error) throw new Error("LOGIN_SECURITY_UNAVAILABLE");
+}
+async function clearPersistentLoginLock(phone: string) {
+  const { error } = await asService().from("account_login_security").delete().eq("phone", phone);
+  if (error) throw new Error("LOGIN_SECURITY_UNAVAILABLE");
+}
 function failOnboardingVerification(stage: "PROFILE_LOOKUP_FAILED" | "AUTH_ACCOUNT_UPDATE_FAILED" | "AUTH_ACCOUNT_CREATE_FAILED" | "PROFILE_UPDATE_FAILED" | "VERIFICATION_UPDATE_FAILED" | "SESSION_CREATE_FAILED"): never {
   // لا نسجل رقماً أو رمزاً أو تجزئة؛ يكفي اسم المرحلة ليعرف الدعم أين توقف المسار.
   console.error(`[Jarbou3] Onboarding verification failed at ${stage}`);
@@ -330,6 +348,7 @@ export const appRouter = router({
         if (!phone) throw new Error("INVALID_PHONE");
         const requestIp = ctx.req.ip ?? "unknown";
         assertLoginRateLimit(requestIp, phone);
+        await assertPersistentLoginAllowed(phone);
         const canonicalEmail = authEmailForPhone(phone);
         const publicAuth = asPublic();
         let authResult = await publicAuth.auth.signInWithPassword({ email: canonicalEmail, password: input.password });
@@ -345,7 +364,7 @@ export const appRouter = router({
             console.error(`[Jarbou3] Sign-in profile lookup failed: ${profileError.code ?? "unknown"}`);
             throw new Error("SIGN_IN_PROFILE_LOOKUP_FAILED");
           }
-          if (!profile) { recordLoginFailure(requestIp, phone); throw new Error("SIGN_IN_ACCOUNT_NOT_FOUND"); }
+          if (!profile) { recordLoginFailure(requestIp, phone); await recordPersistentLoginFailure(phone); throw new Error("SIGN_IN_ACCOUNT_NOT_FOUND"); }
           const { data: authRecord, error: authRecordError } = await service.auth.admin.getUserById(profile.id);
           if (authRecordError || !authRecord.user) throw new Error("SIGN_IN_IDENTITY_LOOKUP_FAILED");
           if (authRecord.user.email !== canonicalEmail) {
@@ -358,10 +377,11 @@ export const appRouter = router({
         const { data, error } = authResult;
         if (error || !data.session) {
           console.warn(`[Jarbou3] Sign-in rejected: ${error?.code ?? "NO_SESSION"}`);
-          if (error?.code === "invalid_credentials") recordLoginFailure(requestIp, phone);
+          if (error?.code === "invalid_credentials") { recordLoginFailure(requestIp, phone); await recordPersistentLoginFailure(phone); }
           throw new Error(error?.code === "invalid_credentials" ? "SIGN_IN_PASSWORD_INVALID" : "SIGN_IN_FAILED");
         }
         clearLoginFailures(requestIp, phone);
+        await clearPersistentLoginLock(phone);
         const activeProfile = await getUserProfile(data.user.id);
         return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: { id: data.user.id, name: activeProfile.name, role: activeProfile.role } };
       }),
@@ -448,6 +468,7 @@ export const appRouter = router({
         const profile = await getUserProfile(session.user.id);
         const { error: closeError } = await service.from("account_recovery_requests").update({ status: "completed", reset_token_hash: null, reset_token_expires_at: null }).eq("id", request.id);
         if (closeError) throw new Error("RECOVERY_COMPLETE_FAILED");
+        await clearPersistentLoginLock(input.phone);
         const { error: onboardingSyncError } = await service.from("account_verification_requests").update({ status: "verified" }).eq("auth_user_id", request.user_id).eq("status", "password_pending");
         if (onboardingSyncError) console.warn("[Jarbou3] Recovery completed but pending onboarding status could not be synchronized");
         return { accessToken: session.session.access_token, refreshToken: session.session.refresh_token, user: { id: session.user.id, name: profile.name, role: profile.role } };

@@ -29,6 +29,10 @@ const mocks = vi.hoisted(() => {
           },
         };
       }
+      if (table === "account_login_security") {
+        const deleted = { eq: async () => ({ error: null }) };
+        return { delete: () => deleted };
+      }
       if (table === "account_verification_requests") {
         return {
           update: (value: unknown) => {
