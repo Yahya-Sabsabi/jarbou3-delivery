@@ -1,0 +1,37 @@
+const fs = require('fs');
+const serverPath = '/home/ubuntu/jarbou3-delivery/server/admin-web.ts';
+let server = fs.readFileSync(serverPath, 'utf8');
+server = server.replace('z.enum(["personal", "identity"]).safeParse(req.params.kind)', 'z.enum(["personal", "identity", "vehicle"]).safeParse(req.params.kind)');
+server = server.replace('select("personal_photo_path,identity_photo_path").eq("id", requestId.data).single()', 'select("personal_photo_path,identity_photo_path,vehicle_photo_path").eq("id", requestId.data).single()');
+server = server.replace('const path = kind.data === "personal" ? request?.personal_photo_path : request?.identity_photo_path;', 'const path = kind.data === "personal" ? request?.personal_photo_path : kind.data === "identity" ? request?.identity_photo_path : request?.vehicle_photo_path;');
+server = server.replace('const kind = z.enum(["personal", "identity"]).safeParse(req.params.kind);', 'const kind = z.enum(["personal", "identity", "vehicle"]).safeParse(req.params.kind);');
+server = server.replace('select("personal_photo_path,id_photo_path").eq("user_id", userId.data).maybeSingle()', 'select("personal_photo_path,id_photo_path,vehicle_photo_path").eq("user_id", userId.data).maybeSingle()');
+server = server.replace('select("personal_photo_path,identity_photo_path").eq("auth_user_id", userId.data)', 'select("personal_photo_path,identity_photo_path,vehicle_photo_path").eq("auth_user_id", userId.data)');
+server = server.replace('const path = kind.data === "personal" ? driverResult.data?.personal_photo_path ?? onboardingResult.data?.personal_photo_path : driverResult.data?.id_photo_path ?? onboardingResult.data?.identity_photo_path;', 'const path = kind.data === "personal" ? driverResult.data?.personal_photo_path ?? onboardingResult.data?.personal_photo_path : kind.data === "identity" ? driverResult.data?.id_photo_path ?? onboardingResult.data?.identity_photo_path : driverResult.data?.vehicle_photo_path ?? onboardingResult.data?.vehicle_photo_path;');
+if (!server.includes('z.enum(["personal", "identity", "vehicle"])')) throw new Error('server enum update failed');
+fs.writeFileSync(serverPath, server);
+
+const appPath = '/home/ubuntu/jarbou3-delivery/admin-site/app.js';
+let app = fs.readFileSync(appPath, 'utf8');
+const pendingOld = 'data-pending-document="identity" data-request-id="${escapeHtml(request.id)}">صورة الهوية</button></span>`';
+const pendingNew = 'data-pending-document="identity" data-request-id="${escapeHtml(request.id)}">صورة الهوية</button><button class="text-button" data-pending-document="vehicle" data-request-id="${escapeHtml(request.id)}">صورة الدراجة</button></span>`';
+if (!app.includes(pendingOld)) throw new Error('pending document UI not found');
+app = app.replace(pendingOld, pendingNew);
+const accountOld = 'data-account-document="identity" data-account-id="${escapeHtml(account.id)}">هوية</button>`';
+const accountNew = 'data-account-document="identity" data-account-id="${escapeHtml(account.id)}">هوية</button><button class="text-button" data-account-document="vehicle" data-account-id="${escapeHtml(account.id)}">دراجة</button>`';
+if (!app.includes(accountOld)) throw new Error('account document UI not found');
+app = app.replace(accountOld, accountNew);
+const labelOld = 'button.textContent = button.dataset.accountDocument === "personal" ? "عرض الصورة الشخصية" : "عرض صورة الهوية";';
+const labelNew = 'button.textContent = button.dataset.accountDocument === "personal" ? "عرض الصورة الشخصية" : button.dataset.accountDocument === "identity" ? "عرض صورة الهوية" : "عرض صورة الدراجة";';
+if (!app.includes(labelOld)) throw new Error('account document label hook not found');
+app = app.replace(labelOld, labelNew);
+fs.writeFileSync(appPath, app);
+
+const root = '/home/ubuntu/jarbou3-delivery/admin-site';
+const version = '20260921-14';
+const indexPath = `${root}/index.html`;
+let index = fs.readFileSync(indexPath, 'utf8').replace(/app\.20260921-13\.js/g, `app.${version}.js`).replace(/live-map\.20260921-13\.js/g, `live-map.${version}.js`);
+fs.writeFileSync(indexPath, index);
+fs.copyFileSync(appPath, `${root}/app.${version}.js`);
+fs.copyFileSync(`${root}/live-map.20260921-13.js`, `${root}/live-map.${version}.js`);
+console.log(`Added vehicle document preview and bumped admin app to ${version}.`);

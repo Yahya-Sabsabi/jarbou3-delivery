@@ -1,0 +1,88 @@
+const ADMIN_LIBERTY_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+const ADMIN_HAMA_CENTER = [36.76, 35.13];
+const ADMIN_HAMA_BOUNDS = [[36.60, 35.04], [36.91, 35.23]];
+
+let fleetOperationsMap = null;
+let fleetMapTarget = null;
+let fleetPayload = null;
+let fleetRouteSourceReady = false;
+let fleetDriverMarkers = new Map();
+let fleetCustomerMarkers = new Map();
+let fleetStopMarkers = [];
+let fleetRefreshInFlight = false;
+let placesMap = null;
+let placesMapTarget = null;
+let placesMarker = null;
+let placesSavedMarkers = new Map();
+let adminLibertyStylePromise = null;
+let fleetMapMountPending = false;
+let placesMapMountPending = false;
+let fleetMapResizeObserver = null;
+
+function fleetEscape(value) { return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char])); }
+function fleetMoney(value) { return `${new Intl.NumberFormat("ar-SY").format(Number(value || 0))} ل.س`; }
+function fleetMinutes(order) { if (!order?.startedAt) return "لم يبدأ عداد الوقت بعد"; const seconds = Math.max(0, Math.floor((Date.now() - new Date(order.startedAt).getTime()) / 1000)); return `${Math.max(1, Math.floor(seconds / 60))} دقيقة منذ قبول المهمة`; }
+function finitePoint(point) { const latitude = Number(point?.latitude ?? point?.last_location_lat ?? point?.lastLocationLat); const longitude = Number(point?.longitude ?? point?.last_location_lng ?? point?.lastLocationLng); return Number.isFinite(latitude) && Number.isFinite(longitude) ? { ...point, latitude, longitude } : null; }
+function maplibreReady(target) { return Boolean(target && window.maplibregl && typeof window.maplibregl.Map === "function"); }
+function maplibreSupported() { try { if (!window.maplibregl) return false; if (typeof window.maplibregl.supported === "function") return window.maplibregl.supported({ failIfMajorPerformanceCaveat: false }); const canvas = document.createElement("canvas"); return Boolean(canvas.getContext("webgl2") || canvas.getContext("webgl") || canvas.getContext("experimental-webgl")); } catch { return false; } }
+function mapError(target, text = "تعذر تحميل خريطة MapLibre. تحقق من الاتصال ودعم WebGL ثم أعد المحاولة.") { if (!target) return; target.querySelector(".map-empty")?.remove(); target.insertAdjacentHTML("beforeend", `<p class="map-empty">${fleetEscape(text)}</p>`); }
+function makeMarkerElement(className, content) { const element = document.createElement("div"); element.className = className; element.innerHTML = content; return element; }
+function mapPopup(html) { return new window.maplibregl.Popup({ closeButton: true, closeOnClick: true, offset: 18, maxWidth: "320px" }).setHTML(html); }
+
+function loadAdminLibertyStyle() {
+  if (!adminLibertyStylePromise) {
+    adminLibertyStylePromise = fetch(ADMIN_LIBERTY_STYLE).then((response) => { if (!response.ok) throw new Error(`LIBERTY_STYLE_${response.status}`); return response.json(); }).then(async (style) => {
+      const source = style?.sources?.openmaptiles;
+      if (source?.url && !source.tiles) {
+        const tileJsonResponse = await fetch(source.url);
+        if (!tileJsonResponse.ok) throw new Error(`LIBERTY_TILEJSON_${tileJsonResponse.status}`);
+        const tileJson = await tileJsonResponse.json();
+        if (Array.isArray(tileJson.tiles) && tileJson.tiles.length) { source.tiles = tileJson.tiles; source.minzoom = Number.isFinite(Number(tileJson.minzoom)) ? Number(tileJson.minzoom) : 0; source.maxzoom = Number.isFinite(Number(tileJson.maxzoom)) ? Number(tileJson.maxzoom) : 14; delete source.url; }
+      }
+      return style;
+    });
+  }
+  return adminLibertyStylePromise;
+}
+
+function createAdminMap(target, style, onLoad, onFailure) {
+  if (!maplibreReady(target) || !maplibreSupported()) return null;
+  let settled = false;
+  let failureTimer = null;
+  let map;
+  const fail = () => { if (settled) return; settled = true; if (failureTimer) window.clearTimeout(failureTimer); try { map?.remove(); } catch {} onFailure?.(); };
+  try {
+    map = new window.maplibregl.Map({ container: target, style, center: ADMIN_HAMA_CENTER, zoom: 12, minZoom: 11, maxZoom: 21, maxBounds: ADMIN_HAMA_BOUNDS, attributionControl: true, dragRotate: false, touchPitch: false, doubleClickZoom: true });
+    map.addControl(new window.maplibregl.NavigationControl({ showCompass: true }), "top-right");
+    map.addControl(new window.maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserHeading: true }), "top-right");
+    map.once("load", () => { settled = true; if (failureTimer) window.clearTimeout(failureTimer); map._optimusLoaded = true; map.resize(); onLoad?.(map); });
+    map.on("error", (event) => { if (!settled) console.warn("MapLibre resource error", event?.error || event); });
+    failureTimer = window.setTimeout(fail, 9000);
+    return map;
+  } catch (error) { console.warn("MapLibre initialization failed", error); onFailure?.(); return null; }
+}
+
+function clearMarkerStore(store) { for (const marker of store.values()) marker.remove(); store.clear(); }
+function clearFleetStops() { fleetStopMarkers.forEach((marker) => marker.remove()); fleetStopMarkers = []; }
+function clearFleetRoute() { if (fleetOperationsMap?.getSource("fleet-route")) fleetOperationsMap.getSource("fleet-route").setData({ type: "FeatureCollection", features: [] }); clearFleetStops(); }
+function ensureFleetRouteLayer(map) { if (!map.getSource("fleet-route")) map.addSource("fleet-route", { type: "geojson", data: { type: "FeatureCollection", features: [] } }); if (!map.getLayer("fleet-route-line")) map.addLayer({ id: "fleet-route-line", type: "line", source: "fleet-route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#24755E", "line-width": 5, "line-opacity": 0.9 } }); fleetRouteSourceReady = true; }
+function driverPopup(driver) { const order = driver.activeOrder; const detail = order ? `<b>مهمة نشطة</b><span>${fleetEscape(order.sourceAddress)} ← ${fleetEscape(order.destinationAddress)}</span><span>الوقت: ${fleetEscape(fleetMinutes(order))}</span><span>المسافة الفعلية: ${(Number(order.actualDistanceM || 0) / 1000).toFixed(1)} كم</span><span>التكلفة التقديرية: ${fleetMoney(order.estimatedPrice)}</span>` : `<span>${driver.lastLocationAt ? `آخر تحديث: ${new Date(driver.lastLocationAt).toLocaleString("ar-SY")}` : "لا يوجد وقت تحديث"}</span><span>لا توجد مهمة نشطة حالياً.</span>`; return `<div class="map-driver-popup"><strong>${fleetEscape(driver.name || "سفير جربوع")}</strong>${detail}</div>`; }
+function customerPopup(customer) { return `<div class="map-driver-popup"><strong>${fleetEscape(customer.name || "عميل")}</strong><span>عميل</span>${customer.lastLocationAt ? `<span>آخر تحديث: ${new Date(customer.lastLocationAt).toLocaleString("ar-SY")}</span>` : ""}</div>`; }
+function showFleetRoute(driver) { if (!fleetOperationsMap || !fleetRouteSourceReady || !driver?.activeOrder) return; clearFleetRoute(); const order = driver.activeOrder; const route = (order.route || []).map((point) => [Number(point.longitude), Number(point.latitude)]).filter((point) => Number.isFinite(point[0]) && Number.isFinite(point[1])); const current = [Number(driver.longitude), Number(driver.latitude)]; if (Number.isFinite(current[0]) && Number.isFinite(current[1])) route.push(current); if (route.length > 1) fleetOperationsMap.getSource("fleet-route").setData({ type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "LineString", coordinates: route }, properties: {} }] }); [[order.source, "استلام", "map-stop-label source"], [order.destination, "وجهة", "map-stop-label destination"]].forEach(([point, label, className]) => { const lng = Number(point?.longitude); const lat = Number(point?.latitude); if (!Number.isFinite(lng) || !Number.isFinite(lat)) return; fleetStopMarkers.push(new window.maplibregl.Marker({ element: makeMarkerElement(className, `<span>${label}</span>`), anchor: "center" }).setLngLat([lng, lat]).addTo(fleetOperationsMap)); }); }
+function syncFleetMarker(store, point, kind, popupHtml) { const id = String(point.id); const position = [point.longitude, point.latitude]; const existing = store.get(id); if (existing) { existing.setLngLat(position); existing.setPopup(mapPopup(popupHtml)); return existing; } const initial = fleetEscape(String(point.name || (kind === "driver" ? "س" : "ع")).slice(0, 1)); const element = kind === "driver" ? makeMarkerElement("driver-map-marker", `<span class="driver-marker-dot">${initial}</span>`) : makeMarkerElement("customer-map-marker", `<span class="customer-marker-dot"><b>ع</b></span>`); const marker = new window.maplibregl.Marker({ element, anchor: "center" }).setLngLat(position).setPopup(mapPopup(popupHtml)).addTo(fleetOperationsMap); if (kind === "driver") marker.getElement().addEventListener("click", () => showFleetRoute(point)); store.set(id, marker); return marker; }
+function syncFleetMarkers(points, store, kind) { const visible = new Set(); points.forEach((point) => { visible.add(String(point.id)); syncFleetMarker(store, point, kind, kind === "driver" ? driverPopup(point) : customerPopup(point)); }); for (const [id, marker] of store.entries()) if (!visible.has(id)) { marker.remove(); store.delete(id); } }
+function fitFleetPoints(map, points, filterChanged) { if (!filterChanged || !points.length) return; if (points.length === 1) { map.flyTo({ center: [points[0].longitude, points[0].latitude], zoom: 14, duration: 450 }); return; } const bounds = points.reduce((box, point) => box.extend([point.longitude, point.latitude]), new window.maplibregl.LngLatBounds([points[0].longitude, points[0].latitude], [points[0].longitude, points[0].latitude])); map.fitBounds(bounds, { padding: 38, maxZoom: 14, duration: 450 }); }
+function getFleetFilter() { return document.querySelector("#fleet-map-filter")?.value || "all"; }
+function bindFleetFilter() { const filterControl = document.querySelector("#fleet-map-filter"); if (filterControl && filterControl.dataset.bound !== "true") { filterControl.dataset.bound = "true"; filterControl.addEventListener("change", () => { if (fleetOperationsMap) renderFleetPayload(fleetPayload); }); } }
+function bindFleetSummaryActions(drivers) { document.querySelectorAll("[data-fleet-driver]").forEach((item) => { if (item.dataset.fleetBound === "true") return; item.dataset.fleetBound = "true"; item.addEventListener("click", () => { const point = drivers.find((driver) => String(driver.id) === item.dataset.fleetDriver); const marker = fleetDriverMarkers.get(item.dataset.fleetDriver); if (!point || !marker) return; showFleetRoute(point); marker.togglePopup(); fleetOperationsMap.flyTo({ center: marker.getLngLat(), zoom: Math.max(fleetOperationsMap.getZoom(), 15), duration: 450 }); }); }); }
+function renderFleetPayload(payload) { if (!fleetOperationsMap || !fleetOperationsMap._optimusLoaded || !document.querySelector("#fleet-map")) return; const target = document.querySelector("#fleet-map"); target.querySelector(".map-empty")?.remove(); ensureFleetRouteLayer(fleetOperationsMap); const filter = getFleetFilter(); const filterChanged = fleetOperationsMap._optimusFleetFilter !== filter; fleetOperationsMap._optimusFleetFilter = filter; const driverPoints = (payload?.drivers || []).map(finitePoint).filter(Boolean); const customerPoints = (payload?.customers || []).map(finitePoint).filter(Boolean); const drivers = filter === "customers" ? [] : driverPoints; const customers = filter === "drivers" ? [] : customerPoints; syncFleetMarkers(drivers, fleetDriverMarkers, "driver"); syncFleetMarkers(customers, fleetCustomerMarkers, "customer"); const visiblePoints = [...drivers, ...customers]; fitFleetPoints(fleetOperationsMap, visiblePoints, filterChanged); if (!visiblePoints.length) mapError(target, "لا توجد مواقع GPS حديثة ضمن التصفية الحالية."); bindFleetSummaryActions(drivers); }
+function destroyFleetMap() { fleetMapResizeObserver?.disconnect(); fleetMapResizeObserver = null; if (fleetOperationsMap) { try { fleetOperationsMap.remove(); } catch {} } fleetOperationsMap = null; fleetMapTarget = null; clearMarkerStore(fleetDriverMarkers); clearMarkerStore(fleetCustomerMarkers); clearFleetStops(); fleetDriverMarkers = new Map(); fleetCustomerMarkers = new Map(); fleetRouteSourceReady = false; }
+window.installFleetOperationsMap = function installFleetOperationsMap(payload) { const target = document.querySelector("#fleet-map"); if (!target) { if (!adminView.hidden && state.currentView === "fleet") window.setTimeout(() => window.installFleetOperationsMap(payload), 150); return; } fleetPayload = payload; if (!maplibreReady(target) || !maplibreSupported()) { mapError(target); return; } if (!fleetOperationsMap || fleetMapTarget !== target) { if (fleetMapMountPending && fleetMapTarget === target) return; destroyFleetMap(); fleetMapTarget = target; target.innerHTML = ""; fleetMapMountPending = true; loadAdminLibertyStyle().then((style) => { if (fleetMapTarget !== target || !document.querySelector("#fleet-map")) return; fleetOperationsMap = createAdminMap(target, style, () => { fleetMapResizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(() => fleetOperationsMap?.resize()) : null; fleetMapResizeObserver?.observe(target); renderFleetPayload(fleetPayload); }, () => { destroyFleetMap(); mapError(target); }); if (!fleetOperationsMap) mapError(target); }).catch((error) => { console.warn("Liberty style load failed", error); mapError(target); }).finally(() => { fleetMapMountPending = false; }); } else if (fleetOperationsMap._optimusLoaded) renderFleetPayload(payload); bindFleetFilter(); };
+window.refreshFleetOperationsMap = async function refreshFleetOperationsMap() { if (fleetRefreshInFlight || state.currentView !== "fleet") return; fleetRefreshInFlight = true; try { const payload = await api("/admin/api/fleet-map"); if (state.currentView === "fleet" && document.querySelector("#fleet-map")) window.installFleetOperationsMap(payload); } catch (error) { if (error?.status === 401 || error?.status === 403) handleApiError(error); } finally { fleetRefreshInFlight = false; } };
+function syncPlacesMarkers(places) { const visible = new Set(); places.forEach((place) => { const point = finitePoint(place); if (!point) return; const id = String(place.id); visible.add(id); const position = [point.longitude, point.latitude]; const existing = placesSavedMarkers.get(id); if (existing) { existing.setLngLat(position); return; } const marker = new window.maplibregl.Marker({ element: makeMarkerElement("place-map-marker", "<span>⌖</span>"), anchor: "bottom" }).setLngLat(position).setPopup(mapPopup(`<div class="map-driver-popup"><strong>${fleetEscape(place.name)}</strong><span>${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}</span></div>`)).addTo(placesMap); placesSavedMarkers.set(id, marker); }); for (const [id, marker] of placesSavedMarkers.entries()) if (!visible.has(id)) { marker.remove(); placesSavedMarkers.delete(id); } }
+function bindPlacesClick(map, latitudeInput, longitudeInput) { map.on("click", (event) => { const lat = event.lngLat.lat; const lng = event.lngLat.lng; if (!latitudeInput || !longitudeInput) return; latitudeInput.value = Number(lat).toFixed(6); longitudeInput.value = Number(lng).toFixed(6); if (!placesMarker) placesMarker = new window.maplibregl.Marker({ element: makeMarkerElement("place-map-marker draft", "<span>⌖</span>"), anchor: "bottom" }).addTo(placesMap); placesMarker.setLngLat([lng, lat]); }); }
+function destroyPlacesMap() { if (placesMap) { try { placesMap.remove(); } catch {} } placesMap = null; placesMapTarget = null; placesMarker = null; placesSavedMarkers = new Map(); }
+window.installPlacesMap = function installPlacesMap(places = []) { const target = document.querySelector("#places-map"); if (!target) return; const latitudeInput = document.querySelector("#place-latitude"); const longitudeInput = document.querySelector("#place-longitude"); if (!maplibreReady(target) || !maplibreSupported()) { mapError(target); return; } if (!placesMap || placesMapTarget !== target) { if (placesMapMountPending && placesMapTarget === target) return; destroyPlacesMap(); placesMapTarget = target; target.innerHTML = ""; placesMapMountPending = true; loadAdminLibertyStyle().then((style) => { if (placesMapTarget !== target || !document.querySelector("#places-map")) return; placesMap = createAdminMap(target, style, () => { bindPlacesClick(placesMap, latitudeInput, longitudeInput); syncPlacesMarkers(places); }, () => { destroyPlacesMap(); mapError(target); }); if (!placesMap) mapError(target); }).catch((error) => { console.warn("Liberty style load failed", error); mapError(target); }).finally(() => { placesMapMountPending = false; }); } else if (placesMap._optimusLoaded) { placesMap.resize(); syncPlacesMarkers(places); } };
+window.disposeAdminMaps = function disposeAdminMaps() { destroyFleetMap(); destroyPlacesMap(); };
+window.addEventListener("resize", () => { if (fleetOperationsMap?._optimusLoaded) fleetOperationsMap.resize(); if (placesMap?._optimusLoaded) placesMap.resize(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState !== "visible") return; window.setTimeout(() => { if (fleetOperationsMap?._optimusLoaded) fleetOperationsMap.resize(); if (placesMap?._optimusLoaded) placesMap.resize(); }, 80); });

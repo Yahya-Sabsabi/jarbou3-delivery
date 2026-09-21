@@ -616,11 +616,11 @@ export function registerAdminWebRoutes(app: Express) {
     try {
       requireSiteSession(req);
       const requestId = z.string().uuid().safeParse(req.params.requestId);
-      const kind = z.enum(["personal", "identity"]).safeParse(req.params.kind);
+      const kind = z.enum(["personal", "identity", "vehicle"]).safeParse(req.params.kind);
       if (!requestId.success || !kind.success) return res.status(400).json({ error: "INVALID_DOCUMENT_REQUEST" });
       const service = asService();
-      const { data: request, error } = await service.from("account_verification_requests").select("personal_photo_path,identity_photo_path").eq("id", requestId.data).single();
-      const path = kind.data === "personal" ? request?.personal_photo_path : request?.identity_photo_path;
+      const { data: request, error } = await service.from("account_verification_requests").select("personal_photo_path,identity_photo_path,vehicle_photo_path").eq("id", requestId.data).single();
+      const path = kind.data === "personal" ? request?.personal_photo_path : kind.data === "identity" ? request?.identity_photo_path : request?.vehicle_photo_path;
       if (error || !path) return res.status(404).json({ error: "DOCUMENT_NOT_AVAILABLE" });
       const { data, error: signedError } = await service.storage.from("jarbou3-private").createSignedUrl(path, 90);
       if (signedError || !data?.signedUrl) throw new Error(signedError?.message ?? "DOCUMENT_URL_UNAVAILABLE");
@@ -1003,14 +1003,14 @@ export function registerAdminWebRoutes(app: Express) {
     try {
       requireSiteSession(req);
       const userId = z.string().uuid().safeParse(req.params.userId);
-      const kind = z.enum(["personal", "identity"]).safeParse(req.params.kind);
+      const kind = z.enum(["personal", "identity", "vehicle"]).safeParse(req.params.kind);
       if (!userId.success || !kind.success) return res.status(400).json({ error: "INVALID_DOCUMENT_REQUEST" });
       const service = asService();
       const [driverResult, onboardingResult] = await Promise.all([
-        service.from("drivers_verification").select("personal_photo_path,id_photo_path").eq("user_id", userId.data).maybeSingle(),
-        service.from("account_verification_requests").select("personal_photo_path,identity_photo_path").eq("auth_user_id", userId.data).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        service.from("drivers_verification").select("personal_photo_path,id_photo_path,vehicle_photo_path").eq("user_id", userId.data).maybeSingle(),
+        service.from("account_verification_requests").select("personal_photo_path,identity_photo_path,vehicle_photo_path").eq("auth_user_id", userId.data).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       ]);
-      const path = kind.data === "personal" ? driverResult.data?.personal_photo_path ?? onboardingResult.data?.personal_photo_path : driverResult.data?.id_photo_path ?? onboardingResult.data?.identity_photo_path;
+      const path = kind.data === "personal" ? driverResult.data?.personal_photo_path ?? onboardingResult.data?.personal_photo_path : kind.data === "identity" ? driverResult.data?.id_photo_path ?? onboardingResult.data?.identity_photo_path : driverResult.data?.vehicle_photo_path ?? onboardingResult.data?.vehicle_photo_path;
       if (!path) return res.status(404).json({ error: "DOCUMENT_NOT_AVAILABLE" });
       const { data, error } = await service.storage.from("jarbou3-private").createSignedUrl(path, 90);
       if (error || !data?.signedUrl) throw new Error(error?.message ?? "DOCUMENT_URL_UNAVAILABLE");
