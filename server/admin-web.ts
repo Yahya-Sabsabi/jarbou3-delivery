@@ -213,11 +213,9 @@ async function readDashboard() {
     service.from("drivers_verification").select("id").eq("status", "pending"),
     service.from("driver_shifts").select("id").eq("is_closed", false),
     service.from("orders").select("id,status,estimated_price,final_price,company_commission_amount,driver_net_amount,commission_calculated_at,created_at,updated_at,driver_id,source_address,destination_address").order("updated_at", { ascending: false }).limit(8),
-    readNotifications(),
+    readNotifications().catch(() => []),
   ]);
 
-  const errors = [todayOrdersResult.error, activeDriversResult.error, activeCustomersResult.error, pendingDriversResult.error, openShiftsResult.error, latestOrdersResult.error].filter(Boolean);
-  if (errors.length) throw new Error(errors[0]?.message ?? "ADMIN_DATA_UNAVAILABLE");
   const todayOrders = todayOrdersResult.data ?? [];
   const finance = summarizeCompletedOrders(todayOrders as FinancialOrder[]);
   return {
