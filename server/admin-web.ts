@@ -53,14 +53,14 @@ function currentAttempt(key: string) {
   return current;
 }
 
-function adminPassword() {
-  const password = process.env.ADMIN_SITE_PASSWORD;
-  if (!password || password.length < 16) throw new Error("ADMIN_SITE_PASSWORD_NOT_CONFIGURED");
-  return password;
+function sessionSigningSecret() {
+  const secret = process.env.ADMIN_SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.ADMIN_SITE_PASSWORD;
+  if (!secret || secret.length < 16) throw new Error("ADMIN_SESSION_SECRET_NOT_CONFIGURED");
+  return secret;
 }
 
 function sign(value: string) {
-  return createHmac("sha256", adminPassword()).update(value).digest("base64url");
+  return createHmac("sha256", sessionSigningSecret()).update(value).digest("base64url");
 }
 
 function createSiteSession() {
@@ -430,7 +430,7 @@ export function registerAdminWebRoutes(app: Express) {
         return;
       }
     } catch (error) {
-      res.status(error instanceof Error && error.message === "ADMIN_SITE_PASSWORD_NOT_CONFIGURED" ? 503 : 500).json({ error: "SITE_PASSWORD_CONFIGURATION_ERROR" });
+      res.status(error instanceof Error && error.message === "ADMIN_SESSION_SECRET_NOT_CONFIGURED" ? 503 : 500).json({ error: "SITE_PASSWORD_CONFIGURATION_ERROR" });
       return;
     }
     loginAttempts.delete(key);
