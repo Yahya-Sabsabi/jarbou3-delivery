@@ -47,7 +47,7 @@ const config: ExpoConfig = {
   owner: env.expoOwner,
   version: "1.0.0",
   orientation: "portrait",
-  icon: "./assets/images/icon.png",
+  icon: "./assets/images/optimus-black-logo.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
   // react-native-reanimated 4 يتطلب New Architecture أثناء بناء Android.
@@ -62,9 +62,9 @@ const config: ExpoConfig = {
   android: {
     adaptiveIcon: {
       backgroundColor: "#F5F5F5",
-      foregroundImage: "./assets/images/android-icon-foreground.png",
+      foregroundImage: "./assets/images/optimus-black-logo.png",
       backgroundImage: "./assets/images/android-icon-background.png",
-      monochromeImage: "./assets/images/android-icon-monochrome.png",
+      monochromeImage: "./assets/images/optimus-black-logo.png",
     },
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
@@ -86,7 +86,7 @@ const config: ExpoConfig = {
   web: {
     bundler: "metro",
     output: "static",
-    favicon: "./assets/images/favicon.png",
+    favicon: "./assets/images/optimus-black-logo.png",
   },
   extra: {
     apiBaseUrl: env.apiBaseUrl,
@@ -159,7 +159,7 @@ const config: ExpoConfig = {
     [
       "expo-splash-screen",
       {
-        image: "./assets/images/splash-icon.png",
+        image: "./assets/images/optimus-black-logo.png",
         imageWidth: 200,
         resizeMode: "contain",
         backgroundColor: "#ffffff",
