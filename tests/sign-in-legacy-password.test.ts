@@ -21,6 +21,6 @@ describe("legacy password login compatibility", () => {
 
     expect(body).toContain("accountPassword.length < 1");
     expect(body).not.toContain("accountPassword.length < 8");
-    expect(body).toContain("signIn.mutate({ phone: normalizedPhone, password: accountPassword })");
+    expect(body).toContain("signIn.mutate({ phone: normalizedPhone, password: accountPassword, expectedRole: role })");
   });
 });

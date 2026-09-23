@@ -939,7 +939,9 @@ export function Jarbou3App() {
           ? "تم إيقاف محاولات تسجيل الدخول مؤقتاً بعد خمس محاولات غير صحيحة. انتظر 15 دقيقة ثم حاول مجدداً، أو استخدم «نسيت كلمة المرور؟»."
         : code === "SIGN_IN_PASSWORD_INVALID"
           ? "كلمة المرور غير مطابقة لهذا الحساب. استخدم «نسيت كلمة المرور؟» لإعادة تعيينها."
-          : code === "SIGN_IN_IDENTITY_LOOKUP_FAILED"
+        : code === "SIGN_IN_ROLE_MISMATCH"
+          ? role === "driver" ? "هذا الرقم مرتبط بحساب عميل. استخدم دخول العميل من الواجهة الرئيسية." : "هذا الرقم مرتبط بحساب سفير. استخدم دخول السفير من الواجهة الرئيسية."
+        : code === "SIGN_IN_IDENTITY_LOOKUP_FAILED"
             ? "تعذر العثور على هوية الحساب. أبلغ الإدارة بالرمز: SIGN_IN_IDENTITY_LOOKUP_FAILED."
             : code === "SIGN_IN_IDENTITY_MIGRATION_FAILED"
               ? "تعذر تجهيز هوية الدخول لهذا الحساب. أبلغ الإدارة بالرمز: SIGN_IN_IDENTITY_MIGRATION_FAILED."
@@ -1080,7 +1082,7 @@ export function Jarbou3App() {
     // يطبق فقط عند إنشاء/تغيير كلمة مرور جديدة، وليس على الحسابات الموروثة.
     if (!isJarbou3Phone(phone) || accountPassword.length < 1) return Alert.alert("تحقق من البيانات", "أدخل رقم WhatsApp وكلمة المرور.");
     setPhone(normalizedPhone);
-    signIn.mutate({ phone: normalizedPhone, password: accountPassword });
+    signIn.mutate({ phone: normalizedPhone, password: accountPassword, expectedRole: role });
   };
   const logout = async () => { await Promise.all([jarbou3Session.clear(), jarbou3Session.clearOnboarding()]); setPolicyAccepted(false); setPolicyVisible(false); setSavedToken(null); setRequestId(null); setVerificationCode(""); setCodeExpiresAt(null); setRetryAfter(null); setName(""); setPhone(""); setAccountPassword(""); setPasswordConfirm(""); setShowAccountPassword(false); setShowPasswordConfirm(false); setStage("choose"); };
   const refreshRuntimeReadiness = async () => {

@@ -342,7 +342,7 @@ export const appRouter = router({
       }),
 
     signIn: publicProcedure
-      .input(z.object({ phone: z.string().trim().min(8).max(24), password: z.string().min(1).max(72) }))
+      .input(z.object({ phone: z.string().trim().min(8).max(24), password: z.string().min(1).max(72), expectedRole: z.enum(["customer", "driver"]) }))
       .mutation(async ({ input, ctx }) => {
         const phone = normalizeJarbou3Phone(input.phone);
         if (!phone) throw new Error("INVALID_PHONE");
@@ -383,6 +383,7 @@ export const appRouter = router({
         clearLoginFailures(requestIp, phone);
         await clearPersistentLoginLock(phone);
         const activeProfile = await getUserProfile(data.user.id);
+        if (activeProfile.role !== input.expectedRole) throw new Error("SIGN_IN_ROLE_MISMATCH");
         return { accessToken: data.session.access_token, refreshToken: data.session.refresh_token, user: { id: data.user.id, name: activeProfile.name, role: activeProfile.role } };
       }),
 

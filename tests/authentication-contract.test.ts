@@ -22,8 +22,10 @@ describe("OPTIMUS X authentication contract", () => {
   it("keeps the shared customer and driver auth implementation present", () => {
     expect(app).toContain("submitSignIn");
     expect(app).toContain("submitOnboarding");
+    expect(app).toContain("expectedRole: role");
     expect(routers).toContain("signIn");
     expect(routers).toContain("submitOnboarding");
+    expect(routers).toContain("SIGN_IN_ROLE_MISMATCH");
   });
 
   it("never routes a standalone native build to a Metro preview when production is embedded", () => {

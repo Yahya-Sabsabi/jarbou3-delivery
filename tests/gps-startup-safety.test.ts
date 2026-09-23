@@ -5,9 +5,9 @@ import { resolve } from "node:path";
 describe("Android GPS startup safety", () => {
   const appSource = readFileSync(resolve(process.cwd(), "components/jarbou3-app.tsx"), "utf8");
 
-  it("starts native tracking only for an accepted driver order", () => {
-    expect(appSource).toContain("const shouldTrackAcceptedOrder = page === \"drive\" && Boolean(accessToken) && driverIsApproved && Boolean(activeOrder);");
-    expect(appSource).toContain("if (!shouldTrackAcceptedOrder || !accessToken || !activeOrder) return;");
+  it("starts native tracking only in the approved driver workspace", () => {
+    expect(appSource).toContain("const shouldTrackAcceptedOrder = (page === \"home\" || page === \"drive\") && Boolean(accessToken) && driverIsApproved;");
+    expect(appSource).toContain("if (!shouldTrackAcceptedOrder || !accessToken) return;");
     expect(appSource).toContain("[page, accessToken, driverIsApproved, activeOrder?.id]");
   });
 

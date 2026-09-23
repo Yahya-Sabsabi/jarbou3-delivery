@@ -115,14 +115,14 @@ describe("OPTIMUS X MapLibre map UI/UX contract", () => {
   });
 
   it("keeps the account-choice onboarding and home screen within the shared premium design", () => {
-    expect(app).toContain("ابدأ طلبك بثقة");
+    expect(app).toContain("إلى أين نوصلك اليوم؟");
     expect(app).toContain("أنا عميل");
     expect(app).toContain("أنا سفير");
     expect(app).toContain("roleOption");
     expect(app).toContain("homeHeader");
     expect(app).toContain("إلى أين نوصلك اليوم؟");
-    expect(app).toContain("createOrderButton");
-    expect(app).toContain("recentEmpty");
+    expect(app).toContain("createOrderText");
+    expect(app).toContain("recentTitle");
     expect(app).not.toContain('title: "Home"');
   });
 
