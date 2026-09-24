@@ -90,7 +90,7 @@ export function HamaMap({ compact = false, source, destination, driverLocation, 
       L.circle([HAMA_CENTER.latitude, HAMA_CENTER.longitude], { radius: HAMA_SERVICE_RADIUS_METERS, color: "#757575", weight: 1.5, fillColor: "#757575", fillOpacity: 0.08, dashArray: "5 6" }).addTo(layers);
       if (latestProps.routePath && latestProps.routePath.length > 1) L.polyline(latestProps.routePath.map((point) => [point.latitude, point.longitude]), { color: "#4A4A4A", weight: 4, opacity: 0.85 }).addTo(layers);
       if (latestProps.source) L.marker([latestProps.source.latitude, latestProps.source.longitude], { icon: jarbou3Icon(L, "ا", "#4A4A4A") }).bindTooltip("موقع الاستلام", { direction: "top" }).addTo(layers);
-      if (latestProps.destination) L.marker([latestProps.destination.latitude, latestProps.destination.longitude], { icon: jarbou3Icon(L, "و", "#2F7A62") }).bindTooltip("وجهة العميل", { direction: "top" }).addTo(layers);
+      if (latestProps.destination) L.marker([latestProps.destination.latitude, latestProps.destination.longitude], { icon: jarbou3Icon(L, "و", "#F97316") }).bindTooltip("وجهة العميل", { direction: "top" }).addTo(layers);
       if (latestProps.driverLocation) L.marker([latestProps.driverLocation.latitude, latestProps.driverLocation.longitude], { icon: jarbou3Icon(L, "ج", "#757575") }).bindTooltip("سائق جربوع", { direction: "top" }).addTo(layers);
       const click = (event: import("leaflet").LeafletMouseEvent) => {
         if (latestProps.readOnly || !latestProps.selecting || !latestProps.onSelect) return;

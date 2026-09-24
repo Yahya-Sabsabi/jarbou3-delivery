@@ -75,15 +75,15 @@ export function OptimusMapScreen({
       {centerPinVisible ? <View pointerEvents="none" testID="center-selection-pin" style={styles.centerMarker}><View style={styles.centerMarkerPin}><View style={styles.centerMarkerDot} /></View></View> : null}
       <View pointerEvents="box-none" style={[styles.topActions, { top: Math.max(insets.top + 12, 18), left: Math.max(insets.left + 14, 16), right: Math.max(insets.right + 14, 16) }]}>
         <View style={styles.topActionsGroup}>
-          {onHome ? <Pressable accessibilityLabel="العودة إلى الرئيسية" onPress={onHome} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}><MaterialIcons name="home-filled" size={22} color="#263238" /></Pressable> : null}
-          {onMore ? <Pressable accessibilityLabel="المزيد من الخيارات" onPress={onMore} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}><MaterialIcons name="more-vert" size={24} color="#263238" /></Pressable> : null}
+          {onHome ? <Pressable accessibilityLabel="العودة إلى الرئيسية" onPress={onHome} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}><MaterialIcons name="home-filled" size={22} color="#C2410C" /></Pressable> : null}
+          {onMore ? <Pressable accessibilityLabel="المزيد من الخيارات" onPress={onMore} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}><MaterialIcons name="more-vert" size={24} color="#C2410C" /></Pressable> : null}
         </View>
         <View style={styles.topActionsGroup}>
           <Pressable accessibilityLabel="تحديد موقعي الحالي" onPress={onLocate} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}>
-            <MaterialIcons name={locating ? "gps-not-fixed" : "my-location"} size={23} color="#263238" />
+            <MaterialIcons name={locating ? "gps-not-fixed" : "my-location"} size={23} color="#EA580C" />
           </Pressable>
           <Pressable accessibilityLabel="فتح الملف الشخصي" onPress={onProfile} style={({ pressed }) => [styles.floatingButton, pressed && styles.pressed]} hitSlop={6}>
-            <MaterialIcons name="person-outline" size={24} color="#263238" />
+            <MaterialIcons name="person-outline" size={24} color="#C2410C" />
           </Pressable>
         </View>
       </View>
@@ -123,21 +123,21 @@ export function OptimusMapScreen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, minHeight: 0, overflow: "hidden", position: "relative", backgroundColor: "#E7EBE8" },
+  root: { flex: 1, minHeight: 0, overflow: "hidden", position: "relative", backgroundColor: "#FFF7ED" },
   centerMarker: { position: "absolute", top: "50%", left: "50%", width: 44, height: 58, marginLeft: -22, marginTop: -53, zIndex: 10, alignItems: "center", justifyContent: "flex-start" },
-  centerMarkerPin: { width: 34, height: 34, marginTop: 1, borderRadius: 19, borderBottomRightRadius: 5, backgroundColor: "#24755E", borderWidth: 3, borderColor: "#FFFFFF", transform: [{ rotate: "45deg" }], shadowColor: "#000000", shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
+  centerMarkerPin: { width: 34, height: 34, marginTop: 1, borderRadius: 19, borderBottomRightRadius: 5, backgroundColor: "#EA580C", borderWidth: 3, borderColor: "#FFFFFF", transform: [{ rotate: "45deg" }], shadowColor: "#000000", shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
   centerMarkerDot: { width: 10, height: 10, marginTop: 9, marginLeft: 9, borderRadius: 5, backgroundColor: "#FFFFFF", transform: [{ rotate: "-45deg" }] },
   topActions: { position: "absolute", flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", zIndex: 30 },
   topActionsGroup: { flexDirection: "row", gap: 8 },
   floatingLayer: { position: "absolute", gap: 10, alignItems: "center", zIndex: 20 },
-  floatingButton: { width: 44, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFFF2", shadowColor: "#0B1F17", shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
+  floatingButton: { width: 44, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFFF2", shadowColor: "#431407", shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
-  sheetBackground: { backgroundColor: "#FCFDFC", borderTopLeftRadius: 30, borderTopRightRadius: 30, shadowColor: "#10231B", shadowOpacity: 0.14, shadowRadius: 20, shadowOffset: { width: 0, height: -6 }, elevation: 14 },
-  sheetIndicator: { backgroundColor: "#83958D", width: 38, height: 4, borderRadius: 4, marginTop: 3 },
+  sheetBackground: { backgroundColor: "#FCFDFC", borderTopLeftRadius: 30, borderTopRightRadius: 30, shadowColor: "#431407", shadowOpacity: 0.14, shadowRadius: 20, shadowOffset: { width: 0, height: -6 }, elevation: 14 },
+  sheetIndicator: { backgroundColor: "#FDBA74", width: 38, height: 4, borderRadius: 4, marginTop: 3 },
   sheetContent: { paddingHorizontal: 18, paddingTop: 2 },
   scrollContent: { paddingBottom: 220 },
   sheetKeyboardAvoiding: { flex: 1 },
   sheetInnerFocus: { width: "100%" },
-  webSheet: { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "72%", backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 16, paddingTop: 8, shadowColor: "#10231B", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: -5 }, elevation: 16 },
-  handle: { alignSelf: "center", width: 44, height: 5, borderRadius: 3, backgroundColor: "#9BA8A2", marginBottom: 8 },
+  webSheet: { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "72%", backgroundColor: "#FFFFFF", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 16, paddingTop: 8, shadowColor: "#431407", shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: -5 }, elevation: 16 },
+  handle: { alignSelf: "center", width: 44, height: 5, borderRadius: 3, backgroundColor: "#FDBA74", marginBottom: 8 },
 });

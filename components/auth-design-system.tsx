@@ -64,7 +64,7 @@ export function AuthConsent({ accepted, onToggle, onPolicy }: { accepted: boolea
   return <View style={styles.consent}><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: accepted }} onPress={onToggle} style={[styles.checkbox, { borderColor: colors.border, backgroundColor: colors.surface }, accepted && { backgroundColor: colors.primary, borderColor: colors.primary }]}><Text style={styles.check}>{accepted ? "✓" : ""}</Text></Pressable><Text style={[styles.consentText, { color: colors.muted }]}>أوافق على <Text onPress={onPolicy} style={[styles.consentLink, { color: colors.primary }]}>شروط الاستخدام وسياسة الخصوصية</Text> لتطبيق OPTIMUS X.</Text></View>;
 }
 
-export const authColors = { accent: "#55C49A", accentSoft: "#1D3A31", ink: "#F4FAF7", muted: "#B6C8C1", input: "#172321", line: "#2D403A", white: "#F4FAF7", danger: "#FF8D8D" };
+export const authColors = { accent: "#55C49A", accentSoft: "#1D3A31", ink: "#FFF7ED", muted: "#B6C8C1", input: "#172321", line: "#2D403A", white: "#FFF7ED", danger: "#FF8D8D" };
 
 const styles = StyleSheet.create({
   scroll: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 32 },

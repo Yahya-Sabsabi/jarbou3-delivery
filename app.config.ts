@@ -61,7 +61,7 @@ const config: ExpoConfig = {
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: "#F5F5F5",
+      backgroundColor: "#FFF7ED",
       foregroundImage: "./assets/images/android-icon-foreground-transparent.png",
       backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/optimus-black-logo.png",
@@ -145,7 +145,7 @@ const config: ExpoConfig = {
     [
       "expo-notifications",
       {
-        color: "#4A4A4A",
+        color: "#EA580C",
         defaultChannel: "jarbou3-orders",
       },
     ],
@@ -162,9 +162,9 @@ const config: ExpoConfig = {
         image: "./assets/images/optimus-black-logo.png",
         imageWidth: 200,
         resizeMode: "contain",
-        backgroundColor: "#ffffff",
+        backgroundColor: "#FFF7ED",
         dark: {
-          backgroundColor: "#000000",
+          backgroundColor: "#17120F",
         },
       },
     ],

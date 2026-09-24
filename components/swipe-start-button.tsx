@@ -45,9 +45,9 @@ export function SwipeStartButton({ disabled, onComplete }: { disabled?: boolean;
 }
 
 const styles = StyleSheet.create({
-  track: { minHeight: 58, marginHorizontal: 16, marginTop: 12, borderRadius: 18, backgroundColor: "#E9F4EF", borderWidth: 1, borderColor: "#9AC9B4", justifyContent: "center", alignItems: "center", overflow: "hidden", position: "relative" },
+  track: { minHeight: 58, marginHorizontal: 16, marginTop: 12, borderRadius: 18, backgroundColor: "#FFF7ED", borderWidth: 1, borderColor: "#FDBA74", justifyContent: "center", alignItems: "center", overflow: "hidden", position: "relative" },
   disabled: { opacity: 0.55 },
-  label: { color: "#276149", fontSize: 13, fontWeight: "900" },
-  knob: { position: "absolute", right: 5, width: KNOB_SIZE, height: KNOB_SIZE, borderRadius: 15, backgroundColor: "#2F7A62", alignItems: "center", justifyContent: "center" },
+  label: { color: "#C2410C", fontSize: 13, fontWeight: "900" },
+  knob: { position: "absolute", right: 5, width: KNOB_SIZE, height: KNOB_SIZE, borderRadius: 15, backgroundColor: "#F97316", alignItems: "center", justifyContent: "center" },
   arrow: { color: "#FFFFFF", fontSize: 31, lineHeight: 34, fontWeight: "900" },
 });

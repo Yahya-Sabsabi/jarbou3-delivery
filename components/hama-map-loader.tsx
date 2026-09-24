@@ -26,7 +26,7 @@ class MapBoundary extends Component<MapBoundaryProps, MapBoundaryState> {
 function MapStatus({ fullScreen, failed }: { fullScreen?: boolean; failed?: boolean }) {
   return (
     <View style={[styles.status, fullScreen && styles.fullScreen]}>
-      {failed ? <Text style={styles.statusTitle}>تعذر تحميل الخريطة</Text> : <ActivityIndicator size="small" color="#24755E" />}
+      {failed ? <Text style={styles.statusTitle}>تعذر تحميل الخريطة</Text> : <ActivityIndicator size="small" color="#EA580C" />}
       {failed ? <Text style={styles.statusCopy}>تحقق من اتصال الإنترنت ثم أعد فتح شاشة الخريطة.</Text> : null}
     </View>
   );
@@ -64,8 +64,8 @@ export function HamaMap(props: HamaMapProps) {
 const styles = StyleSheet.create({
   status: { height: 220, minHeight: 220, marginHorizontal: 16, marginTop: 16, borderRadius: 23, alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#F0F4F0", padding: 20 },
   fullScreen: { flex: 1, width: "100%", height: "100%", minHeight: 300, marginHorizontal: 0, marginTop: 0, borderRadius: 0 },
-  statusTitle: { color: "#24342D", fontSize: 15, fontWeight: "800", textAlign: "center" },
-  statusCopy: { color: "#5E7067", fontSize: 12, textAlign: "center" },
+  statusTitle: { color: "#431407", fontSize: 15, fontWeight: "800", textAlign: "center" },
+  statusCopy: { color: "#78716C", fontSize: 12, textAlign: "center" },
 });
 
 export { MapBoundary };
